@@ -354,6 +354,7 @@ if (!KEY) {
   });
   $('keyInput').addEventListener('input', () => $('keyInput').setCustomValidity(""));
 } else {
+  $('setup').style.display = 'none';
   if ($('lKey')) $('lKey').textContent = KEY.slice(0, 4) + "..." + KEY.slice(-2);
   renderBanner();
 
