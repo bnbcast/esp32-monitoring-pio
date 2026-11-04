@@ -405,8 +405,7 @@ const MAP = (function () {
     updateHeadingFusion(heading, ts, yaw ? yaw * 10 : 0, ts,
       magHeading, speed, hdop);
 
-    // Update DOM via app (callback)
-    if (window.renderVehicleUI) window.renderVehicleUI();
+    // DOM (map HUD / banner) is updated by app.renderData / renderBanner
 
     // Marker DOM element
     updateMarker();
@@ -423,6 +422,17 @@ const MAP = (function () {
       trailCoords.push(pt);
       if (trailCoords.length > 120) trailCoords.shift();
       updateTrail();
+    }
+
+    // Sync street-view car (local scene: heading + dead-reckoned position)
+    if (streetView) {
+      if (!streetVehicle) streetVehicle = { x: 0, z: 0, heading: 0 };
+      streetVehicle.heading = fusedHeading;
+      // Move forward/back based on speed (km/h -> scene units per frame is handled in animate)
+      // Store last speed for dead reckoning in animate loop
+      streetVehicle._lastSpeed = speed;
+      streetVehicle._dt = (ts - (streetVehicle._lastTs || ts)) / 1000;
+      streetVehicle._lastTs = ts;
     }
 
     // Auto-follow modes
@@ -614,8 +624,10 @@ const MAP = (function () {
     resize();
   }
 
+  let streetVehicle = null; // {x, z, heading} in street scene units
+
   function initThreeStreet() {
-    if (threeRenderer) return;
+    if (window.__threeStreet) return;
     const el = document.getElementById("view3d");
     const canvas = document.createElement("canvas");
     el.appendChild(canvas);
@@ -623,31 +635,66 @@ const MAP = (function () {
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
     renderer.setSize(el.clientWidth, el.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.shadowMap.enabled = true;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0a0a);
+    scene.fog = new THREE.Fog(0x0a0a0a, 20, 120);
 
-    const camera = new THREE.PerspectiveCamera(60, el.clientWidth / el.clientHeight, 0.1, 2000);
-    camera.position.set(0, 8, 12);
+    const camera = new THREE.PerspectiveCamera(55, el.clientWidth / el.clientHeight, 0.1, 1000);
 
-    // Ground plane (brutalist: solid black grid)
-    const grid = new THREE.GridHelper(200, 40, 0x222222, 0x111111);
-    scene.add(grid);
+    // Ground — brutalist dark asphalt
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(400, 400),
+      new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
 
-    // Simple car placeholder (will be overridden by MapLibre custom layer when back in 2D)
-    const geo = new THREE.BoxGeometry(2, 1, 4);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xff1100 });
-    const car = new THREE.Mesh(geo, mat);
-    car.position.y = 0.5;
+    // Road markings (dashed center line)
+    const markGeo = new THREE.PlaneGeometry(0.4, 400);
+    const markMat = new THREE.MeshStandardMaterial({ color: 0xffe600 });
+    for (let i = -200; i < 200; i += 10) {
+      const m = new THREE.Mesh(markGeo, markMat);
+      m.position.set(0, 0.02, i);
+      m.rotation.x = -Math.PI / 2;
+      if ((i / 10) % 2 === 0) m.visible = false;
+      scene.add(m);
+    }
+
+    // Simple buildings around (brutalist blocks)
+    const bMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const bPos = [
+      [-60, 0, -60], [60, 0, -60], [-60, 0, 60], [60, 0, 60],
+      [-120, 0, -30], [120, 0, -30], [-120, 0, 30], [120, 0, 30]
+    ];
+    bPos.forEach(([x, y, z]) => {
+      const h = 15 + Math.random() * 25;
+      const w = 10 + Math.random() * 8;
+      const d = 10 + Math.random() * 8;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), bMat);
+      b.position.set(x, h / 2, z);
+      b.castShadow = true; b.receiveShadow = true;
+      scene.add(b);
+    });
+
+    // Car
+    const carGeo = new THREE.BoxGeometry(2.2, 0.9, 4.4);
+    const carMat = new THREE.MeshStandardMaterial({ color: 0xff1100 });
+    const car = new THREE.Mesh(carGeo, carMat);
+    car.position.y = 0.45;
+    car.castShadow = true;
     scene.add(car);
 
     const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(10, 20, 10);
+    light.position.set(20, 40, 20);
+    light.castShadow = true;
     scene.add(light);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
 
-    // Store for render loop
-    window.__threeStreet = { renderer, scene, camera, car, el, canvas };
+    window.__threeStreet = { renderer, scene, camera, car, ground, el, canvas };
+    streetVehicle = { x: 0, z: 0, heading: 0 };
 
     animateStreet();
   }
@@ -656,6 +703,19 @@ const MAP = (function () {
     if (!streetView) return;
     const s = window.__threeStreet;
     if (!s) return;
+
+    // Sync car to vehicle state (dead reckoning from speed)
+    if (streetVehicle && s.car) {
+      if (streetVehicle._lastSpeed && streetVehicle._dt) {
+        const move = (streetVehicle._lastSpeed / 3.6) * streetVehicle._dt; // m/s * s
+        const hR = streetVehicle.heading * Math.PI / 180;
+        streetVehicle.x -= Math.sin(hR) * move;
+        streetVehicle.z -= Math.cos(hR) * move;
+      }
+      s.car.position.set(streetVehicle.x, 0.45, streetVehicle.z);
+      s.car.rotation.y = -streetVehicle.heading; // Three.js uses -Y for heading
+    }
+
     s.renderer.render(s.scene, s.camera);
     requestAnimationFrame(animateStreet);
   }
@@ -664,14 +724,32 @@ const MAP = (function () {
     streetCam = mode;
     const s = window.__threeStreet;
     if (!s) return;
-    if (mode === "chase") { s.camera.position.set(0, 8, 12); s.camera.lookAt(0, 0, 0); }
-    else if (mode === "driver") { s.camera.position.set(0, 2, 1); s.camera.lookAt(0, 0, -10); }
-    else if (mode === "orbit") { s.camera.position.set(12, 10, 12); s.camera.lookAt(0, 2, 0); }
+    if (mode === "chase") {
+      s.camera.position.set(0, 9, 14);
+      s.camera.lookAt(0, 1, 0);
+    } else if (mode === "driver") {
+      s.camera.position.set(0, 1.6, 1.2);
+      s.camera.lookAt(0, 1.6, -10);
+    } else if (mode === "orbit") {
+      s.camera.position.set(14, 10, 14);
+      s.camera.lookAt(0, 2, 0);
+    }
   }
 
   function updateStreetCamera() {
-    // In a full build this would chase the MapLibre vehicle position;
-    // here we keep the simple Three.js street view.
+    if (!streetView || !streetVehicle) return;
+    const s = window.__threeStreet;
+    if (!s) return;
+    const h = streetVehicle.heading;
+    // Chase camera behind the car, offset by heading
+    const dist = 14;
+    const hR = h * Math.PI / 180;
+    s.camera.position.set(
+      -Math.sin(hR) * dist,
+      9,
+      -Math.cos(hR) * dist
+    );
+    s.camera.lookAt(streetVehicle.x, 1, streetVehicle.z);
   }
 
   // ---- public API ---------------------------------------------------------
