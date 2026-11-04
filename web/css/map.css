@@ -24,13 +24,19 @@
 .maplibregl-ctrl button:hover { background: var(--yellow) !important; }
 .maplibregl-ctrl-compass { display: flex !important; align-items: center !important; justify-content: center !important; }
 
-/* Hide all attribution / contributor watermarks */
+/* Attribution must remain visible per OSM / CartoDB tile usage policy */
 .maplibregl-ctrl-attrib,
 .maplibregl-ctrl-attrib-container,
 .leaflet-control-attribution,
 .maplibregl-map canvas + [class*="attrib"] {
-  display: none !important;
-  visibility: hidden !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 3px solid var(--ink) !important;
+  box-shadow: var(--shadow) !important;
+  color: var(--ink) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 0.7rem !important;
+  padding: 4px 8px !important;
+  border-radius: var(--radius) !important;
 }
 
 /* Ensure map buttons sit on top */
@@ -54,6 +60,25 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* MPU panel styling — desktop side panel (grid layout, not absolute) */
+#tab-mpu {
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  box-shadow: var(--shadow);
+  z-index: 100;
+  display: none;
+}
+
+#tab-mpu.active {
+  display: block;
+}
+
+#btnMpu.active {
+  background: var(--yellow);
 }
 
 /* HUD overlay on map */

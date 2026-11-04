@@ -7,21 +7,38 @@
 // ---------------------------------------------------------------------------
 
 const MAP = (function () {
+  // CSP-safe worker — must be set before Map constructor
+  if (typeof maplibregl !== 'undefined' && !maplibregl.workerUrl) {
+    maplibregl.workerUrl = '/vendor/maplibre-gl-csp-worker.js';
+  }
+
   // ---- config -------------------------------------------------------------
+  // Use local tile proxy (dev server) when running on localhost, otherwise
+  // direct OSM tiles. The proxy adds a proper User-Agent so OSM doesn't block.
+  const IS_LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const TILE_BASE = IS_LOCAL ? location.origin + '/tiles' : 'https://{a,b,c}.tile.openstreetmap.org';
+  const TILE_URLS = IS_LOCAL
+    ? [location.origin + '/tiles/{z}/{x}/{y}.png']
+    : [
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+      ];
+
   const MAP_STYLE = {
     version: 8,
     sources: {
-      carto: {
+      osm: {
         type: "raster",
-        tiles: ["https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"],
+        tiles: TILE_URLS,
         tileSize: 256,
-        attribution: "\u00A9 OpenStreetMap contributors © CARTO"
+        attribution: "\u00A9 OpenStreetMap contributors"
       }
     },
     layers: [{
-      id: "carto-layer",
+      id: "osm-layer",
       type: "raster",
-      source: "carto",
+      source: "osm",
       minzoom: 0,
       maxzoom: 19
     }]
@@ -37,6 +54,7 @@ const MAP = (function () {
 
   // ---- map state ----------------------------------------------------------
   let map = null;
+  let mapReady = false;
 
   // vehicle state
   let vehicle = {
@@ -171,13 +189,14 @@ const MAP = (function () {
       pitch: 0,
       bearing: 0,
       interaction: true,
-      attributionControl: false
+      attributionControl: true
     });
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ position: "bottom-left" }), "bottom-left");
 
     map.on("load", () => {
+      mapReady = true;
       initLayers();
       createMarker();
       resize();
@@ -284,14 +303,16 @@ const MAP = (function () {
   }
 
   function updateMarker() {
+    if (!map || !mapReady) return;
     const el = markerEl;
     if (!el || !vehicle.lat || !vehicle.lng) return;
     const conf = headingConfidence;
-    const size = 24 + 16 * conf;
+    const size = 28 + 16 * conf;
     el.style.width = size + "px";
     el.style.height = size + "px";
-    el.style.border = "4px solid #000";
-    el.style.background = danger >= 2 ? "#ff3b1f" : danger >= 1 ? "#ffe600" : "#00e676";
+    el.style.fontSize = (size * 0.75) + "px";
+    el.style.border = "3px solid #000";
+    el.style.background = "rgba(255,255,255,0.95)";
     el.style.boxShadow = "6px 6px 0 #000";
     el.style.transformOrigin = 'center';
     el.style.opacity = conf > 0.1 ? "1" : "0.4";
@@ -305,6 +326,7 @@ const MAP = (function () {
   }
 
   function updateAccuracy() {
+    if (!map || !mapReady) return;
     const src = map.getSource("accuracy");
     if (!src) return;
     const hdop = vehicle.hdop || 5;
@@ -339,15 +361,19 @@ const MAP = (function () {
     markerEl = document.createElement('div');
     markerEl.className = 'vehicle-marker';
     markerEl.style.position = 'absolute';
-    markerEl.style.width = '24px';
-    markerEl.style.height = '24px';
-    markerEl.style.border = '4px solid #000';
-    markerEl.style.background = '#00e676';
+    markerEl.style.width = '32px';
+    markerEl.style.height = '32px';
+    markerEl.style.fontSize = '24px';
+    markerEl.style.lineHeight = '1';
+    markerEl.style.textAlign = 'center';
+    markerEl.style.border = '3px solid #000';
+    markerEl.style.background = 'rgba(255,255,255,0.95)';
     markerEl.style.boxShadow = '6px 6px 0 #000';
     markerEl.style.borderRadius = '0';
     markerEl.style.transformOrigin = 'center';
     markerEl.style.pointerEvents = 'none';
     markerEl.style.zIndex = '100';
+    markerEl.textContent = '🥺';
     container.appendChild(markerEl);
   }
 
@@ -365,6 +391,7 @@ const MAP = (function () {
   }
 
   function updateHeadingWedge() {
+    if (!map || !mapReady) return;
     const src = map.getSource("heading-wedge");
     if (!src) return;
     const conf = clamp(headingConfidence, 0, 1);
@@ -398,7 +425,7 @@ const MAP = (function () {
   }
 
   function updateTrail() {
-    if (!map) return;
+    if (!map || !mapReady) return;
     const src = map.getSource("trail");
     if (!src) return;
     const coords = trailCoords.map(p => [p.lng, p.lat]);
@@ -415,7 +442,7 @@ const MAP = (function () {
 
   function clearTrail() {
     trailCoords = [];
-    if (map) {
+    if (map && mapReady) {
       const src = map.getSource("trail");
       if (src) src.setData({ type: "FeatureCollection", features: [] });
     }
@@ -423,11 +450,12 @@ const MAP = (function () {
 
   // ---- camera / controls --------------------------------------------------
   function flyTo(lng, lat, zoom, bearing, pitch, duration = 600) {
-    if (!map) return;
+    if (!map || !mapReady) return;
     map.easeTo({ center: [lng, lat], zoom, bearing, pitch, duration });
   }
 
   function recenterNow() {
+    if (!map || !mapReady) return;
     if (vehicle.lat != null && vehicle.lng != null) {
       myLocMode = "recenter";
       flyTo(vehicle.lng, vehicle.lat, 15, lockNorth ? 0 : fusedHeading, 0);
@@ -437,14 +465,14 @@ const MAP = (function () {
   function resetNorth() {
     lockNorth = false;
     myLocMode = "compass";
-    if (map) map.easeTo({ bearing: 0, duration: 400 });
+    if (map && mapReady) map.easeTo({ bearing: 0, duration: 400 });
   }
 
   function toggleLockNorth() {
     lockNorth = !lockNorth;
     if (lockNorth) {
       myLocMode = "north";
-      map.easeTo({ bearing: 0, duration: 400 });
+      if (map && mapReady) map.easeTo({ bearing: 0, duration: 400 });
     }
     return lockNorth;
   }
@@ -463,7 +491,7 @@ const MAP = (function () {
   }
 
   function resize() {
-    if (!map || !container) return;
+    if (!map || !mapReady || !container) return;
     map.resize();
   }
 
@@ -471,7 +499,7 @@ const MAP = (function () {
     lockNorth = !!on;
     if (lockNorth) {
       myLocMode = "north";
-      if (map) map.easeTo({ bearing: 0, duration: 400 });
+      if (map && mapReady) map.easeTo({ bearing: 0, duration: 400 });
     }
   }
 
@@ -479,6 +507,7 @@ const MAP = (function () {
   return {
     create,
     loaded: () => new Promise(res => { if (map) { map.once("load", res); } else res(); }),
+    isReady: () => mapReady,
     resize,
     setVehicle,
     clearTrail,

@@ -13,6 +13,7 @@
  */
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
@@ -98,6 +99,34 @@ function serveFile(res, filePath) {
 const server = http.createServer((req, res) => {
   // Strip query string first
   const cleanUrl = req.url.split('?')[0];
+
+  // ---- Tile proxy: forward OSM tile requests with proper User-Agent ----
+  if (cleanUrl.startsWith('/tiles/')) {
+    const tilePath = cleanUrl.slice('/tiles/'.length); // e.g. 12/1034/1723.png
+    const reqOpts = {
+      hostname: 'a.tile.openstreetmap.org',
+      path: '/' + tilePath,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'ESP32-Dashboard/1.0 (https://github.com/esp32-dash)',
+        'Accept': 'image/png',
+      },
+    };
+    const osmReq = https.request(reqOpts, (osmRes) => {
+      res.writeHead(osmRes.statusCode, {
+        'Content-Type': osmRes.headers['content-type'] || 'image/png',
+        'Cache-Control': 'public, max-age=86400',
+      });
+      osmRes.pipe(res);
+    });
+    osmReq.on('error', (e) => {
+      res.writeHead(502, { 'Content-Type': 'text/plain' });
+      res.end('Tile proxy error: ' + e.message);
+    });
+    osmReq.end();
+    return;
+  }
+
   let filePath = path.join(WEB_DIR, cleanUrl === '/' ? '/index.html' : cleanUrl);
   serveFile(res, filePath);
 });

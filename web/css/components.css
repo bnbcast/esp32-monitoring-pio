@@ -70,6 +70,14 @@
 .status-strip.nofix  { background: #666666; color: #fff; }
 .status-strip.stale  { background: var(--blue); color: #fff; }
 
+/* MPU grid alias — same as hud-grid for consistency */
+.mpu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
 /* Readout grid — boxed numbers */
 .readout-grid {
   display: grid;

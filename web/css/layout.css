@@ -36,7 +36,7 @@
   position: relative;
 }
 .map-host { width: 100%; height: 100%; overflow: hidden; }
-.map-host .maplibregl-canvas { display: block; width: 100% !important; height: 100% !important; }
+.map-host .maplibregl-canvas { display: block; width: 100% !important; height: 100% !important; background: var(--bg); }
 
 /* Side panel — fixed width, scrollable */
 .side-panel {
@@ -44,8 +44,30 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  overflow-y: auto;
+  min-height: 0;
 }
+
+/* Tab bar stays fixed at top */
+.tab-bar {
+  flex-shrink: 0;
+  z-index: 20;
+  background: var(--paper);
+  position: relative;
+}
+
+/* Tab panels wrapper fills remaining space and scrolls */
+.tab-panels-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  z-index: 10;
+}
+
+/* Tab panels inside wrapper */
+.tab-panel {
+  display: none;
+}
+.tab-panel.active { display: block; }
 
 /* Mobile bottom sheet — hidden on desktop */
 .mobile-sheet { display: none; }
@@ -70,7 +92,8 @@
 
   /* Mobile bottom sheet — show on mobile only */
   .mobile-sheet {
-    display: block;
+    display: flex;
+    flex-direction: column;
     position: fixed;
     inset: auto 0 0 0;
     width: 100%;
@@ -80,8 +103,24 @@
     box-shadow: -6px -6px 0 var(--ink);
     z-index: 100;
     padding: 10px;
-    overflow-y: auto;
+    min-height: 0;
   }
+  .mobile-sheet .tab-bar {
+    flex-shrink: 0;
+    z-index: 20;
+    background: var(--paper);
+    position: relative;
+  }
+  .mobile-sheet .tab-panels-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    z-index: 10;
+  }
+  .mobile-sheet .tab-panel {
+    display: none;
+  }
+  .mobile-sheet .tab-panel.active { display: block; }
   /* Drag handle on sheet */
   .sheet-handle {
     width: 40px;
@@ -116,15 +155,24 @@
   .hud-item .val { font-size: 1.2rem; }
 }
 
+/* MPU chart canvas — fixed height so it can't stretch the panel */
+.mpu-chart {
+  height: 120px;
+  overflow: hidden;
+}
+.mpu-chart canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
 /* Telemetry HUD inside side panel */
 .hud-card {
   border: var(--border-w) solid var(--ink);
   box-shadow: var(--shadow);
   background: var(--paper);
   padding: 12px;
-  margin-bottom: 10px;
-  overflow-y: auto;
-  max-height: 40vh;
+  flex-shrink: 0;
 }
 .hud-card h3 {
   font-size: 0.85rem;
@@ -187,6 +235,9 @@
   font-size: 0.75rem;
   cursor: pointer;
   box-shadow: 3px 3px 0 var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tab-btn.active { border-bottom-color: var(--ink); box-shadow: var(--shadow); background: var(--yellow); }
 .tab-btn:active { transform: translate(2px, 2px); box-shadow: var(--shadow-ac); }

@@ -17,54 +17,59 @@ const N = 120;
 const $ = id => document.getElementById(id);
 const C = { ink: "#000", blue: "#2447ff", red: "#ff3b1f", green: "#00e676", yellow: "#ffe600" };
 const fmt = (v, d = 1) => (typeof v !== "number" || Number.isNaN(v)) ? "--" : v.toFixed(d);
-const setPill = (el, text, cls) => { el.textContent = text; el.className = "pill " + cls; };
+const setPill = (el, text, cls) => { if (!el) return; el.textContent = text; el.className = "pill " + cls; };
 const uptime = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60]
   .map(n => String(n).padStart(2, "0")).join(":");
 
-// ---- Reverse Geocoding (free, key-less) -----------------------------------
-let lastGeocode = 0;
-let geocodeCache = new Map();
+// ---- Tilt History Chart ----------------------------------------------------
+function drawTiltChart() {
+  const canvas = $('tiltChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  // Size canvas internal resolution to match its fixed-height container (120px CSS height)
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = Math.max(rect.width, 300);
+  canvas.height = 120;
+  const width = canvas.width;
+  const height = canvas.height;
 
+  // Clear canvas
+  ctx.clearRect(0, 0, width, height);
+
+  // Draw grid
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= 10; i++) {
+    const y = height - (i * height / 10);
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+  }
+  ctx.stroke();
+
+  // Draw tilt history
+  if (GPS.tiltHistory.length > 0) {
+    ctx.strokeStyle = C.blue;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const step = width / GPS.maxTiltHistory;
+    GPS.tiltHistory.forEach((tilt, i) => {
+      const x = i * step;
+      const y = height - (tilt / 180) * height;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+}
+
+// ---- Reverse Geocoding (disabled - keyless/mailless only) -----------------
+// Nominatim requires a contact email in User-Agent and rate-limits to 1 req/s.
+// Removed to stay keyless + mailless. The hudAddress element does not exist
+// in the HTML, so this was a no-op that generated 403 errors.
 async function reverseGeocode(lat, lng) {
-  const now = Date.now();
-  const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-  
-  // Return cached result if available
-  if (geocodeCache.has(cacheKey)) {
-    const el = document.getElementById('hudAddress');
-    if (el) el.textContent = geocodeCache.get(cacheKey);
-    return;
-  }
-  
-  // Throttle: max 1 request per 2 seconds
-  if (now - lastGeocode < 2000) return;
-  lastGeocode = now;
-  
-  try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
-    const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-    if (!resp.ok) throw new Error('Geocode failed');
-    const data = await resp.json();
-    
-    let address = '--';
-    if (data.display_name) {
-      // Shorten the display name for HUD
-      const parts = data.display_name.split(',');
-      address = parts.slice(0, 3).join(', ');
-      if (address.length > 35) address = address.slice(0, 35) + '...';
-    }
-    
-    geocodeCache.set(cacheKey, address);
-    if (geocodeCache.size > 50) {
-      const firstKey = geocodeCache.keys().next().value;
-      geocodeCache.delete(firstKey);
-    }
-    const el = document.getElementById('hudAddress');
-    if (el) el.textContent = address;
-  } catch (e) {
-    // Silent fail - keep last known address
-    console.debug('Reverse geocode failed:', e.message);
-  }
+  // Disabled. No-op to avoid Nominatim 403 / console errors.
+  return;
 }
 
 // ---- topic key ------------------------------------------------------------
@@ -84,6 +89,8 @@ const GPS = {
   elevGain: 0,
   elevLoss: 0,
   movingTime: 0,
+  tiltHistory: [],
+  maxTiltHistory: 120,
   stoppedTime: 0,
   maxSpeed: 0,
   lastPoint: null,
@@ -223,7 +230,27 @@ function renderData(d) {
   set('liveTilt', fmt(d.tilt) + ' deg');
   set('liveAmps', acs.ok ? fmt(acs.amps, 2) : 'ERR');
   set('hudSpeed', fmt(gps.kmh));
-  set('hudDanger', danger);
+
+  // MPU6050 data
+  set('mpuRoll', fmt(d.roll));
+  set('mpuPitch', fmt(d.pitch));
+  set('mpuYaw', fmt(d.yaw));
+  set('mpuMaxTilt', fmt(d.maxTilt));
+  set('mpuAx', fmt(d.ax, 2));
+  set('mpuAy', fmt(d.ay, 2));
+  set('mpuAz', fmt(d.az, 2));
+  set('mpuTilt', fmt(d.tilt));
+  set('mpuWarn', d.warn);
+  set('mpuDanger', d.danger);
+
+  // Update tilt history
+  if (num(d.tilt)) {
+    GPS.tiltHistory.push(d.tilt);
+    if (GPS.tiltHistory.length > GPS.maxTiltHistory) {
+      GPS.tiltHistory.shift();
+    }
+    drawTiltChart();
+  }
 
   // Motion panel values (kept for reference)
   set('vRoll', fmt(d.roll)); set('vPitch', fmt(d.pitch)); set('vYaw', fmt(d.yaw));
@@ -243,10 +270,6 @@ function renderData(d) {
   // Map HUD - position
   set('hudLat', fmt(gps.lat, 6)); set('hudLng', fmt(gps.lng, 6));
   set('hudAlt', num(gps.alt) ? fmt(gps.alt) + ' m' : '--');
-  // Reverse geocode for address (throttled)
-  if (typeof reverseGeocode === 'function' && num(gps.lat) && num(gps.lng)) {
-    reverseGeocode(gps.lat, gps.lng);
-  }
 
   // Device values
   set('sUp', num(d.up) ? uptime(d.up) : '--');
@@ -280,6 +303,19 @@ function renderData(d) {
   set('wifiIpMobile', wifi.ip || '--');
   set('wifiMacMobile', wifi.mac || '--');
 
+  // MPU6050 tab values (mobile)
+  set('tTempMobile', num(d.temp) ? fmt(d.temp) + ' C' : '--');
+  set('mpuRollMobile', fmt(d.roll));
+  set('mpuPitchMobile', fmt(d.pitch));
+  set('mpuYawMobile', fmt(d.yaw));
+  set('mpuMaxTiltMobile', fmt(d.maxTilt));
+  set('mpuAxMobile', fmt(d.ax, 2));
+  set('mpuAyMobile', fmt(d.ay, 2));
+  set('mpuAzMobile', fmt(d.az, 2));
+  set('mpuTiltMobile', fmt(d.tilt));
+  set('mpuWarnMobile', d.warn);
+  set('mpuDangerMobile', d.danger);
+
   // Danger LEDs — solid blocks
   const lvl = d.lvl;
   $('ledB').classList.toggle('on', ok && lvl === 0);
@@ -288,7 +324,7 @@ function renderData(d) {
 
   // Heading badge
   const hb = $('liveHeadingBadge');
-  if (hb && typeof MAP !== 'undefined') {
+  if (hb && typeof MAP !== 'undefined' && MAP.isReady()) {
     const h = MAP.getHeading();
     const conf = Math.round(h.confidence * 100);
     hb.textContent = 'HDG: ' + h.source + ' ' + conf + '%';
@@ -318,7 +354,7 @@ function renderBanner() {
   const live = lastLiveAt > 0 && age < STALE_AFTER_MS;
 
   // Stale / no-fix handling for map marker
-  if (typeof MAP !== 'undefined') {
+  if (typeof MAP !== 'undefined' && MAP.isReady()) {
     const staleFix = lastFixPos && lastFixTs > 0 && (Date.now() - lastFixTs) > 2000;
     if (staleFix && lastFixPos) {
       MAP.setVehicle(lastFixPos.lng, lastFixPos.lat, 0, 0, null, false, Date.now());
@@ -362,11 +398,13 @@ function renderBanner() {
   if ($('fTime')) $('fTime').textContent = new Date().toLocaleTimeString();
 
   // Heading readout
-  if ($('hudHeading') && typeof MAP !== 'undefined') {
+  if ($('hudHeading') && typeof MAP !== 'undefined' && MAP.isReady()) {
     const h = MAP.getHeading();
     const conf = Math.round(h.confidence * 100);
     $('hudHeading').textContent = Math.round(h.heading) + '\u00B0  [' + h.source + ' ' + conf + '%]';
-    $('hudSource').textContent = h.source;
+    if (GPS.lastPoint) {
+      $('hudSource').textContent = GPS.lastPoint.lat.toFixed(4) + ', ' + GPS.lastPoint.lng.toFixed(4);
+    }
   }
 }
 
@@ -386,7 +424,7 @@ function onMessage(topic, payload, retained) {
   last = d;
 
   // Feed live GPS into the map
-  if (typeof MAP !== 'undefined' && d.gps && typeof d.gps.lat === 'number') {
+  if (typeof MAP !== 'undefined' && MAP.isReady() && d.gps && typeof d.gps.lat === 'number') {
     const g = d.gps;
     MAP.setVehicle(g.lng, g.lat, typeof g.cog === 'number' ? g.cog : 0,
       typeof g.kmh === 'number' ? g.kmh : 0, g.hdop, g.fix, Date.now(),
@@ -470,7 +508,11 @@ if (!KEY) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
-      const target = $('tab-' + btn.dataset.tab);
+      // Find target panel within the same container (desktop or mobile)
+      const container = btn.closest('.side-panel, .mobile-sheet');
+      let target = container ? container.querySelector('#tab-' + btn.dataset.tab) : null;
+      if (!target) target = $('tab-' + btn.dataset.tab + '-mobile');
+      if (!target) target = $('tab-' + btn.dataset.tab);
       if (target) target.classList.add('active');
     });
   });
@@ -507,30 +549,12 @@ if (!KEY) {
     btnCompass.addEventListener('touchend', endPress);
   }
 
-  // ---- Heading source -----------------------------------------------------
-  const btnHeadingSrc = $('btnHeadingSrc');
-  const headingSrcLabels = { auto: 'HDG: AUTO', gps: 'HDG: GPS', phone: 'HDG: PHONE', mag: 'HDG: MAG' };
-  const headingSrcOrder = ['auto', 'gps', 'phone', 'mag'];
-  let headingSrcIdx = 0;
-  if (btnHeadingSrc && typeof MAP !== 'undefined') {
-    btnHeadingSrc.addEventListener('click', () => {
-      headingSrcIdx = (headingSrcIdx + 1) % headingSrcOrder.length;
-      const pref = headingSrcOrder[headingSrcIdx];
-      MAP.setHeadingSource(pref);
-      btnHeadingSrc.textContent = headingSrcLabels[pref];
-      if (pref === 'phone' && typeof window.__requestPhoneCompass === 'function') {
-        window.__requestPhoneCompass();
-      }
-    });
-  }
-
   // ---- Keyboard shortcuts -------------------------------------------------
   window.addEventListener('keydown', (e) => {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
     const k = e.key.toLowerCase();
     if (k === 'c' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.recenterNow(); }
     else if (k === 'n' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.resetNorth(); }
-    else if (k === 'h' && typeof MAP !== 'undefined') { e.preventDefault(); if (btnHeadingSrc) btnHeadingSrc.click(); }
   });
 
   setInterval(renderBanner, 500);

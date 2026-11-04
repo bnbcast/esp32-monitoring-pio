@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 https://basemaps.cartocdn.com https://tiles.basemaps.cartocdn.com https://nominatim.openstreetmap.org; img-src 'self' data: https://basemaps.cartocdn.com https://tiles.basemaps.cartocdn.com; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org; img-src 'self' data: http://localhost:5003 https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
@@ -28,11 +28,9 @@
       <div class="pills" role="status" aria-live="polite">
         <span class="pill wait" id="pLink">BROKER</span>
         <span class="pill wait" id="pDev">DEVICE</span>
-        <span class="pill wait" id="pMpu">MPU</span>
         <span class="pill wait" id="pAcs">ACS</span>
+        <span class="pill wait" id="pMpu">MPU6050</span>
         <span class="pill wait" id="pGps">GPS</span>
-      </div>
-      <div class="flex items-center gap-4">
       </div>
     </div>
     <div class="status-strip" id="statusStrip">
@@ -57,38 +55,14 @@
           <div class="hud-unit">km/h</div>
         </div>
         <div class="hud-box">
-          <div class="hud-label">HEADING</div>
+          <div class="hud-label">sudut kemiringan</div>
           <div class="hud-value" id="hudHeading">--</div>
           <div class="hud-unit">deg</div>
         </div>
         <div class="hud-box">
-          <div class="hud-label">LAT</div>
-          <div class="hud-value" id="hudLat">--</div>
-          <div class="hud-unit">deg</div>
-        </div>
-        <div class="hud-box">
-          <div class="hud-label">LNG</div>
-          <div class="hud-value" id="hudLng">--</div>
-          <div class="hud-unit">deg</div>
-        </div>
-        <div class="hud-box">
-          <div class="hud-label">ALT</div>
-          <div class="hud-value" id="hudAlt">--</div>
-          <div class="hud-unit">m</div>
-        </div>
-        <div class="hud-box">
-          <div class="hud-label">ADDRESS</div>
-          <div class="hud-value" id="hudAddress" style="font-size: 0.7rem;">--</div>
-        </div>
-        <div class="hud-box">
-          <div class="hud-label">SOURCE</div>
+          <div class="hud-label">Position</div>
           <div class="hud-value" id="hudSource">--</div>
-          <div class="hud-unit">conf</div>
-        </div>
-        <div class="hud-box">
-          <div class="hud-label">DANGER</div>
-          <div class="hud-value" id="hudDanger">0</div>
-          <div class="hud-unit">lvl</div>
+          <div class="hud-unit">lat, lng</div>
         </div>
       </div>
 
@@ -101,15 +75,13 @@
     <div class="side-panel">
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="live">LIVE</button>
-        <button class="tab-btn" data-tab="route">ROUTE</button>
-        <button class="tab-btn" data-tab="trips">TRIPS</button>
-        <button class="tab-btn" data-tab="places">PLACES</button>
         <button class="tab-btn" data-tab="wifi">WIFI</button>
-        <button class="tab-btn" data-tab="settings">SETTINGS</button>
+        <button class="tab-btn" data-tab="mpu">MPU6050</button>
       </div>
 
-      <!-- LIVE tab -->
-      <div class="tab-panel active" id="tab-live">
+      <div class="tab-panels-wrapper">
+        <!-- LIVE tab -->
+        <div class="tab-panel active" id="tab-live">
         <div class="hud-card">
           <h3>Telemetry</h3>
           <div class="hud-grid">
@@ -147,50 +119,6 @@
         </div>
       </div>
 
-      <!-- ROUTE tab -->
-      <div class="tab-panel" id="tab-route">
-        <div class="hud-card">
-          <h3>Directions</h3>
-          <p style="font-family:var(--font-mono);font-size:0.85rem;">Route panel — enter destination, view alternatives, start live navigation.</p>
-          <div class="controls-group" style="margin-top:12px;">
-            <input type="text" id="routeDest" placeholder="Destination (lat,lon or place)" style="flex:1;">
-            <button id="btnRouteGo" class="btn small">GO</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- TRIPS tab -->
-      <div class="tab-panel" id="tab-trips">
-        <div class="hud-card">
-          <h3>Trips</h3>
-          <p style="font-family:var(--font-mono);font-size:0.85rem;">Trip list — record, save, replay, export GPX.</p>
-          <div class="controls-group" style="margin-top:12px;">
-            <button id="btnTripSave" class="btn small">SAVE TRIP</button>
-            <button id="btnTripExport" class="btn small">EXPORT GPX</button>
-          </div>
-          <div id="tripList" style="margin-top:12px;font-family:var(--font-mono);font-size:0.8rem;"></div>
-        </div>
-      </div>
-
-      <!-- PLACES tab -->
-      <div class="tab-panel" id="tab-places">
-        <div class="hud-card">
-          <h3>Saved Places</h3>
-          <p style="font-family:var(--font-mono);font-size:0.85rem;">Home, Work, custom places — edit, delete, navigate.</p>
-          <div id="placesList" style="margin-top:12px;font-family:var(--font-mono);font-size:0.8rem;"></div>
-        </div>
-      </div>
-
-      <!-- SETTINGS tab -->
-      <div class="tab-panel" id="tab-settings">
-        <div class="hud-card">
-          <h3>Settings</h3>
-          <div class="controls-group" style="margin-top:12px;">
-            <label>Heading Source</label>
-            <button id="btnHeadingSrc" class="btn small">AUTO</button>
-          </div>
-        </div>
-      </div>
 
       <!-- WIFI tab -->
       <div class="tab-panel" id="tab-wifi">
@@ -215,6 +143,30 @@
           </div>
         </div>
       </div>
+
+      <!-- MPU6050 tab -->
+      <div class="tab-panel" id="tab-mpu">
+        <div class="hud-card">
+          <h3>MPU6050</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">Temp</div><div class="val" id="tTemp">--</div><div class="lbl">C</div></div>
+            <div class="hud-item"><div class="lbl">Roll</div><div class="val" id="mpuRoll">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Pitch</div><div class="val" id="mpuPitch">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Yaw</div><div class="val" id="mpuYaw">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Max Tilt</div><div class="val" id="mpuMaxTilt">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Accel X</div><div class="val" id="mpuAx">--</div><div class="lbl">g</div></div>
+            <div class="hud-item"><div class="lbl">Accel Y</div><div class="val" id="mpuAy">--</div><div class="lbl">g</div></div>
+            <div class="hud-item"><div class="lbl">Accel Z</div><div class="val" id="mpuAz">--</div><div class="lbl">g</div></div>
+            <div class="hud-item"><div class="lbl">Tilt</div><div class="val" id="mpuTilt">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Warn at</div><div class="val" id="mpuWarn">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Danger at</div><div class="val" id="mpuDanger">--</div><div class="lbl">deg</div></div>
+          </div>
+          <div class="mpu-chart" style="margin-top:12px;">
+            <div style="font-family:var(--font-mono);font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">tilt history</div>
+            <canvas id="tiltChart"></canvas>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -223,13 +175,11 @@
     <div class="sheet-handle"></div>
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="live">LIVE</button>
-      <button class="tab-btn" data-tab="route">ROUTE</button>
-      <button class="tab-btn" data-tab="trips">TRIPS</button>
-      <button class="tab-btn" data-tab="places">PLACES</button>
       <button class="tab-btn" data-tab="wifi">WIFI</button>
-      <button class="tab-btn" data-tab="settings">SETTINGS</button>
+      <button class="tab-btn" data-tab="mpu">MPU</button>
     </div>
-    <div class="tab-panel active" id="tab-live-mobile">
+    <div class="tab-panels-wrapper">
+      <div class="tab-panel active" id="tab-live-mobile">
       <!-- Mobile LIVE content injected via JS -->
     </div>
     <div class="tab-panel" id="tab-wifi-mobile">
@@ -253,8 +203,25 @@
           <div class="hud-item"><div class="lbl">MAC</div><div class="val" id="wifiMacMobile">--</div><div class="lbl"></div></div>
         </div>
       </div>
+      <div class="tab-panel" id="tab-mpu-mobile">
+        <div class="hud-card">
+          <h3>MPU6050</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">Temp</div><div class="val" id="tTempMobile">--</div><div class="lbl">C</div></div>
+            <div class="hud-item"><div class="lbl">Roll</div><div class="val" id="mpuRollMobile">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Pitch</div><div class="val" id="mpuPitchMobile">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Yaw</div><div class="val" id="mpuYawMobile">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Max Tilt</div><div class="val" id="mpuMaxTiltMobile">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Accel X</div><div class="val" id="mpuAxMobile">--</div><div class="lbl">g</div></div>
+            <div class="hud-item"><div class="lbl">Accel Y</div><div class="val" id="mpuAyMobile">--</div><div class="lbl">g</div></div>
+            <div class="hud-item"><div class="lbl">Accel Z</div><div class="val" id="mpuAzMobile">--</div><div class="lbl">g</div></div>
+            <div class="hud-item"><div class="lbl">Tilt</div><div class="val" id="mpuTiltMobile">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Warn at</div><div class="val" id="mpuWarnMobile">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Danger at</div><div class="val" id="mpuDangerMobile">--</div><div class="lbl">deg</div></div>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
 
   <!-- Setup screen (hidden by default; shown only when no key) -->
   <section id="setup" class="panel" style="display:none;margin-bottom:20px;">
@@ -275,7 +242,7 @@
 
 </div>
 
-<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/maplibre-gl-csp.js"></script>
 <script src="ui/map.js"></script>
 <script src="ui/mqtt-mini.js"></script>
 <script src="ui/app.js"></script>
