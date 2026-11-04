@@ -75,7 +75,7 @@ const { chromium } = require('playwright');
     ['#ledR', 'LED red'],
   ];
 
-  console.log('\n=== ELEMENT CHECKS ===');
+  console.log(`\n=== ELEMENT CHECKS ===`);
   let allFound = true;
   for (const [sel, name] of checks) {
     const count = await page.locator(sel).count();
@@ -88,6 +88,24 @@ const { chromium } = require('playwright');
   const setupVisible = await page.locator('#setup').isVisible().catch(() => false);
   console.log(`${setupVisible ? 'FAIL' : 'OK '} setup screen hidden (should not be visible)`);
   if (setupVisible) allFound = false;
+
+  // Only LIVE tab panel should be visible on desktop
+  const liveVisible = await page.locator('#tab-live').isVisible().catch(() => false);
+  const routeHidden = !(await page.locator('#tab-route').isVisible().catch(() => false));
+  const tripsHidden = !(await page.locator('#tab-trips').isVisible().catch(() => false));
+  const placesHidden = !(await page.locator('#tab-places').isVisible().catch(() => false));
+  const settingsHidden = !(await page.locator('#tab-settings').isVisible().catch(() => false));
+  console.log(`${liveVisible ? 'OK ' : 'FAIL'} LIVE tab visible`);
+  console.log(`${routeHidden ? 'OK ' : 'FAIL'} ROUTE tab hidden`);
+  console.log(`${tripsHidden ? 'OK ' : 'FAIL'} TRIPS tab hidden`);
+  console.log(`${placesHidden ? 'OK ' : 'FAIL'} PLACES tab hidden`);
+  console.log(`${settingsHidden ? 'OK ' : 'FAIL'} SETTINGS tab hidden`);
+  if (!liveVisible || !routeHidden || !tripsHidden || !placesHidden || !settingsHidden) allFound = false;
+
+  // Mobile sheet must be hidden on desktop
+  const mobileSheetHidden = !(await page.locator('.mobile-sheet').isVisible().catch(() => false));
+  console.log(`${mobileSheetHidden ? 'OK ' : 'FAIL'} mobile sheet hidden on desktop`);
+  if (!mobileSheetHidden) allFound = false;
 
   // Check for console errors (excluding expected ones)
   const errCount = errors.filter(e =>
