@@ -107,6 +107,15 @@ const { chromium } = require('playwright');
   console.log(`${mobileSheetHidden ? 'OK ' : 'FAIL'} mobile sheet hidden on desktop`);
   if (!mobileSheetHidden) allFound = false;
 
+  // Footer should be at bottom (not overlapping content)
+  const footerBox = await page.locator('footer').boundingBox().catch(() => null);
+  const viewport = page.viewportSize();
+  if (footerBox && viewport) {
+    const footerAtBottom = footerBox.y + footerBox.height >= viewport.height - 5;
+    console.log(`${footerAtBottom ? 'OK ' : 'CHECK'} footer at bottom (y=${footerBox.y}, viewport=${viewport.height})`);
+    if (!footerAtBottom) allFound = false;
+  }
+
   // Check for console errors (excluding expected ones)
   const errCount = errors.filter(e =>
     !e.includes('favicon') &&
