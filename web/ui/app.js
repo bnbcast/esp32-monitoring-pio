@@ -371,7 +371,13 @@ if (!KEY) {
   // ---- Init map -----------------------------------------------------------
   if (typeof MAP !== 'undefined') {
     MAP.create('map-container');
-    MAP.loaded().then(() => { MAP.resize(); });
+    MAP.loaded().then(() => {
+      MAP.resize();
+      // Force a resize after a short delay to ensure map renders
+      setTimeout(() => MAP.resize(), 500);
+    }).catch(() => {
+      console.warn('Map failed to load');
+    });
   }
 
   // ---- GPS controls -------------------------------------------------------
@@ -391,9 +397,11 @@ if (!KEY) {
   // ---- My-location / compass ---------------------------------------------
   const btnMyLocation = $('btnMyLocation');
   if (btnMyLocation && typeof MAP !== 'undefined') {
-    btnMyLocation.textContent = '\u25CF RECENTER';
+    btnMyLocation.innerHTML = '🧭';
     btnMyLocation.className = 'map-btn';
-    btnMyLocation.addEventListener('click', () => {
+    btnMyLocation.title = 'Re-center on vehicle';
+    btnMyLocation.addEventListener('click', (e) => {
+      e.preventDefault();
       MAP.recenterNow();
     });
   }
@@ -402,14 +410,16 @@ if (!KEY) {
   let compassPressTimer = null;
   let northLocked = false;
   if (btnCompass && typeof MAP !== 'undefined') {
-    btnCompass.textContent = 'N';
+    btnCompass.innerHTML = 'N↑';
+    btnCompass.className = 'map-btn';
+    btnCompass.title = 'Reset north / Lock north';
     const startPress = () => { compassPressTimer = setTimeout(() => {
       northLocked = !northLocked;
-      btnCompass.textContent = northLocked ? 'N \u271A' : 'N';
+      btnCompass.innerHTML = northLocked ? 'N↓' : 'N↑';
       MAP.setLockNorth(northLocked);
     }, 600); };
-    const endPress = () => { if (compassPressTimer) { clearTimeout(compassPressTimer); compassPressTimer = null; } else { MAP.resetNorth(); northLocked = false; btnCompass.textContent = 'N'; } };
-    btnCompass.addEventListener('mousedown', startPress);
+    const endPress = () => { if (compassPressTimer) { clearTimeout(compassPressTimer); compassPressTimer = null; } else { MAP.resetNorth(); northLocked = false; btnCompass.innerHTML = 'N↑'; } };
+    btnCompass.addEventListener('mousedown', (e) => { e.preventDefault(); startPress(); });
     btnCompass.addEventListener('touchstart', (e) => { e.preventDefault(); startPress(); }, { passive: false });
     btnCompass.addEventListener('mouseup', endPress);
     btnCompass.addEventListener('mouseleave', endPress);

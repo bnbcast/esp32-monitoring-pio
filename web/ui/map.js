@@ -8,9 +8,23 @@
 
 const MAP = (function () {
   // ---- config -------------------------------------------------------------
-  const RASTER_STYLE = {
-    name: "CartoDB Positron",
-    url:  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+  const MAP_STYLE = {
+    version: 8,
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution: "\u00A9 OpenStreetMap contributors"
+      }
+    },
+    layers: [{
+      id: "osm-layer",
+      type: "raster",
+      source: "osm",
+      minzoom: 0,
+      maxzoom: 19
+    }]
   };
 
   const HEADING = {
@@ -151,7 +165,7 @@ const MAP = (function () {
 
     map = new maplibregl.Map({
       container: id,
-      style: RASTER_STYLE.url,
+      style: MAP_STYLE,
       center: [0, 0],
       zoom: 13,
       pitch: 0,

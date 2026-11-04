@@ -95,6 +95,7 @@
   .map-area { grid-area: map; }
   #map-container {
     width: 100%;
+    height: 45vh;
     max-height: 45vh;
     border: var(--border-w-thick) solid var(--ink);
     box-shadow: var(--shadow);
