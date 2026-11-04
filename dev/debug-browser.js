@@ -9,10 +9,10 @@
  *   node debug-browser.js
  */
 
-const { chromium } = require('../browser-automation/node_modules/playwright');
+const { chromium } = require('playwright');
 
 (async () => {
-  const browser = await chromium.launch({ headless: false });
+  const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
   const logs = [];
@@ -21,6 +21,7 @@ const { chromium } = require('../browser-automation/node_modules/playwright');
   page.on('console', (msg) => {
     const text = `[${msg.type()}] ${msg.text()}`;
     logs.push(text);
+    if (msg.type() === 'error') errors.push(text);
     console.log(text);
   });
 
@@ -29,42 +30,73 @@ const { chromium } = require('../browser-automation/node_modules/playwright');
     console.log('PAGE ERROR:', err.message);
   });
 
-  page.on('websocket', (ws) => {
-    console.log(`WS: ${ws.url()} - ${ws.isClosed() ? 'CLOSED' : 'OPEN'}`);
-  });
-
   await page.goto('http://localhost:5003/?dev&t=dev-test-1234', {
     waitUntil: 'domcontentloaded',
     timeout: 30000,
   });
 
-  console.log('Page loaded, title:', await page.title());
+  console.log('\nPage loaded, title:', await page.title());
 
-  // Wait for data to flow
-  await page.waitForTimeout(5000);
+  // Wait for MQTT + GPS data to flow
+  await page.waitForTimeout(6000);
 
-  // Check elements
-  const gps3dCount = await page.locator('#gps3d-container').count();
-  console.log('3D container found:', gps3dCount);
+  // Check key elements exist (new brutalist DOM)
+  const checks = [
+    ['#sim-badge', 'sim badge'],
+    ['#statusStrip', 'status strip'],
+    ['#statusText', 'status text'],
+    ['#pLink', 'broker pill'],
+    ['#pDev', 'device pill'],
+    ['#pMpu', 'mpu pill'],
+    ['#pGps', 'gps pill'],
+    ['#viewBadge', 'view badge'],
+    ['#btnMap2D', '2D button'],
+    ['#btnMap3D', '3D button'],
+    ['#map-container', 'map container'],
+    ['#view3d', '3D view container'],
+    ['#hudSpeed', 'HUD speed'],
+    ['#hudHeading', 'HUD heading'],
+    ['#hudSource', 'HUD source'],
+    ['#hudDanger', 'HUD danger'],
+    ['#liveSpeed', 'live speed'],
+    ['#liveAlt', 'live alt'],
+    ['#liveSats', 'live sats'],
+    ['#liveHdop', 'live hdop'],
+    ['#liveFix', 'live fix'],
+    ['#btnRecord', 'record btn'],
+    ['#btnReplay', 'replay btn'],
+    ['#btnClear', 'clear btn'],
+    ['#btnMyLocation', 'my location btn'],
+    ['#btnCompass', 'compass btn'],
+    ['#ledB', 'LED blue'],
+    ['#ledW', 'LED white'],
+    ['#ledR', 'LED red'],
+  ];
 
-  const tGps3d = await page.locator('#tGps3d').textContent().catch(() => 'NOT FOUND');
-  console.log('Trace status:', tGps3d);
+  console.log('\n=== ELEMENT CHECKS ===');
+  let allFound = true;
+  for (const [sel, name] of checks) {
+    const count = await page.locator(sel).count();
+    const found = count > 0;
+    if (!found) allFound = false;
+    console.log(`${found ? 'OK ' : 'MISS'} ${name} (${sel})`);
+  }
 
-  const vDist = await page.locator('#vDist').textContent().catch(() => 'NOT FOUND');
-  console.log('Distance:', vDist);
+  // Check for console errors (excluding expected ones)
+  const errCount = errors.filter(e =>
+    !e.includes('favicon') &&
+    !e.includes('404')
+  ).length;
 
-  const vAvgSpd = await page.locator('#vAvgSpd').textContent().catch(() => 'NOT FOUND');
-  console.log('Avg speed:', vAvgSpd);
+  console.log(`\n=== CONSOLE ERRORS (non-favicon/404): ${errCount} ===`);
+  if (errCount === 0) console.log('(none)');
 
-  const vHdop = await page.locator('#vHdop').textContent().catch(() => 'NOT FOUND');
-  console.log('HDOP:', vHdop);
-
+  // Screenshot
   await page.screenshot({ path: 'debug-dev.png', fullPage: true });
-  console.log('Screenshot saved to debug-dev.png');
+  console.log('\nScreenshot saved to debug-dev.png');
 
-  console.log('\n=== ERRORS ===');
-  if (errors.length === 0) console.log('(none)');
-  errors.forEach((e) => console.log(e));
+  console.log(`\n=== RESULT: ${allFound && errCount === 0 ? 'PASS' : 'FAIL'} ===`);
 
   await browser.close();
+  process.exit(allFound && errCount === 0 ? 0 : 1);
 })();

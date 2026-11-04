@@ -45,8 +45,6 @@ const MAP = (function () {
   };
 
   // trail (speed-colored polyline)
-  let trailSource = null;
-  let trailLayer = null;
   let trailCoords = [];
 
   // marker + accuracy circle + heading wedge
@@ -196,11 +194,10 @@ const MAP = (function () {
 
   function initLayers() {
     // ---- Trail source (geojson) ----
-    trailSource = {
+    map.addSource("trail", {
       type: "geojson",
       data: { type: "FeatureCollection", features: [] }
-    };
-    map.addSource("trail", trailSource);
+    });
 
     // ---- Trail layer (speed-colored, solid) ----
     map.addLayer({
@@ -542,10 +539,12 @@ const MAP = (function () {
   }
 
   function updateTrail() {
-    if (!trailSource) return;
+    if (!map) return;
+    const src = map.getSource("trail");
+    if (!src) return;
     const coords = trailCoords.map(p => [p.lng, p.lat]);
     if (coords.length < 2) return;
-    trailSource.setData({
+    src.setData({
       type: "FeatureCollection",
       features: [{
         type: "Feature",
@@ -557,7 +556,10 @@ const MAP = (function () {
 
   function clearTrail() {
     trailCoords = [];
-    if (trailSource) trailSource.setData({ type: "FeatureCollection", features: [] });
+    if (map) {
+      const src = map.getSource("trail");
+      if (src) src.setData({ type: "FeatureCollection", features: [] });
+    }
   }
 
   // ---- camera / controls --------------------------------------------------
