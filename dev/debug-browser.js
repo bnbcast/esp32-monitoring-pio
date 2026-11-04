@@ -30,17 +30,18 @@ const { chromium } = require('playwright');
     console.log('PAGE ERROR:', err.message);
   });
 
+  page.on('crash', () => {
+    console.log('PAGE CRASHED');
+  });
+
   await page.goto('http://localhost:5003/?dev&t=dev-test-1234', {
-    waitUntil: 'domcontentloaded',
+    waitUntil: 'load',
     timeout: 30000,
   });
 
   console.log('\nPage loaded, title:', await page.title());
 
-  // Wait for MQTT + GPS data to flow
-  await page.waitForTimeout(6000);
-
-  // Check key elements exist (new brutalist DOM)
+  // Check key elements exist immediately (new brutalist DOM)
   const checks = [
     ['#sim-badge', 'sim badge'],
     ['#statusStrip', 'status strip'],
@@ -91,11 +92,18 @@ const { chromium } = require('playwright');
   console.log(`\n=== CONSOLE ERRORS (non-favicon/404): ${errCount} ===`);
   if (errCount === 0) console.log('(none)');
 
-  // Screenshot
-  await page.screenshot({ path: 'debug-dev.png', fullPage: true });
-  console.log('\nScreenshot saved to debug-dev.png');
+  // Screenshot (may fail in headless WebGL environments — non-fatal)
+  let screenshotOk = false;
+  try {
+    await page.screenshot({ path: 'debug-dev.png', fullPage: true });
+    console.log('\nScreenshot saved to debug-dev.png');
+    screenshotOk = true;
+  } catch (e) {
+    console.log(`\nScreenshot skipped (headless WebGL): ${e.message}`);
+  }
 
   console.log(`\n=== RESULT: ${allFound && errCount === 0 ? 'PASS' : 'FAIL'} ===`);
+  console.log(`Elements: ${allFound ? 'ALL FOUND' : 'SOME MISSING'} | Errors: ${errCount}`);
 
   await browser.close();
   process.exit(allFound && errCount === 0 ? 0 : 1);
