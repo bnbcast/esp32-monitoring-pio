@@ -169,7 +169,6 @@ const MAP = (function () {
       resize();
     });
 
-    map.on("resize", resize);
     map.on("move", () => {
       if (myLocMode === "free") myLocMode = "free"; // user gestured -> free mode
     });
