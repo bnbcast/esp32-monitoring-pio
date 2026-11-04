@@ -37,6 +37,30 @@ Then open: **http://localhost:5003/?dev&t=dev-test-1234**
 | [11] Compass | Heading needle rotating with COG |
 | Controls | Record/Pause, Replay, Clear, speed slider |
 
+### [07] Map / Heading (free, key-less MapLibre + OpenFreeMap)
+Toggle **BLUEPRINT ↔ MAP** at top-left of the panel.
+- **MAP**: full-screen vector map (Liberty style default), vehicle dot + translucent view cone showing fused heading. Cone narrows with high confidence, widens when uncertain; greys out when stale (>2 s without a fix).
+- **Heading sources (Auto default)**: GPS course when moving >3 km/h with good HDOP; otherwise MPU6050 gyro integrated from last GPS (drift pulled back to GPS). Optional phone compass (DeviceOrientation) or magnetometer (`mag_heading`) if present. Source label + confidence shown in the HUD and on the marker badge.
+- **My-location button** (bottom-right): cycles Recenter → Follow → Compass → North-up. Panning/rotating drops to Free and shows Recenter (auto-resumes after 3 s).
+- **Compass button** (bottom-right): tap resets North; long-press locks North.
+- **Style** (top-right): Liberty / Bright / Positron / Dark. **Terrain**: AWS Terrarium DEM on/off.
+- Keyboard: **C** = recenter, **N** = reset north, **H** = cycle heading source.
+
+### Simulator heading scenarios (dev/server.js)
+Set `SIM_SCENARIO` before starting the server to exercise the heading logic:
+| Scenario | What it tests |
+|---|---|
+| (unset) `normal` | normal circular route, GPS course reliable |
+| `drift` | car stopped (speed 0), MPU yaw keeps rotating → gyro drift hold |
+| `dropout` | periodic GPS fix loss → stale / no-fix handling |
+| `wrap` | heading sweeps across the 0/360 boundary → no 359→1 spin |
+
+```bash
+cd dev
+SIM_SCENARIO=drift npm start     # gyro-drift scenario
+SIM_SCENARIO=wrap  npm start     # 0/360 boundary scenario
+```
+
 ## Files
 
 - `server.js` — HTTP + WebSocket MQTT broker + GPS simulator
