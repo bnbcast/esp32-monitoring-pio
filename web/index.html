@@ -116,6 +116,30 @@ canvas#elevChart{width:100%;height:160px;background:#f0f6fd;border:3px solid var
 .view-btn.active,.dim-btn.active{ background:#b6ff3b; }
 .view-btn.active{ color:#000; }
 
+/* ---- My-location / compass controls (Stage 3) ---- */
+.map-controls{
+  position:absolute; bottom:14px; right:14px; z-index:30;
+  display:flex; flex-direction:column; gap:8px;
+}
+.map-controls button{
+  font:inherit; font-weight:900; text-transform:uppercase; font-size:.7rem;
+  background:#fff; color:var(--ink); border:4px solid var(--ink);
+  box-shadow:4px 4px 0 var(--ink); width:44px; height:44px; border-radius:0;
+  cursor:pointer; display:flex; align-items:center; justify-content:center;
+  line-height:1;
+}
+.map-controls button:hover{ background:#ffe600; }
+.map-controls button:focus-visible{ outline:4px solid #06b6d4; outline-offset:2px; }
+.map-controls button:active{ transform:translate(3px,3px); box-shadow:2px 2px 0 var(--ink); }
+
+.ml-btn{ width:52px; height:52px; font-size:.9rem; border-radius:12px; }
+.ml-state-recenter{ background:#b6ff3b; color:#000; }
+.ml-state-follow{ background:#06b6d4; color:#fff; }
+.ml-state-compass{ background:#dc2626; color:#fff; }
+.ml-state-north{ background:#2447ff; color:#fff; }
+
+.compass-btn{ font-size:1.1rem; letter-spacing:-1px; }
+
 .heading-src-btn{
   font:inherit; font-weight:900; text-transform:uppercase; font-size:.65rem;
   background:#2447ff; color:#fff; border:4px solid var(--ink);
@@ -276,9 +300,13 @@ canvas#elevChart{width:100%;height:160px;background:#f0f6fd;border:3px solid var
       <div class="view-style">
         <button id="btnStyle" type="button" class="style-btn">STYLE: LIBERTY</button>
         <button id="btnTerrain" type="button" class="terrain-btn">TERRAIN: OFF</button>
-        <button id="btnFollow" type="button" class="follow-btn active">FOLLOW</button>
-        <button id="btnRecenter" type="button" class="recenter-btn">RECENTER</button>
         <button id="btnHeadingSrc" type="button" class="heading-src-btn">HDG: AUTO</button>
+      </div>
+
+      <!-- My-location + compass controls (Stage 3) — bottom-right -->
+      <div class="map-controls">
+        <button id="btnMyLocation" type="button" class="ml-btn ml-state-recenter" title="Re-center on vehicle (C)" aria-label="My location / follow mode">●</button>
+        <button id="btnCompass" type="button" class="compass-btn" title="Reset north (N) / long-press lock north" aria-label="Compass">N</button>
       </div>
     </div>
   </section>

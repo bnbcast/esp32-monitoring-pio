@@ -699,26 +699,41 @@ if (!KEY) {
   if (btnReplay) btnReplay.addEventListener('click', toggleReplay);
   if (btnClear) btnClear.addEventListener('click', clearTrace);
 
-  // Map follow / recenter (Stage 2)
-  const btnFollow = $('btnFollow');
-  const btnRecenter = $('btnRecenter');
-  const followModes = ['follow', 'north', 'free'];
-  const followLabels = ['FOLLOW', 'NORTH', 'FREE'];
-  let followIdx = 0;
-  if (btnFollow && typeof MAP !== 'undefined') {
-    btnFollow.addEventListener('click', () => {
-      followIdx = (followIdx + 1) % 3;
-      const m = followModes[followIdx];
-      MAP.setFollowMode(m);
-      btnFollow.textContent = followLabels[followIdx] + (m === 'free' ? '  ●' : '');
-      btnFollow.classList.toggle('active', m !== 'free');
+  // ---- My-location mode button (Stage 3): recenter -> follow -> compass -> north ----
+  const btnMyLocation = $('btnMyLocation');
+  const myLocLabels = { recenter: '● RECENTER', follow: '↗ FOLLOW', compass: '↻ COMPASS', north: '↑ NORTH' };
+  if (btnMyLocation && typeof MAP !== 'undefined') {
+    btnMyLocation.addEventListener('click', () => {
+      const m = MAP.cycleMyLocation();
+      btnMyLocation.textContent = myLocLabels[m];
+      btnMyLocation.className = 'ml-btn ' + { recenter: 'ml-state-recenter', follow: 'ml-state-follow', compass: 'ml-state-compass', north: 'ml-state-north' }[m];
     });
   }
-  if (btnRecenter && typeof MAP !== 'undefined') {
-    btnRecenter.addEventListener('click', () => MAP.recenter());
+
+  // ---- Compass button: tap reset north, long-press lock north ----
+  const btnCompass = $('btnCompass');
+  let compassPressTimer = null;
+  if (btnCompass && typeof MAP !== 'undefined') {
+    const startPress = () => {
+      compassPressTimer = setTimeout(() => {
+        const locked = MAP.toggleLockNorth();
+        btnCompass.textContent = locked ? 'N ✚' : 'N';
+        btnCompass.classList.toggle('compass-locked', locked);
+      }, 600);
+    };
+    const endPress = () => {
+      if (compassPressTimer) { clearTimeout(compassPressTimer); compassPressTimer = null; }
+      else MAP.resetNorth();
+    };
+    btnCompass.addEventListener('mousedown', startPress);
+    btnCompass.addEventListener('touchstart', (e) => { e.preventDefault(); startPress(); }, { passive: false });
+    btnCompass.addEventListener('mouseup', endPress);
+    btnCompass.addEventListener('mouseleave', endPress);
+    btnCompass.addEventListener('touchend', endPress);
+    btnCompass.addEventListener('click', (e) => { if (!compassPressTimer) endPress(); });
   }
 
-  // Heading source selector (Stage 1): Auto / GPS only / Phone compass / Gyro(MAG)
+  // ---- Heading source selector (Stage 1) ----
   const btnHeadingSrc = $('btnHeadingSrc');
   const headingSrcLabels = { auto: 'HDG: AUTO', gps: 'HDG: GPS', phone: 'HDG: PHONE', mag: 'HDG: MAG' };
   const headingSrcOrder = ['auto', 'gps', 'phone', 'mag'];
@@ -730,14 +745,23 @@ if (!KEY) {
       MAP.setHeadingSource(pref);
       btnHeadingSrc.textContent = headingSrcLabels[pref];
       btnHeadingSrc.className = 'heading-src-btn ' + pref;
-      // request phone permission on gesture when switching to phone
       if (pref === 'phone' && typeof window.__requestPhoneCompass === 'function') {
         window.__requestPhoneCompass();
       }
     });
   }
 
-  // Live heading readout in the banner/HUD area (called at end of renderBanner)
+  // ---- Keyboard shortcuts: C=recenter, N=reset north, H=cycle heading source ----
+  window.addEventListener('keydown', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'c' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.recenterNow(); }
+    else if (k === 'n' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.resetNorth(); }
+    else if (k === 'h' && typeof MAP !== 'undefined') { e.preventDefault();
+      if (btnHeadingSrc) btnHeadingSrc.click(); }
+  });
+
+  // ---- Live heading readout in the banner/HUD area (called at end of renderBanner) ----
   function renderHeading() {
     if (typeof MAP === 'undefined') return;
     const h = MAP.getHeading();

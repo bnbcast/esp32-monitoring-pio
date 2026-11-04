@@ -125,9 +125,23 @@ const MAP = (() => {
       }
     });
 
-    // Detect user panning -> switch to Free follow mode
-    map.on('mousedown', () => { userPanning = true; setFollowMode('free'); });
-    map.on('dragstart', () => { userPanning = true; setFollowMode('free'); });
+    // Detect user panning/rotating -> drop to Free, resume tracking after debounce.
+    function _userGesture() {
+      userPanning = true;
+      setFollowMode('free');
+      lastUserInteractionTs = Date.now();
+      const btn = document.getElementById('btnMyLocation');
+      if (btn) { btn.className = 'ml-btn ' + ML_STATES.recenter; myLocationMode = 'recenter'; myLocPending = true; }
+      clearTimeout(window._mlDebounceTimer);
+      window._mlDebounceTimer = setTimeout(() => {
+        userPanning = false;
+        if (myLocationMode === 'free' || myLocationMode === 'recenter') setMyLocationMode('follow');
+      }, ML_DEBOUNCE_MS);
+    }
+    map.on('mousedown', _userGesture);
+    map.on('dragstart', _userGesture);
+    map.on('rotatestart', _userGesture);
+    map.on('zoomstart', _userGesture);
 
     return true;
   }
@@ -210,6 +224,102 @@ const MAP = (() => {
     });
     userPanning = false;
     if (followMode === 'free') setFollowMode('follow');
+  }
+
+  // ---- my-location state machine (Stage 3) ---------------------------------
+  // recenter -> follow -> compass -> north -> (back to recenter)
+  const ML_MODES = ['recenter', 'follow', 'compass', 'north'];
+  const ML_LABELS = { recenter: 'RECENTER', follow: 'FOLLOW', compass: 'COMPASS', north: 'NORTH' };
+  const ML_STATES = { recenter: 'ml-state-recenter', follow: 'ml-state-follow', compass: 'ml-state-compass', north: 'ml-state-north' };
+  let myLocationMode = 'recenter';
+  let lockNorth = false;
+  let myLocPending = false;   // one-shot recenter pending
+  let lastUserInteractionTs = 0;
+  const ML_DEBOUNCE_MS = 3000; // GPS won't fight user gestures for this long
+
+  function cycleMyLocation() {
+    const i = ML_MODES.indexOf(myLocationMode);
+    const next = ML_MODES[(i + 1) % ML_MODES.length];
+    setMyLocationMode(next);
+    return myLocationMode;
+  }
+  function getMyLocationMode() { return myLocationMode; }
+
+  function setMyLocationMode(mode) {
+    if (!ML_MODES.includes(mode)) return;
+    myLocationMode = mode;
+    userPanning = (mode === 'free');
+    lastUserInteractionTs = Date.now();
+    const btn = document.getElementById('btnMyLocation');
+    if (btn) {
+      btn.className = 'ml-btn ' + ML_STATES[mode];
+      btn.title = ML_LABELS[mode] + ' mode';
+      btn.setAttribute('aria-pressed', mode !== 'recenter');
+    }
+    if (mode === 'recenter') { myLocPending = true; requestTrackingUpdate(); }
+    else if (mode === 'follow' || mode === 'compass' || mode === 'north') { requestTrackingUpdate(); }
+    return myLocationMode;
+  }
+
+  function requestTrackingUpdate() {
+    if (myLocPending) { myLocPending = false; }
+    updateTrackingCamera();
+  }
+
+  // Call whenever the vehicle position/heading changes. Respects gesture debounce.
+  function updateTrackingCamera() {
+    if (!map || !initialized || !vehicle.target) return;
+    const now = Date.now();
+    const userIdle = (now - lastUserInteractionTs) > ML_DEBOUNCE_MS;
+    if (userPanning && userIdle) {
+      // debounce expired: resume tracking if in a tracking mode
+      userPanning = false;
+      if (myLocationMode === 'free') setMyLocationMode('follow');
+    }
+    if (userPanning) return; // user is in control
+
+    const bearing = (myLocationMode === 'follow' || myLocationMode === 'compass') ? vehicle.heading : 0;
+    const pitch = is3D ? 45 : 0;
+    map.easeTo({
+      center: [vehicle.target.lng, vehicle.target.lat],
+      bearing: lockNorth ? 0 : bearing,
+      pitch,
+      duration: 500, easing: (t) => t * (2 - t),
+    });
+  }
+
+  function recenterNow() {
+    if (!map || !initialized || !vehicle.target) return;
+    userPanning = false;
+    lastUserInteractionTs = Date.now();
+    map.easeTo({
+      center: [vehicle.target.lng, vehicle.target.lat],
+      bearing: lockNorth ? 0 : vehicle.heading,
+      pitch: is3D ? 45 : 0,
+      duration: 700, easing: (t) => t * (2 - t),
+    });
+  }
+
+  function resetNorth() {
+    if (!map || !initialized) return;
+    lockNorth = true;
+    map.easeTo({ bearing: 0, pitch: is3D ? 45 : 0, duration: 700, easing: (t) => t * (2 - t) });
+    setFollowMode('north');
+    const btn = document.getElementById('btnCompass');
+    if (btn) btn.classList.add('compass-locked');
+  }
+
+  function toggleLockNorth() {
+    lockNorth = !lockNorth;
+    const btn = document.getElementById('btnCompass');
+    if (btn) btn.classList.toggle('compass-locked', lockNorth);
+    if (lockNorth) resetNorth();
+    return lockNorth;
+  }
+  function isLockNorth() { return lockNorth; }
+
+  function getCompassBearing() {
+    return map ? map.getBearing() : 0;
   }
 
   // ---- angle helpers --------------------------------------------------------
@@ -576,13 +686,8 @@ const MAP = (() => {
       }
     }
 
-    // Follow-mode camera: centre on the vehicle.
-    if (followMode === 'follow') {
-      map.easeTo({ center: [lng, lat], bearing: vehicle.heading, pitch: is3D ? 45 : 0,
-        duration: 500, easing: (t) => t * (2 - t) });
-    } else if (followMode === 'north') {
-      map.easeTo({ center: [lng, lat], bearing: 0, pitch: is3D ? 45 : 0, duration: 500 });
-    }
+    // Unified my-location tracking (respects gesture debounce).
+    updateTrackingCamera();
   }
 
   // ---- camera ---------------------------------------------------------------
@@ -611,6 +716,8 @@ const MAP = (() => {
     setFollowMode, getFollowMode, isUserPanning,
     setVehicle, recenter, clearTrail,
     setHeadingSource, getHeadingSource, getHeading,
+    cycleMyLocation, setMyLocationMode, getMyLocationMode,
+    recenterNow, resetNorth, toggleLockNorth, isLockNorth, getCompassBearing,
     flyTo, easeTo,
     getMap: () => map,
   };
