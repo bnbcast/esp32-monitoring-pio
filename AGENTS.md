@@ -31,10 +31,19 @@ include/                # Project headers
 lib/                    # Private libraries
 test/                   # Unit tests
 web/
-  index.html            # Browser dashboard frontend (from GitHub bnbcast/esp32-monitoring)
-  app.js                # Dashboard JavaScript (MQTT ingestion + panels + map controls)
-  mqtt-mini.js          # Tiny MQTT WebSocket client for browser
-  map.js                # MapLibre GL JS map module: base map, vehicle, heading fusion, my-location/compass
+  index.html            # Browser dashboard frontend (neo-brutalist, no inline CSS)
+  css/
+    tokens.css          # Brutalist design tokens (flat colors, hard shadows, zero radius)
+    base.css            # Resets, typography, monospace telemetry
+    components.css      # Panels, buttons, pills, banner, status strip, readouts, leds
+    layout.css          # Desktop grid + mobile bottom sheet
+    map.css             # MapLibre overrides, map HUD, view badges, controls
+  ui/
+    app.js              # Dashboard JS: MQTT ingestion, ingestGPS(), renderData,
+                        # renderBanner, view switch 2D/3D, tabs, controls, shortcuts
+    map.js              # MapLibre GL JS module: base map, vehicle, heading fusion,
+                        # my-location/compass, trail, accuracy circle, heading wedge
+    mqtt-mini.js        # Tiny MQTT WebSocket client for browser
   vendor/               # Vendored maplibre-gl@3 (local, no CDN)
 ```
 
@@ -71,13 +80,50 @@ The dev server (`dev/server.js`) speaks MQTT-over-WebSocket and publishes simula
 
 **With `?dev`**: connects to `ws://localhost:5003/mqtt` and auto-uses topic key `dev-test-1234`.
 
-### Web dashboard — Map & Heading (free, key-less)
-Panel [07] toggles between the legacy Blueprint Three.js trace and a MapLibre map:
-- **Stack**: maplibre-gl@3 (vendored in `web/vendor/`, no CDN) + CartoDB raster basemaps (Dark Matter default, Positron light) — free, key-less, fast raster tiles. No Google Maps, no API keys, no terrain/DEM layer.
-- **Heading fusion** (`MAP.setVehicle` → `_fuseHeading`): GPS course when speed >3 km/h and HDOP ≤ 6; otherwise MPU6050 gyro (`yaw`) integrated from last GPS, with complementary drift pull-back toward GPS. Optional phone compass (DeviceOrientation, iOS permission via `window.__requestPhoneCompass`) or `mag_heading` payload field. Source label + confidence exposed via `MAP.getHeading()`.
-- **Controls**: my-location button (recenter→follow→compass→north), compass button (tap reset north, long-press lock north), style/terrain toggles. Gestures drop to Free and resume tracking after a 3 s debounce. Keyboard: C=recenter, N=reset north, H=cycle heading source.
-- **3D car** (Stage 3): MapLibre custom layer rendering a Three.js F1 car at the live fix, oriented by fused heading + MPU roll/pitch, color-coded by danger level (d.lvl), scales with zoom.
-- **Simulator scenarios** (`SIM_SCENARIO` env): `normal` (default), `drift` (stopped + gyro), `dropout` (GPS loss), `wrap` (0/360 boundary).
+## Web dashboard — neo-brutalist UI + Map (free, key-less)
+
+The dashboard was refactored (6 stages) to a single neo-brutalist visual language:
+flat solid colors, thick black borders, hard offset shadows, zero rounded corners,
+no gradients/blur/glassmorphism. Two views toggle via the top bar:
+
+- **2D MAP** — MapLibre GL JS map with CartoDB raster basemaps, vehicle marker,
+  heading wedge (view cone), accuracy circle, speed-colored trail, map HUD.
+- **3D STREET** — Three.js street-view canvas (chase / driver / orbit cameras),
+  dead-reckoned car from GPS speed/heading, asphalt ground + building blocks.
+
+### UI structure
+- Top bar: title, SIMULATED badge, status pills (broker/device/MPU/ACS/GPS),
+  status strip (SAFE/WARNING/DANGER/NO SIGNAL), view toggle, theme toggle
+- Desktop: map (left, ~2/3) + side panel tabs (right, ~1/3)
+- Mobile: map full-width + bottom sheet with same tabs
+- Map HUD: speed, heading, source, danger overlaid on the map
+
+### Map & heading (unchanged data path)
+- **Stack**: maplibre-gl@3 (vendored in `web/vendor/`, no CDN) + CartoDB raster basemaps
+  (Dark Matter default, Positron light) — free, key-less, fast raster tiles.
+  No Google Maps, no API keys, no terrain/DEM layer.
+  CSP allows only: `wss://broker.hivemq.com:8884`, `ws://localhost:5003`,
+  `basemaps.cartocdn.com`, `tiles.basemaps.cartocdn.com`.
+- **Heading fusion** (`MAP.setVehicle` → `_fuseHeading`): GPS course when speed >3 km/h
+  and HDOP ≤ 6; otherwise MPU6050 gyro (`yaw`) integrated from last GPS, with
+  complementary drift pull-back toward GPS. Optional phone compass or `mag_heading`
+  payload field. Source label + confidence exposed via `MAP.getHeading()`.
+- **Controls**: my-location button (recenter→follow→compass→north), compass button
+  (tap reset north, long-press lock north), style toggle (dark/light). Gestures drop
+  to Free and resume tracking after a 3 s debounce. Keyboard: C=recenter, N=reset north,
+  H=cycle heading source, V=toggle 2D/3D view, 1/2/3=chase/driver/orbit street cam.
+- **3D car** (Stage 3): Three.js F1 car in the street-view canvas, oriented by fused
+  heading + MPU roll/pitch, color-coded by danger level (d.lvl).
+- **Simulator scenarios** (`SIM_SCENARIO` env): `normal` (default), `drift`
+  (stopped + gyro), `dropout` (GPS loss), `wrap` (0/360 boundary).
+
+### Testing the dashboard
+`cd dev && npm start` → http://localhost:5003/?dev&t=dev-test-1234
+
+Playwright check (`dev/debug-browser.js`): loads the dev URL, verifies 30 key
+DOM elements, asserts zero console errors. Chromium install:
+`cd dev && npm install playwright && npx playwright install chromium`
+(Headless screenshot capture may fail due to WebGL; element checks are the gate.)
 
 ## Environment
 
@@ -119,3 +165,21 @@ Servers configured:
 ## ESP32 Build Verified
 
 `pio run -e esp32-mqtt-simple` completes successfully. Firmware builds to `.pio/build/esp32-mqtt-simple/firmware.bin`.
+
+---
+
+## UI Refactor — neo-brutalist (6 stages, committed)
+
+| Stage | Description | Status |
+|---|---|---|
+| 0 | Read & inventory + propose file structure | Done |
+| 1 | Brutalist design system (CSS tokens: flat colors, hard shadows, zero radius) | Done |
+| 2 | Layout (desktop grid + mobile bottom sheet, status strip, HUD) | Done |
+| 3 | 2D MAP view (MapLibre, vehicle, trail, heading, controls) | Done |
+| 4 | 3D STREET view (Three.js street scene, chase/driver/orbit cams) | Done |
+| 5 | Polish & removal of old UI (deleted web/app.js, web/map.js, blueprint CSS) | Done |
+| 6 | Playwright checks + docs update | Done |
+
+All commits on `master` branch at `C:/Users/User/Documents/PlatformIO/Projects/esp32`.
+Live data path unchanged: MQTT over WebSocket, `ingestGPS()`, `?dev&t=...`,
+simulator, GPS + MPU6050 fields — no firmware/payload changes.
