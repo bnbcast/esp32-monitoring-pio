@@ -6,22 +6,52 @@
 // No Google Maps, no paid providers, no API keys.
 // ---------------------------------------------------------------------------
 const MAP = (() => {
-  // ---- free, key-less styles (OpenFreeMap) ---------------------------------
-  const STYLES = {
-    liberty: 'https://tiles.openfreemap.org/styles/liberty',
-    bright: 'https://tiles.openfreemap.org/styles/bright',
-    positron: 'https://tiles.openfreemap.org/styles/positron',
-    dark: 'https://tiles.openfreemap.org/styles/dark',
+  // ---- free, key-less raster basemaps (CartoDB) ----------------------------
+  // Fast raster tiles, no API key, attribution required. Dark Matter = spectacle
+  // for racing telemetry (neon roads on dark); Positron = light/daytime.
+  const RASTER_STYLES = {
+    dark: {
+      version: 8,
+      sources: {
+        carto: {
+          type: 'raster',
+          tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          minzoom: 0,
+          maxzoom: 19,
+          attribution: '© OpenStreetMap contributors © CARTO',
+        },
+      },
+      layers: [{
+        id: 'carto-dark',
+        type: 'raster',
+        source: 'carto',
+        minzoom: 0,
+        maxzoom: 19,
+      }],
+    },
+    light: {
+      version: 8,
+      sources: {
+        carto: {
+          type: 'raster',
+          tiles: ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          minzoom: 0,
+          maxzoom: 19,
+          attribution: '© OpenStreetMap contributors © CARTO',
+        },
+      },
+      layers: [{
+        id: 'carto-light',
+        type: 'raster',
+        source: 'carto',
+        minzoom: 0,
+        maxzoom: 19,
+      }],
+    },
   };
-  const DEFAULT_STYLE = 'liberty';
-
-  // ---- AWS Terrain Tiles (Terrarium PNG, raster-dem) -----------------------
-  // Canonical MapLibre / AWS Terrain Tiles values:
-  //   url:  https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png
-  //   Terrarium encoding: elevation = -32768 + (R * 256 + G + B / 256)
-  const TERRAIN_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
-  const TERRAIN_SOURCE = 'aws-terrain';
-  const TERRAIN_EXAGGERATION = 1.5;
+  const DEFAULT_STYLE = 'dark';
 
   // ---- heading fusion config (Stage 1) ------------------------------------
   const HEADING = {
@@ -40,7 +70,6 @@ const MAP = (() => {
   const loadPromise = new Promise((res) => { loadResolve = res; });
 
   let styleKey = DEFAULT_STYLE;
-  let terrainOn = false;
   let is3D = true;        // pitched 3D vs flat 2D
   let followMode = 'free'; // follow | north | free
   let userPanning = false;
@@ -83,7 +112,7 @@ const MAP = (() => {
 
     map = new maplibregl.Map({
       container: mapDiv,
-      style: STYLES[styleKey],
+      style: RASTER_STYLES[styleKey],
       center: [0, 0],
       zoom: 1,
       pitch: is3D ? 45 : 0,
@@ -100,20 +129,13 @@ const MAP = (() => {
     map.on('load', () => {
       initialized = true;
       loadResolve(map);
-      if (terrainOn) enableTerrain();
       _initPhoneCompass();
       try { map.addLayer(carLayer); } catch (e) { console.warn('add car layer failed:', e); }
     });
 
-    // Catch terrain/tile load errors gracefully so a bad tile URL doesn't crash the page.
+    // Catch tile load errors gracefully so a bad tile URL doesn't crash the page.
     map.on('error', (e) => {
-      if (e.error && /elevation-tiles-prod|terrarium/.test(String(e.error))) {
-        console.warn('terrain tile error (non-fatal):', e.error);
-        terrainOn = false;
-        disableTerrain();
-        const btn = document.getElementById('btnTerrain');
-        if (btn) btn.textContent = 'TERRAIN: N/A';
-      }
+      if (e.error) console.warn('tile error (non-fatal):', e.error);
     });
 
     // Smooth glide: interpolate the rendered marker toward the last fix each frame.
@@ -179,16 +201,18 @@ const MAP = (() => {
 
   // ---- style switching ------------------------------------------------------
   function setStyle(key) {
-    if (!STYLES[key]) return;
+    if (!RASTER_STYLES[key]) return;
     styleKey = key;
     if (map) {
-      map.setStyle(STYLES[key]);
+      map.setStyle(RASTER_STYLES[key]);
       // style wipe removes all sources/layers; re-init them on next vehicle update
       vehicle.layersReady = false;
       // re-add the 3D car custom layer (wiped by setStyle)
-      if (carLayer && carLayer.ready && !map.getLayer('car-3d-layer')) {
-        try { map.addLayer(carLayer); } catch (e) { /* layer may already exist */ }
-      }
+      map.once('style.load', () => {
+        if (carLayer && carLayer.ready && !map.getLayer('car-3d-layer')) {
+          try { map.addLayer(carLayer); } catch (e) { /* layer may already exist */ }
+        }
+      });
     }
   }
 
@@ -200,35 +224,6 @@ const MAP = (() => {
     if (map && initialized) map.easeTo({ pitch: is3D ? 45 : 0, duration: 700 });
   }
   function is3DMode() { return is3D; }
-
-  // ---- terrain --------------------------------------------------------------
-  function enableTerrain() {
-    terrainOn = true;
-    if (!map || !initialized) return;
-    try {
-      if (map.getSource(TERRAIN_SOURCE)) {
-        map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
-        return;
-      }
-      map.addSource(TERRAIN_SOURCE, {
-        type: 'raster-dem',
-        url: TERRAIN_URL,
-        tileSize: 256,
-        maxzoom: 14,
-      });
-      map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
-    } catch (e) {
-      console.warn('terrain tiles unavailable:', e.message);
-      terrainOn = false;
-      disableTerrain();
-    }
-  }
-
-  function disableTerrain() {
-    terrainOn = false;
-    if (map) map.setTerrain({ source: null });
-  }
-  function isTerrainOn() { return terrainOn; }
 
   // ---- follow mode ----------------------------------------------------------
   function setFollowMode(mode) {
@@ -950,7 +945,6 @@ const MAP = (() => {
     create, loaded, resize, show, hide,
     setStyle, getStyle,
     set3D, is3DMode,
-    enableTerrain, disableTerrain, isTerrainOn,
     setFollowMode, getFollowMode, isUserPanning,
     setVehicle, recenter, clearTrail,
     setHeadingSource, getHeadingSource, getHeading,

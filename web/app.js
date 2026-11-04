@@ -664,27 +664,15 @@ if (!KEY) {
   if (btnDim2D) btnDim2D.addEventListener('click', () => setDim3D(false));
   if (btnDim3D) btnDim3D.addEventListener('click', () => setDim3D(true));
 
-  // Style switcher (OpenFreeMap: liberty / bright / positron / dark)
-  const styleLabels = { liberty: 'LIBERTY', bright: 'BRIGHT', positron: 'POSITRON', dark: 'DARK' };
-  let curStyle = 'liberty';
+  // Style switcher (CartoDB: DARK = spectacle/racing, LIGHT = daytime)
+  const styleLabels = { dark: 'DARK', light: 'LIGHT' };
+  let curStyle = 'dark';
   const btnStyle = $('btnStyle');
   if (btnStyle && typeof MAP !== 'undefined') {
     btnStyle.addEventListener('click', () => {
-      const order = ['liberty', 'bright', 'positron', 'dark'];
-      curStyle = order[(order.indexOf(curStyle) + 1) % order.length];
+      curStyle = curStyle === 'dark' ? 'light' : 'dark';
       btnStyle.textContent = 'STYLE: ' + styleLabels[curStyle];
       MAP.setStyle(curStyle);
-    });
-  }
-
-  // Terrain on/off (AWS Terrarium DEM)
-  const btnTerrain = $('btnTerrain');
-  if (btnTerrain && typeof MAP !== 'undefined') {
-    let terrainOn = false;
-    btnTerrain.addEventListener('click', () => {
-      terrainOn = !terrainOn;
-      btnTerrain.textContent = 'TERRAIN: ' + (terrainOn ? 'ON' : 'OFF');
-      if (terrainOn) MAP.enableTerrain(); else MAP.disableTerrain();
     });
   }
 
