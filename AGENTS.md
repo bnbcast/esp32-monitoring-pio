@@ -104,6 +104,8 @@ no gradients/blur/glassmorphism. Two views toggle via the top bar:
   No Google Maps, no API keys, no terrain/DEM layer.
   CSP allows only: `wss://broker.hivemq.com:8884`, `ws://localhost:5003`,
   `basemaps.cartocdn.com`, `tiles.basemaps.cartocdn.com`.
+- **Three.js is lazy-loaded** only when the 3D STREET view is activated
+  (keeps initial page load lighter for 2D MAP-only users).
 - **Heading fusion** (`MAP.setVehicle` → `_fuseHeading`): GPS course when speed >3 km/h
   and HDOP ≤ 6; otherwise MPU6050 gyro (`yaw`) integrated from last GPS, with
   complementary drift pull-back toward GPS. Optional phone compass or `mag_heading`
