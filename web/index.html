@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 https://basemaps.cartocdn.com https://tiles.basemaps.cartocdn.com https://tile.openstreetmap.org; img-src 'self' data: https://basemaps.cartocdn.com https://tiles.basemaps.cartocdn.com https://tile.openstreetmap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 https://basemaps.cartocdn.com https://tiles.basemaps.cartocdn.com https://nominatim.openstreetmap.org; img-src 'self' data: https://basemaps.cartocdn.com https://tiles.basemaps.cartocdn.com; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
@@ -62,6 +62,25 @@
           <div class="hud-unit">deg</div>
         </div>
         <div class="hud-box">
+          <div class="hud-label">LAT</div>
+          <div class="hud-value" id="hudLat">--</div>
+          <div class="hud-unit">deg</div>
+        </div>
+        <div class="hud-box">
+          <div class="hud-label">LNG</div>
+          <div class="hud-value" id="hudLng">--</div>
+          <div class="hud-unit">deg</div>
+        </div>
+        <div class="hud-box">
+          <div class="hud-label">ALT</div>
+          <div class="hud-value" id="hudAlt">--</div>
+          <div class="hud-unit">m</div>
+        </div>
+        <div class="hud-box">
+          <div class="hud-label">ADDRESS</div>
+          <div class="hud-value" id="hudAddress" style="font-size: 0.7rem;">--</div>
+        </div>
+        <div class="hud-box">
           <div class="hud-label">SOURCE</div>
           <div class="hud-value" id="hudSource">--</div>
           <div class="hud-unit">conf</div>
@@ -85,6 +104,7 @@
         <button class="tab-btn" data-tab="route">ROUTE</button>
         <button class="tab-btn" data-tab="trips">TRIPS</button>
         <button class="tab-btn" data-tab="places">PLACES</button>
+        <button class="tab-btn" data-tab="wifi">WIFI</button>
         <button class="tab-btn" data-tab="settings">SETTINGS</button>
       </div>
 
@@ -171,6 +191,30 @@
           </div>
         </div>
       </div>
+
+      <!-- WIFI tab -->
+      <div class="tab-panel" id="tab-wifi">
+        <div class="hud-card">
+          <h3>Device Status</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="wifiUp">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">WiFi RSSI</div><div class="val" id="wifiRssi">--</div><div class="lbl">dBm</div></div>
+            <div class="hud-item"><div class="lbl">Free Heap</div><div class="val" id="wifiHeap">--</div><div class="lbl">KB</div></div>
+            <div class="hud-item"><div class="lbl">Last Update</div><div class="val" id="wifiLast">--</div><div class="lbl"></div></div>
+          </div>
+        </div>
+        <div class="hud-card">
+          <h3>WiFi Connection</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">SSID</div><div class="val" id="wifiSsid">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">BSSID</div><div class="val" id="wifiBssid">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">Channel</div><div class="val" id="wifiChan">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">Status</div><div class="val" id="wifiStatus">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">IP Address</div><div class="val" id="wifiIp">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">MAC</div><div class="val" id="wifiMac">--</div><div class="lbl"></div></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -182,10 +226,33 @@
       <button class="tab-btn" data-tab="route">ROUTE</button>
       <button class="tab-btn" data-tab="trips">TRIPS</button>
       <button class="tab-btn" data-tab="places">PLACES</button>
+      <button class="tab-btn" data-tab="wifi">WIFI</button>
       <button class="tab-btn" data-tab="settings">SETTINGS</button>
     </div>
     <div class="tab-panel active" id="tab-live-mobile">
       <!-- Mobile LIVE content injected via JS -->
+    </div>
+    <div class="tab-panel" id="tab-wifi-mobile">
+      <div class="hud-card">
+        <h3>Device Status</h3>
+        <div class="hud-grid">
+          <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="wifiUpMobile">--</div><div class="lbl"></div></div>
+          <div class="hud-item"><div class="lbl">WiFi RSSI</div><div class="val" id="wifiRssiMobile">--</div><div class="lbl">dBm</div></div>
+          <div class="hud-item"><div class="lbl">Free Heap</div><div class="val" id="wifiHeapMobile">--</div><div class="lbl">KB</div></div>
+          <div class="hud-item"><div class="lbl">Last Update</div><div class="val" id="wifiLastMobile">--</div><div class="lbl"></div></div>
+        </div>
+      </div>
+      <div class="hud-card">
+        <h3>WiFi Connection</h3>
+        <div class="hud-grid">
+          <div class="hud-item"><div class="lbl">SSID</div><div class="val" id="wifiSsidMobile">--</div><div class="lbl"></div></div>
+          <div class="hud-item"><div class="lbl">BSSID</div><div class="val" id="wifiBssidMobile">--</div><div class="lbl"></div></div>
+          <div class="hud-item"><div class="lbl">Channel</div><div class="val" id="wifiChanMobile">--</div><div class="lbl"></div></div>
+          <div class="hud-item"><div class="lbl">Status</div><div class="val" id="wifiStatusMobile">--</div><div class="lbl"></div></div>
+          <div class="hud-item"><div class="lbl">IP Address</div><div class="val" id="wifiIpMobile">--</div><div class="lbl"></div></div>
+          <div class="hud-item"><div class="lbl">MAC</div><div class="val" id="wifiMacMobile">--</div><div class="lbl"></div></div>
+        </div>
+      </div>
     </div>
   </div>
 

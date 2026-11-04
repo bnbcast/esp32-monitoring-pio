@@ -11,17 +11,17 @@ const MAP = (function () {
   const MAP_STYLE = {
     version: 8,
     sources: {
-      osm: {
+      carto: {
         type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tiles: ["https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"],
         tileSize: 256,
-        attribution: "\u00A9 OpenStreetMap contributors"
+        attribution: "\u00A9 OpenStreetMap contributors © CARTO"
       }
     },
     layers: [{
-      id: "osm-layer",
+      id: "carto-layer",
       type: "raster",
-      source: "osm",
+      source: "carto",
       minzoom: 0,
       maxzoom: 19
     }]

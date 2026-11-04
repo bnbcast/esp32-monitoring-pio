@@ -21,6 +21,52 @@ const setPill = (el, text, cls) => { el.textContent = text; el.className = "pill
 const uptime = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60]
   .map(n => String(n).padStart(2, "0")).join(":");
 
+// ---- Reverse Geocoding (free, key-less) -----------------------------------
+let lastGeocode = 0;
+let geocodeCache = new Map();
+
+async function reverseGeocode(lat, lng) {
+  const now = Date.now();
+  const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  
+  // Return cached result if available
+  if (geocodeCache.has(cacheKey)) {
+    const el = document.getElementById('hudAddress');
+    if (el) el.textContent = geocodeCache.get(cacheKey);
+    return;
+  }
+  
+  // Throttle: max 1 request per 2 seconds
+  if (now - lastGeocode < 2000) return;
+  lastGeocode = now;
+  
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+    const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!resp.ok) throw new Error('Geocode failed');
+    const data = await resp.json();
+    
+    let address = '--';
+    if (data.display_name) {
+      // Shorten the display name for HUD
+      const parts = data.display_name.split(',');
+      address = parts.slice(0, 3).join(', ');
+      if (address.length > 35) address = address.slice(0, 35) + '...';
+    }
+    
+    geocodeCache.set(cacheKey, address);
+    if (geocodeCache.size > 50) {
+      const firstKey = geocodeCache.keys().next().value;
+      geocodeCache.delete(firstKey);
+    }
+    const el = document.getElementById('hudAddress');
+    if (el) el.textContent = address;
+  } catch (e) {
+    // Silent fail - keep last known address
+    console.debug('Reverse geocode failed:', e.message);
+  }
+}
+
 // ---- topic key ------------------------------------------------------------
 function readKey() {
   const raw = location.hash.slice(1);
@@ -194,10 +240,45 @@ function renderData(d) {
   set('gAlt', num(gps.alt) ? fmt(gps.alt) + ' m' : '--');
   set('gSpd', num(gps.kmh) ? fmt(gps.kmh) + ' km/h' : '--');
 
+  // Map HUD - position
+  set('hudLat', fmt(gps.lat, 6)); set('hudLng', fmt(gps.lng, 6));
+  set('hudAlt', num(gps.alt) ? fmt(gps.alt) + ' m' : '--');
+  // Reverse geocode for address (throttled)
+  if (typeof reverseGeocode === 'function' && num(gps.lat) && num(gps.lng)) {
+    reverseGeocode(gps.lat, gps.lng);
+  }
+
   // Device values
   set('sUp', num(d.up) ? uptime(d.up) : '--');
   set('sRssi', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
   set('sHeap', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
+
+  // WiFi tab values (desktop)
+  set('wifiUp', num(d.up) ? uptime(d.up) : '--');
+  set('wifiRssi', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
+  set('wifiHeap', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
+  set('wifiLast', new Date().toLocaleTimeString());
+
+  // WiFi connection info - sys object should have wifi data
+  const wifi = sys.wifi || {};
+  set('wifiSsid', wifi.ssid || '--');
+  set('wifiBssid', wifi.bssid || '--');
+  set('wifiChan', wifi.channel || '--');
+  set('wifiStatus', wifi.status || (num(sys.rssi) ? 'Connected' : 'Disconnected'));
+  set('wifiIp', wifi.ip || '--');
+  set('wifiMac', wifi.mac || '--');
+
+  // WiFi tab values (mobile)
+  set('wifiUpMobile', num(d.up) ? uptime(d.up) : '--');
+  set('wifiRssiMobile', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
+  set('wifiHeapMobile', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
+  set('wifiLastMobile', new Date().toLocaleTimeString());
+  set('wifiSsidMobile', wifi.ssid || '--');
+  set('wifiBssidMobile', wifi.bssid || '--');
+  set('wifiChanMobile', wifi.channel || '--');
+  set('wifiStatusMobile', wifi.status || (num(sys.rssi) ? 'Connected' : 'Disconnected'));
+  set('wifiIpMobile', wifi.ip || '--');
+  set('wifiMacMobile', wifi.mac || '--');
 
   // Danger LEDs — solid blocks
   const lvl = d.lvl;
