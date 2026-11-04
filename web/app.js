@@ -550,7 +550,11 @@ function onMessage(topic, payload, retained) {
   if (typeof MAP !== 'undefined' && d.gps && typeof d.gps.lat === 'number') {
     const g = d.gps;
     MAP.setVehicle(g.lng, g.lat, typeof g.cog === 'number' ? g.cog : 0,
-      typeof g.kmh === 'number' ? g.kmh : 0, g.hdop, g.fix, Date.now());
+      typeof g.kmh === 'number' ? g.kmh : 0, g.hdop, g.fix, Date.now(),
+      typeof d.roll === 'number' ? d.roll : null,
+      typeof d.pitch === 'number' ? d.pitch : null,
+      typeof d.yaw === 'number' ? d.yaw : null,
+      typeof d.mag_heading === 'number' ? d.mag_heading : null);
     if (g.fix) { lastFixPos = { lng: g.lng, lat: g.lat }; lastFixTs = Date.now(); }
   }
 
@@ -713,4 +717,49 @@ if (!KEY) {
   if (btnRecenter && typeof MAP !== 'undefined') {
     btnRecenter.addEventListener('click', () => MAP.recenter());
   }
+
+  // Heading source selector (Stage 1): Auto / GPS only / Phone compass / Gyro(MAG)
+  const btnHeadingSrc = $('btnHeadingSrc');
+  const headingSrcLabels = { auto: 'HDG: AUTO', gps: 'HDG: GPS', phone: 'HDG: PHONE', mag: 'HDG: MAG' };
+  const headingSrcOrder = ['auto', 'gps', 'phone', 'mag'];
+  let headingSrcIdx = 0;
+  if (btnHeadingSrc && typeof MAP !== 'undefined') {
+    btnHeadingSrc.addEventListener('click', () => {
+      headingSrcIdx = (headingSrcIdx + 1) % headingSrcOrder.length;
+      const pref = headingSrcOrder[headingSrcIdx];
+      MAP.setHeadingSource(pref);
+      btnHeadingSrc.textContent = headingSrcLabels[pref];
+      btnHeadingSrc.className = 'heading-src-btn ' + pref;
+      // request phone permission on gesture when switching to phone
+      if (pref === 'phone' && typeof window.__requestPhoneCompass === 'function') {
+        window.__requestPhoneCompass();
+      }
+    });
+  }
+
+  // Live heading readout in the banner/HUD area (called at end of renderBanner)
+  function renderHeading() {
+    if (typeof MAP === 'undefined') return;
+    const h = MAP.getHeading();
+    let el = $('hudHeading');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'hudHeading';
+      el.style.fontFamily = 'Courier New, monospace';
+      el.style.fontWeight = '700';
+      el.style.fontSize = '.9rem';
+      el.style.textTransform = 'uppercase';
+      const banner = $('banner');
+      if (banner) banner.parentNode.insertBefore(el, banner.nextSibling);
+    }
+    const conf = Math.round(h.confidence * 100);
+    el.textContent = 'HEADING ' + Math.round(h.heading) + '°  [' + h.source + ' ' + conf + '%]';
+    el.style.color = h.confidence > 0.6 ? '#06b6d4' : (h.confidence > 0.3 ? '#ffe600' : '#dc2626');
+  }
+  renderBanner = (function(orig) {
+    return function() {
+      orig.apply(this, arguments);
+      renderHeading();
+    };
+  })(renderBanner);
 }

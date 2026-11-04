@@ -23,6 +23,15 @@ const MAP = (() => {
   const TERRAIN_SOURCE = 'aws-terrain';
   const TERRAIN_EXAGGERATION = 1.5;
 
+  // ---- heading fusion config (Stage 1) ------------------------------------
+  const HEADING = {
+    GPS_SPEED_THRESHOLD: 3,       // km/h — above this, trust GPS course
+    GPS_HDOP_MAX: 6,              // above this, GPS heading not trusted
+    GYRO_DRIFT_PULL: 0.03,        // per-frame pull back toward last GPS heading
+    CONFIDENCE_DECAY_MS: 15000,   // gyro confidence decays after this without GPS
+    PHONE_COMPASS_OFFSET: 0,      // degrees, user-calibratable offset for device alpha
+  };
+
   let map = null;
   let container = null;
   let mapDiv = null;
@@ -35,6 +44,27 @@ const MAP = (() => {
   let is3D = true;        // pitched 3D vs flat 2D
   let followMode = 'free'; // follow | north | free
   let userPanning = false;
+
+  // ---- heading fusion state -----------------------------------------------
+  let headingState = {
+    source: 'HOLD',        // GPS | GYRO | PHONE | MAG | HOLD
+    heading: 0,            // fused heading degrees [0,360)
+    confidence: 0,         // 0..1
+    lastGpsHeading: 0,
+    lastGpsTs: 0,
+    gyroAnchor: 0,         // heading anchor for gyro integration
+    gyroAnchorTs: 0,
+    lastMpuYaw: null,
+    lastMpuTs: null,
+    phoneHeading: null,
+    phoneTs: null,
+    magHeading: null,
+    magTs: null,
+    preferred: 'auto',     // auto | gps | phone | mag (user setting)
+    phonePermitted: false, // DeviceOrientation permission granted
+  };
+
+  let headingWatch = null; // DeviceOrientation watch id (fallback)
 
   // ---- lifecycle -----------------------------------------------------------
   function _ensureMapDiv(containerId) {
@@ -71,6 +101,7 @@ const MAP = (() => {
       initialized = true;
       loadResolve(map);
       if (terrainOn) enableTerrain();
+      _initPhoneCompass();
     });
 
     // Smooth glide: interpolate the rendered marker toward the last fix each frame.
@@ -181,6 +212,170 @@ const MAP = (() => {
     if (followMode === 'free') setFollowMode('follow');
   }
 
+  // ---- angle helpers --------------------------------------------------------
+  function _normAngle(a) { return ((a % 360) + 360) % 360; }
+  function _shortestDelta(from, to) {
+    let d = _normAngle(to - from);
+    if (d > 180) d -= 360;
+    return d;
+  }
+
+  function _gpsUsable(cog, speed, hdop, fix) {
+    return !!fix && typeof cog === 'number' && typeof speed === 'number'
+      && speed >= HEADING.GPS_SPEED_THRESHOLD
+      && (hdop === null || hdop <= HEADING.GPS_HDOP_MAX);
+  }
+
+  // ---- heading source preference -------------------------------------------
+  function setHeadingSource(pref) {
+    if (!['auto', 'gps', 'phone', 'mag'].includes(pref)) return;
+    headingState.preferred = pref;
+    // force re-evaluation on next GPS/IMU update
+    headingState.lastMpuYaw = null;
+    return headingState.preferred;
+  }
+  function getHeadingSource() { return headingState.preferred; }
+
+  // ---- DeviceOrientation (phone compass) -----------------------------------
+  function _initPhoneCompass() {
+    if (headingState.phonePermitted) return;
+    if (typeof DeviceOrientationEvent === 'undefined' && typeof window.DeviceOrientationEvent === 'undefined') return;
+    const onDeviceOrientation = (e) => {
+      let alpha = e.alpha; // degrees 0-360, north = 0, clockwise
+      if (typeof alpha !== 'number') return;
+      // webkitCompassHeading (legacy iOS) is compass heading directly; alpha is device-relative
+      if (typeof e.webkitCompassHeading === 'number') alpha = e.webkitCompassHeading;
+      alpha = _normAngle(alpha + HEADING.PHONE_COMPASS_OFFSET);
+      headingState.phoneHeading = alpha;
+      headingState.phoneTs = Date.now();
+      if (headingState.preferred === 'auto' || headingState.preferred === 'phone') {
+        headingState.source = 'PHONE';
+        headingState.heading = alpha;
+        headingState.confidence = 0.7;
+      }
+    };
+    const request = () => {
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+          .then((resp) => {
+            if (resp === 'granted') {
+              headingState.phonePermitted = true;
+              window.addEventListener('deviceorientation', onDeviceOrientation);
+            }
+          })
+          .catch(() => { headingState.phonePermitted = false; });
+      } else {
+        headingState.phonePermitted = true;
+        window.addEventListener('deviceorientation', onDeviceOrientation);
+      }
+    };
+    // Expose globally so a UI button can request permission on a user gesture.
+    window.__requestPhoneCompass = request;
+    return request;
+  }
+
+  // ---- heading fusion -------------------------------------------------------
+  function _fuseHeading(gpsCog, gpsSpeed, gpsHdop, gpsFix, mpuYaw, magHeading, ts) {
+    const now = ts || Date.now();
+    const gpsOk = _gpsUsable(gpsCog, gpsSpeed, gpsHdop, gpsFix);
+
+    // ---- IMU (gyro) integration -------------------------------------------
+    if (typeof mpuYaw === 'number') {
+      if (headingState.lastMpuYaw !== null && headingState.lastMpuTs !== null) {
+        const dt = Math.max(0, now - headingState.lastMpuTs);
+        const delta = _shortestDelta(headingState.lastMpuYaw, mpuYaw);
+        headingState.gyroAnchor = _normAngle(headingState.gyroAnchor + delta);
+        headingState.gyroAnchorTs = now;
+      }
+      headingState.lastMpuYaw = mpuYaw;
+      headingState.lastMpuTs = now;
+    }
+
+    // ---- GPS course (absolute) --------------------------------------------
+    if (gpsOk) {
+      headingState.lastGpsHeading = gpsCog;
+      headingState.lastGpsTs = now;
+      headingState.gyroAnchor = gpsCog;
+      headingState.gyroAnchorTs = now;
+    }
+
+    // ---- MAG (absolute) ---------------------------------------------------
+    if (typeof magHeading === 'number') {
+      headingState.magHeading = _normAngle(magHeading);
+      headingState.magTs = now;
+    }
+
+    // ---- decide source + fused heading ------------------------------------
+    let source = headingState.source;
+    let heading = headingState.heading;
+    let confidence = headingState.confidence;
+
+    const prefer = headingState.preferred;
+    const gpsAge = now - headingState.lastGpsTs;
+
+    if (prefer === 'gps') {
+      if (gpsOk) {
+        source = 'GPS'; heading = gpsCog;
+        confidence = Math.min(1, gpsSpeed / 20) * (gpsHdop === null ? 1 : Math.max(0, 1 - gpsHdop / 10));
+      } else {
+        source = 'HOLD'; heading = headingState.lastGpsHeading; confidence = 0.2;
+      }
+    } else if (prefer === 'phone') {
+      if (headingState.phoneHeading !== null && (now - headingState.phoneTs) < 5000) {
+        source = 'PHONE'; heading = headingState.phoneHeading; confidence = 0.75;
+      } else if (gpsOk) {
+        source = 'GPS'; heading = gpsCog;
+        confidence = Math.min(1, gpsSpeed / 20) * (gpsHdop === null ? 1 : Math.max(0, 1 - gpsHdop / 10));
+      } else {
+        source = 'GYRO'; heading = _normAngle(headingState.gyroAnchor);
+        confidence = Math.max(0, 1 - gpsAge / HEADING.CONFIDENCE_DECAY_MS) * 0.6;
+      }
+    } else if (prefer === 'mag') {
+      if (headingState.magHeading !== null && (now - headingState.magTs) < 5000) {
+        source = 'MAG'; heading = headingState.magHeading; confidence = 0.8;
+      } else if (gpsOk) {
+        source = 'GPS'; heading = gpsCog;
+        confidence = Math.min(1, gpsSpeed / 20) * (gpsHdop === null ? 1 : Math.max(0, 1 - gpsHdop / 10));
+      } else {
+        source = 'GYRO'; heading = _normAngle(headingState.gyroAnchor);
+        confidence = Math.max(0, 1 - gpsAge / HEADING.CONFIDENCE_DECAY_MS) * 0.6;
+      }
+    } else {
+      // auto: GPS when moving & usable, else gyro integrated from GPS anchor
+      if (gpsOk) {
+        source = 'GPS'; heading = gpsCog;
+        confidence = Math.min(1, gpsSpeed / 20) * (gpsHdop === null ? 1 : Math.max(0, 1 - gpsHdop / 10));
+      } else {
+        // phone/mag overrides take precedence if fresh
+        let usedAbsolute = false;
+        if (headingState.phoneHeading !== null && (now - headingState.phoneTs) < 5000) {
+          source = 'PHONE'; heading = headingState.phoneHeading; confidence = 0.7; usedAbsolute = true;
+        } else if (headingState.magHeading !== null && (now - headingState.magTs) < 5000) {
+          source = 'MAG'; heading = headingState.magHeading; confidence = 0.8; usedAbsolute = true;
+        }
+        if (!usedAbsolute) {
+          source = 'GYRO';
+          heading = _normAngle(headingState.gyroAnchor);
+          // drift pull back toward last GPS heading
+          const pull = HEADING.GYRO_DRIFT_PULL * Math.min(1, Math.max(0, now - headingState.lastMpuTs || 0) / 1000 || 1);
+          const d = _shortestDelta(heading, headingState.lastGpsHeading);
+          heading = _normAngle(heading + d * pull * 0.1);
+          headingState.gyroAnchor = heading;
+          confidence = Math.max(0, 1 - gpsAge / HEADING.CONFIDENCE_DECAY_MS);
+        }
+      }
+    }
+
+    headingState.source = source;
+    headingState.heading = _normAngle(heading);
+    headingState.confidence = Math.max(0, Math.min(1, confidence));
+    return { source: headingState.source, heading: headingState.heading, confidence: headingState.confidence };
+  }
+
+  function getHeading() {
+    return { source: headingState.source, heading: headingState.heading, confidence: headingState.confidence, preferred: headingState.preferred };
+  }
+
   // ---- local distance (meters) ---------------------------------------------
   function distM(lat1, lg1, lat2, lg2) {
     const toRad = d => d * Math.PI / 180;
@@ -195,6 +390,8 @@ const MAP = (() => {
     el: null, marker: null,
     current: null, target: null,
     heading: 0, lastHeading: 0,
+    headingSource: 'HOLD', headingConfidence: 0,
+    roll: 0, pitch: 0,
     speed: 0, hdop: null, fix: false,
     trail: [], maxTrail: 400,
     layersReady: false,
@@ -209,6 +406,23 @@ const MAP = (() => {
     const head = document.createElement('div');
     head.className = 'vehicle-head';
     el.appendChild(head);
+    const badge = document.createElement('div');
+    badge.className = 'vehicle-heading-badge';
+    badge.textContent = 'HOLD 0%';
+    badge.style.fontSize = '10px';
+    badge.style.fontFamily = 'sans-serif';
+    badge.style.fontWeight = '700';
+    badge.style.background = 'rgba(0,0,0,0.75)';
+    badge.style.color = '#fff';
+    badge.style.border = '1px solid #fff';
+    badge.style.borderRadius = '2px';
+    badge.style.padding = '1px 4px';
+    badge.style.position = 'absolute';
+    badge.style.bottom = '22px';
+    badge.style.left = '50%';
+    badge.style.transform = 'translateX(-50%)';
+    badge.style.pointerEvents = 'none';
+    el.appendChild(badge);
     vehicle.el = el;
     return el;
   }
@@ -274,8 +488,10 @@ const MAP = (() => {
   /**
    * Feed a live GPS fix into the map. Called from app.js on every valid GPS message.
    * Never extrapolates past the last fix; marker glides toward it each frame.
+   * @param roll/pitch/yaw MPU6050 orientation (degrees). yaw is integrated as gyro delta.
+   * @param magHeading optional compass heading (degrees) from a magnetometer.
    */
-  function setVehicle(lng, lat, heading, speed, hdop, fix, ts) {
+  function setVehicle(lng, lat, heading, speed, hdop, fix, ts, roll, pitch, yaw, magHeading) {
     if (!map || !initialized) return;
     _initVehicleLayers();
 
@@ -289,15 +505,23 @@ const MAP = (() => {
     vehicle.speed = typeof speed === 'number' ? speed : 0;
     vehicle.hdop = typeof hdop === 'number' ? hdop : null;
     vehicle.fix = !!fix;
+    if (typeof roll === 'number') vehicle.roll = roll;
+    if (typeof pitch === 'number') vehicle.pitch = pitch;
 
-    // Heading: trust GPS course when moving, otherwise hold last known heading.
-    if (typeof heading === 'number' && vehicle.speed > 1) vehicle.lastHeading = heading;
-    vehicle.heading = vehicle.lastHeading;
+    // ---- heading fusion ----------------------------------------------------
+    const fused = _fuseHeading(heading, speed, hdop, fix, yaw, magHeading, ts);
+    vehicle.heading = fused.heading;
+    vehicle.headingSource = fused.source;
+    vehicle.headingConfidence = fused.confidence;
+
     if (vehicle.marker) {
       vehicle.marker.setRotation(vehicle.heading);
       const el = vehicle.marker.getElement();
-      el.style.opacity = vehicle.fix ? '1' : '0.5';
+      el.style.opacity = vehicle.fix ? '1' : '0.4';
       el.style.filter = vehicle.fix ? 'none' : 'grayscale(1)';
+      // badge text: source + confidence
+      const badge = el.querySelector('.vehicle-heading-badge');
+      if (badge) badge.textContent = fused.source + ' ' + Math.round(fused.confidence * 100) + '%';
     }
 
     // Accuracy circle sized from HDOP (pixels).
@@ -354,6 +578,7 @@ const MAP = (() => {
     enableTerrain, disableTerrain, isTerrainOn,
     setFollowMode, getFollowMode, isUserPanning,
     setVehicle, recenter, clearTrail,
+    setHeadingSource, getHeadingSource, getHeading,
     flyTo, easeTo,
     getMap: () => map,
   };

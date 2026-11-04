@@ -116,6 +116,16 @@ canvas#elevChart{width:100%;height:160px;background:#f0f6fd;border:3px solid var
 .view-btn.active,.dim-btn.active{ background:#b6ff3b; }
 .view-btn.active{ color:#000; }
 
+.heading-src-btn{
+  font:inherit; font-weight:900; text-transform:uppercase; font-size:.65rem;
+  background:#2447ff; color:#fff; border:4px solid var(--ink);
+  box-shadow:3px 3px 0 var(--ink); padding:5px 10px; cursor:pointer;
+}
+.heading-src-btn:hover{ background:#06b6d4; }
+.heading-src-btn.phone{ background:#06b6d4; }
+.heading-src-btn.mag{ background:#b6ff3b; color:#000; }
+.heading-src-btn.gps{ background:#ffe600; color:#000; }
+
 /* ---- Vehicle marker (Stage 2) ------------------------------------------- */
 .vehicle-marker .vehicle-head{
   position:absolute; top:50%; left:50%; width:0; height:0;
@@ -268,6 +278,7 @@ canvas#elevChart{width:100%;height:160px;background:#f0f6fd;border:3px solid var
         <button id="btnTerrain" type="button" class="terrain-btn">TERRAIN: OFF</button>
         <button id="btnFollow" type="button" class="follow-btn active">FOLLOW</button>
         <button id="btnRecenter" type="button" class="recenter-btn">RECENTER</button>
+        <button id="btnHeadingSrc" type="button" class="heading-src-btn">HDG: AUTO</button>
       </div>
     </div>
   </section>
