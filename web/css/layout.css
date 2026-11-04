@@ -1,0 +1,158 @@
+/* ---------------------------------------------------------------------------
+   Layout — desktop + mobile
+--------------------------------------------------------------------------- */
+
+/* Page shell */
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; padding: 12px; gap: 12px; }
+
+/* Desktop: top bar | map (left) + side panel (right) */
+.desktop-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "map    side";
+  gap: 12px;
+  height: calc(100vh - 24px);
+}
+.top-bar-area   { grid-area: topbar; }
+.map-area       { grid-area: map; }
+.side-panel     { grid-area: side; display: flex; flex-direction: column; gap: 12px; }
+
+/* Map container — fills its cell */
+.map-area { position: relative; }
+#map-container {
+  width: 100%;
+  height: 100%;
+  border: var(--border-w-thick) solid var(--ink);
+  box-shadow: var(--shadow);
+  background: var(--paper);
+  overflow: hidden;
+}
+.map-host { width: 100%; height: 100%; overflow: hidden; }
+.map-host .maplibregl-canvas { display: block; width: 100% !important; height: 100% !important; }
+
+/* Side panel tabs */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: var(--border-w) solid var(--ink);
+  margin-bottom: 8px;
+}
+.tab-btn {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  border-bottom: 4px solid transparent;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.tab-btn.active { border-bottom-color: var(--ink); box-shadow: var(--shadow); background: var(--yellow); }
+.tab-btn:active { transform: translate(2px, 2px); box-shadow: var(--shadow-ac); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Telemetry HUD inside side panel */
+.hud-card {
+  border: var(--border-w) solid var(--ink);
+  box-shadow: var(--shadow);
+  background: var(--paper);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+.hud-card h3 {
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.hud-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.hud-item {
+  border: 3px solid var(--ink);
+  padding: 8px;
+  background: var(--bg);
+}
+.hud-item .lbl { font-size: 0.65rem; text-transform: uppercase; color: #666; margin-bottom: 2px; }
+.hud-item .val { font-family: var(--font-mono); font-weight: 900; font-size: 1.4rem; }
+
+/* Heading source badge */
+.heading-badge {
+  display: inline-block;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+/* Controls group */
+.controls-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 900px) {
+  .app-shell { padding: 8px; gap: 8px; }
+
+  .desktop-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      "topbar"
+      "map"
+      "side";
+    height: auto;
+    min-height: 100vh;
+  }
+  .side-panel { order: 3; }
+
+  /* Bottom sheet panel on mobile */
+  .side-panel {
+    position: fixed;
+    inset: auto 0 0 0;
+    width: 100%;
+    max-height: 55vh;
+    background: var(--paper);
+    border-top: var(--border-w-thick) solid var(--ink);
+    box-shadow: -6px -6px 0 var(--ink);
+    z-index: 100;
+    padding: 12px;
+    overflow-y: auto;
+  }
+  /* Drag handle on sheet */
+  .sheet-handle {
+    width: 40px;
+    height: 8px;
+    background: var(--ink);
+    border: 2px solid var(--ink);
+    margin: 0 auto 8px;
+  }
+
+  /* Map full screen on mobile */
+  .map-area { grid-area: map; min-height: 45vh; }
+
+  .top-bar-area { padding: 10px 12px; }
+  .top-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .top-bar .pills { justify-content: center; }
+
+  .tab-btn { font-size: 0.65rem; padding: 6px 2px; }
+  .map-btn { width: 48px; height: 48px; font-size: 0.9rem; }
+}

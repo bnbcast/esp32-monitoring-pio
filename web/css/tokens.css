@@ -1,0 +1,38 @@
+/* ---------------------------------------------------------------------------
+   Neo-brutalist design tokens — ESP32 Live Dashboard
+   Flat, loud, hard edges. No gradients, no blur, no glassmorphism, no rounded
+   corners. Everything is a solid color with a thick black border and a hard
+   offset shadow.
+--------------------------------------------------------------------------- */
+
+/* Light (default) */
+:root {
+  --bg:        #f2efe4;   /* off-white / cream page background */
+  --ink:       #000000;   /* pure black text / borders */
+  --paper:     #ffffff;   /* panel background */
+  --yellow:    #ffe600;   /* accent: warning / highlight */
+  --red:       #ff3b1f;   /* accent: danger */
+  --blue:      #2447ff;   /* accent: info / primary */
+  --green:     #00e676;   /* accent: ok / safe */
+  --shadow:    6px 6px 0 var(--ink);   /* hard offset shadow, no blur */
+  --shadow-ac: 3px 3px 0 var(--ink);   /* pressed shadow */
+  --border-w:  4px;       /* default border width */
+  --border-w-thick: 6px;  /* map / important panel borders */
+  --radius:    0;         /* zero rounded corners everywhere */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Courier New", Courier, monospace;
+}
+
+/* Dark mode — brutalist inversion, same accents */
+body.theme-dark {
+  --bg:   #0a0a0a;
+  --ink:  #ffffff;
+  --paper: #111111;
+}
+
+/* Status / danger level colors (solid blocks, not glows) --
+   mapped from d.lvl: 0 = safe(green), 1 = warn(blue/white), 2 = danger(red) */
+--lv0: var(--green);
+--lv1: var(--yellow);
+--lv2: var(--red);
