@@ -1,0 +1,12 @@
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+trace/
+
+# Auth state (contains cookies/tokens — do NOT commit)
+auth/state.json
+*.json
+
+# Node
+node_modules/

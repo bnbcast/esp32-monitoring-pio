@@ -1,0 +1,9 @@
+node_modules/
+.pio/
+.dev/
+dist/
+build/
+*.log
+.env
+.idea/
+.vscode/

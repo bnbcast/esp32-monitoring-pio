@@ -1,0 +1,13 @@
+{
+  "name": "esp32-dashboard-dev",
+  "version": "1.0.0",
+  "description": "Local dev server for testing ESP32 dashboard without hardware",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "maplibre-gl": "^3.6.2",
+    "ws": "^8.14.2"
+  }
+}
