@@ -30,11 +30,6 @@ const MAP = (function () {
 
   // ---- map state ----------------------------------------------------------
   let map = null;
-  let threeRenderer = null;
-  let threeScene = null;
-  let threeCamera = null;
-  let threeCar = null;
-  let customLayer = null;
   let styleName = "dark";
 
   // vehicle state
@@ -246,150 +241,6 @@ const MAP = (function () {
         "fill-opacity": 0.25
       }
     });
-
-    // ---- Custom 3D car layer ----
-    map.addLayer({
-      id: "car-layer",
-      type: "custom",
-      renderingMode: "3d",
-      onAdd: onCarLayerAdd,
-      render: onCarLayerRender
-    }, "trail");
-  }
-
-  function onCarLayerAdd(ctx) {
-    const gl = ctx && ctx.gl;
-    const canvas = gl && gl.canvas;
-    if (!gl || !canvas) {
-      console.warn('CarLayer: no WebGL context, skipping 3D car');
-      return;
-    }
-
-    threeRenderer = new THREE.WebGLRenderer({
-      canvas: canvas,
-      context: gl,
-      alpha: true,
-      premultipliedAlpha: false
-    });
-    threeRenderer.setSize(canvas.width, canvas.height);
-    threeRenderer.autoClear = false;
-
-    threeScene = new THREE.Scene();
-
-    // Camera — match MapLibre view-projection
-    threeCamera = new THREE.PerspectiveCamera(
-      45, canvas.width / canvas.height, 0.1, 1000
-    );
-
-    // Simple F1 car: body + cockpit + wing
-    const group = new THREE.Group();
-
-    // Body
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(2.2, 0.6, 4.4),
-      new THREE.MeshStandardMaterial({ color: 0xff1100 })
-    );
-    body.position.y = 0.3;
-    group.add(body);
-
-    // Cockpit
-    const cockpit = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.4, 1.6),
-      new THREE.MeshStandardMaterial({ color: 0x111111 })
-    );
-    cockpit.position.set(0, 0.6, 0);
-    group.add(cockpit);
-
-    // Front wing
-    const wing = new THREE.Mesh(
-      new THREE.BoxGeometry(3.0, 0.15, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0x111111 })
-    );
-    wing.position.set(0, 0.0, -2.6);
-    group.add(wing);
-
-    // Rear wing
-    const rearWing = new THREE.Mesh(
-      new THREE.BoxGeometry(2.6, 0.25, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0x111111 })
-    );
-    rearWing.position.set(0, 0.35, 2.4);
-    group.add(rearWing);
-
-    // Wheels
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const wheelGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.5, 16);
-    for (const pos of [
-      [-1.3, 0.15, -1.8], [1.3, 0.15, -1.8],
-      [-1.3, 0.15, 1.6], [1.3, 0.15, 1.6]
-    ]) {
-      const w = new THREE.Mesh(wheelGeo, wheelMat);
-      w.position.set(...pos);
-      w.rotation.z = Math.PI / 2;
-      group.add(w);
-    }
-
-    threeCar = group;
-    threeScene.add(group);
-
-    // Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    threeScene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(5, 10, 5);
-    threeScene.add(dir);
-
-    customLayer = ctx;
-  }
-
-  function onCarLayerRender(gl, matrix) {
-    if (!threeRenderer || !threeCamera || !threeCar || !vehicle.lat || !gl) return;
-
-    const c = threeCamera;
-    const m = matrix;
-
-    // Build projection/view matrix from MapLibre
-    const proj = new THREE.Matrix4().fromArray([
-      m[0], m[4], m[8],  m[12],
-      m[1], m[5], m[9],  m[13],
-      m[2], m[6], m[10], m[14],
-      m[3], m[7], m[11], m[15]
-    ]);
-    c.projectionMatrix = proj;
-    c.position.set(0, 0, 0);
-    c.lookAt(0, 0, -1);
-    c.updateMatrixWorld();
-    c.matrixWorldInverse.getInverse(c.matrixWorld);
-
-    // Position car at vehicle location
-    const merc = maplibregl.MercatorCoordinate.fromLngLat(
-      { lng: vehicle.lng, lat: vehicle.lat },
-      0
-    );
-
-    // Orientation quaternion from heading + roll/pitch
-    const headingRad = deg2rad(vehicle.heading);
-    const rollRad = deg2rad(vehicle.roll || 0);
-    const pitchRad = deg2rad(vehicle.pitch || 0);
-
-    const qHeading = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(0, 0, -headingRad, "YXZ")
-    );
-    const qTilt = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(pitchRad, rollRad, 0, "YXZ")
-    );
-    threeCar.position.set(merc.x, merc.y, merc.z);
-    threeCar.quaternion.copy(qHeading).multiply(qTilt);
-
-    // Danger color coding
-    const danger = vehicle.danger || 0;
-    const body = threeCar.children[0];
-    if (body && body.material) {
-      body.material.color.setHex(danger >= 2 ? 0xff3b1f : danger >= 1 ? 0xffe600 : 0xff1100);
-    }
-
-    threeRenderer.render(threeScene, threeCamera);
-    map.triggerRepaint();
   }
 
   // ---- vehicle / trail updates -------------------------------------------
@@ -446,7 +297,7 @@ const MAP = (function () {
     }
 
     // Street view camera
-    if (streetView && threeRenderer) {
+    if (streetView) {
       updateStreetCamera();
     }
   }
@@ -610,10 +461,11 @@ const MAP = (function () {
   function resize() {
     if (!map || !container) return;
     map.resize();
-    if (threeRenderer) {
-      const c = container;
-      threeRenderer.setSize(c.clientWidth, c.clientHeight);
-      if (threeCamera) threeCamera.aspect = c.clientWidth / c.clientHeight;
+    const s = window.__threeStreet;
+    if (s && s.renderer) {
+      const c = s.el;
+      s.renderer.setSize(c.clientWidth, c.clientHeight);
+      if (s.camera) s.camera.aspect = c.clientWidth / c.clientHeight;
     }
   }
 
