@@ -37,16 +37,60 @@ Then open: **http://localhost:5003/?dev&t=dev-test-1234**
 | [11] Compass | Heading needle rotating with COG |
 | Controls | Record/Pause, Replay, Clear, speed slider |
 
-### [07] Map / Heading (free, key-less MapLibre + OpenFreeMap)
-Toggle **BLUEPRINT ↔ MAP** at top-left of the panel.
-- **MAP**: full-screen vector map (Liberty style default), vehicle dot + translucent view cone showing fused heading. Cone narrows with high confidence, widens when uncertain; greys out when stale (>2 s without a fix).
-- **Heading sources (Auto default)**: GPS course when moving >3 km/h with good HDOP; otherwise MPU6050 gyro integrated from last GPS (drift pulled back to GPS). Optional phone compass (DeviceOrientation) or magnetometer (`mag_heading`) if present. Source label + confidence shown in the HUD and on the marker badge.
-- **My-location button** (bottom-right): cycles Recenter → Follow → Compass → North-up. Panning/rotating drops to Free and shows Recenter (auto-resumes after 3 s).
-- **Compass button** (bottom-right): tap resets North; long-press locks North.
-- **Style** (top-right): CartoDB DARK (spectacle — neon roads on dark, ideal for racing telemetry) / LIGHT (daytime). Fast raster tiles, no API key.
-- Keyboard: **C** = recenter, **N** = reset north, **H** = cycle heading source.
-- **3D car** (Stage 3): an F1-style Three.js car rendered as a MapLibre custom layer, placed at the live fix, oriented by fused heading + MPU roll/pitch, and color-coded by danger level (cyan/yellow/red). It scales with the map zoom.
-- **Basemap**: CartoDB Dark Matter (default) or Positron — free, key-less raster tiles. No terrain/DEM layer (removed; was 404ing and slow).
+## Features You Can Test
+
+| Panel | What to look for |
+|---|---|
+| Status strip (top) | SAFE / WARNING / DANGER / NO SIGNAL + tilt, warn, danger |
+| Status pills | Broker, Device, MPU, ACS, GPS state |
+| Live tab (side panel) | Speed, altitude, sats, HDOP, fix, heading, tilt, amps, distance, max speed |
+| Controls | Record/Pause, Replay, Clear, speed slider, units |
+| LEDs | Blue (safe), White (warn), Red (danger) |
+| Map HUD | Speed, heading, source, danger overlaid on the map |
+| View toggle | 2D MAP ↔ 3D STREET (top bar + map buttons) |
+| Theme toggle | Light ↔ Dark |
+
+### Map / Heading (free, key-less MapLibre + CartoDB)
+Two views switchable from the top bar:
+
+**2D MAP**: full-screen CartoDB raster map (Dark Matter default / Positron light),
+vehicle marker, speed-colored trail, accuracy circle, translucent heading wedge
+(view cone ~ confidence). Map HUD shows speed / heading / source / danger.
+
+**3D STREET**: Three.js street-view canvas with asphalt ground, road markings,
+building blocks, and a dead-reckoned F1 car driven by GPS speed + fused heading.
+Camera modes: Chase (behind), Driver (cockpit), Orbit (above). Keys: 1/2/3.
+
+- **Heading sources (Auto default)**: GPS course when moving >3 km/h with good HDOP;
+  otherwise MPU6050 gyro integrated from last GPS (drift pulled back to GPS).
+  Optional phone compass or `mag_heading` if present. Source label + confidence
+  shown in the HUD and heading badge.
+- **My-location button** (bottom-right on map): cycles Recenter → Follow → Compass →
+  North-up. Panning/rotating drops to Free and shows Recenter (auto-resumes after 3 s).
+- **Compass button** (bottom-right on map): tap resets North; long-press locks North.
+- **Style** (top-right on map): CartoDB DARK (spectacle — neon roads on dark) / LIGHT.
+  Fast raster tiles, no API key.
+- Keyboard: **C** = recenter, **N** = reset north, **H** = cycle heading source,
+  **V** = toggle 2D/3D view, **1/2/3** = chase/driver/orbit street cam.
+- **3D car** (Stage 3): F1-style Three.js car in the street-view canvas, oriented by
+  fused heading + MPU roll/pitch, color-coded by danger level (green/yellow/red).
+- **Basemap**: CartoDB Dark Matter (default) or Positron — free, key-less raster tiles.
+  No terrain/DEM layer (removed; was 404ing and slow).
+
+### Simulator heading scenarios (dev/server.js)
+Set `SIM_SCENARIO` before starting the server to exercise the heading logic:
+| Scenario | What it tests |
+|---|---|
+| (unset) `normal` | normal circular route, GPS course reliable |
+| `drift` | car stopped (speed 0), MPU yaw keeps rotating → gyro drift hold |
+| `dropout` | periodic GPS fix loss → stale / no-fix handling |
+| `wrap` | heading sweeps across the 0/360 boundary → no 359→1 spin |
+
+```bash
+cd dev
+SIM_SCENARIO=drift npm start     # gyro-drift scenario
+SIM_SCENARIO=wrap  npm start     # 0/360 boundary scenario
+```
 
 ### Simulator heading scenarios (dev/server.js)
 Set `SIM_SCENARIO` before starting the server to exercise the heading logic:
