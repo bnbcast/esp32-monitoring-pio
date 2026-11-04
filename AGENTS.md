@@ -84,45 +84,35 @@ The dev server (`dev/server.js`) speaks MQTT-over-WebSocket and publishes simula
 
 The dashboard was refactored (6 stages) to a single neo-brutalist visual language:
 flat solid colors, thick black borders, hard offset shadows, zero rounded corners,
-no gradients/blur/glassmorphism. Two views toggle via the top bar:
-
-- **2D MAP** — MapLibre GL JS map with CartoDB raster basemaps, vehicle marker,
-  heading wedge (view cone), accuracy circle, speed-colored trail, map HUD.
-- **3D STREET** — Three.js street-view canvas (chase / driver / orbit cameras),
-  dead-reckoned car from GPS speed/heading, asphalt ground + building blocks.
+no gradients/blur/glassmorphism. Single light theme, MapLibre 2D map only.
 
 ### UI structure
 - Top bar: title, SIMULATED badge, status pills (broker/device/MPU/ACS/GPS),
-  status strip (SAFE/WARNING/DANGER/NO SIGNAL), view toggle, theme toggle
+  status strip (SAFE/WARNING/DANGER/NO SIGNAL)
 - Desktop: map (left, ~2/3) + side panel tabs (right, ~1/3)
 - Mobile: map full-width + bottom sheet with same tabs
 - Map HUD: speed, heading, source, danger overlaid on the map
 
 ### Map & heading (unchanged data path)
-- **Stack**: maplibre-gl@3 (vendored in `web/vendor/`, no CDN) + CartoDB raster basemaps
-  (Dark Matter default, Positron light) — free, key-less, fast raster tiles.
+- **Stack**: maplibre-gl@3 (vendored in `web/vendor/`, no CDN) + CartoDB Positron
+  (light) raster basemaps — free, key-less, fast raster tiles.
   No Google Maps, no API keys, no terrain/DEM layer.
   CSP allows only: `wss://broker.hivemq.com:8884`, `ws://localhost:5003`,
   `basemaps.cartocdn.com`, `tiles.basemaps.cartocdn.com`.
-- **Three.js is lazy-loaded** only when the 3D STREET view is activated
-  (keeps initial page load lighter for 2D MAP-only users).
 - **Heading fusion** (`MAP.setVehicle` → `_fuseHeading`): GPS course when speed >3 km/h
   and HDOP ≤ 6; otherwise MPU6050 gyro (`yaw`) integrated from last GPS, with
   complementary drift pull-back toward GPS. Optional phone compass or `mag_heading`
   payload field. Source label + confidence exposed via `MAP.getHeading()`.
-- **Controls**: my-location button (recenter→follow→compass→north), compass button
-  (tap reset north, long-press lock north), style toggle (dark/light). Gestures drop
-  to Free and resume tracking after a 3 s debounce. Keyboard: C=recenter, N=reset north,
-  H=cycle heading source, V=toggle 2D/3D view, 1/2/3=chase/driver/orbit street cam.
-- **3D car** (Stage 3): Three.js F1 car in the street-view canvas, oriented by fused
-  heading + MPU roll/pitch, color-coded by danger level (d.lvl).
+- **Controls**: my-location button (recenter/follow toggle), compass button
+  (tap reset north, long-press lock north). Gestures drop to Free and resume tracking
+  after a 3 s debounce. Keyboard: C=recenter, N=reset north, H=cycle heading source.
 - **Simulator scenarios** (`SIM_SCENARIO` env): `normal` (default), `drift`
   (stopped + gyro), `dropout` (GPS loss), `wrap` (0/360 boundary).
 
 ### Testing the dashboard
 `cd dev && npm start` → http://localhost:5003/?dev&t=dev-test-1234
 
-Playwright check (`dev/debug-browser.js`): loads the dev URL, verifies 30 key
+Playwright check (`dev/debug-browser.js`): loads the dev URL, verifies key
 DOM elements, asserts zero console errors. Chromium install:
 `cd dev && npm install playwright && npx playwright install chromium`
 (Headless screenshot capture may fail due to WebGL; element checks are the gate.)
@@ -178,7 +168,7 @@ Servers configured:
 | 1 | Brutalist design system (CSS tokens: flat colors, hard shadows, zero radius) | Done |
 | 2 | Layout (desktop grid + mobile bottom sheet, status strip, HUD) | Done |
 | 3 | 2D MAP view (MapLibre, vehicle, trail, heading, controls) | Done |
-| 4 | 3D STREET view (Three.js street scene, chase/driver/orbit cams) | Done |
+| 4 | 3D STREET view (removed — light map only) | Done |
 | 5 | Polish & removal of old UI (deleted web/app.js, web/map.js, blueprint CSS) | Done |
 | 6 | Playwright checks + docs update | Done |
 
