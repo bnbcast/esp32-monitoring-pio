@@ -43,9 +43,10 @@ Toggle **BLUEPRINT ↔ MAP** at top-left of the panel.
 - **Heading sources (Auto default)**: GPS course when moving >3 km/h with good HDOP; otherwise MPU6050 gyro integrated from last GPS (drift pulled back to GPS). Optional phone compass (DeviceOrientation) or magnetometer (`mag_heading`) if present. Source label + confidence shown in the HUD and on the marker badge.
 - **My-location button** (bottom-right): cycles Recenter → Follow → Compass → North-up. Panning/rotating drops to Free and shows Recenter (auto-resumes after 3 s).
 - **Compass button** (bottom-right): tap resets North; long-press locks North.
-- **Style** (top-right): Liberty / Bright / Positron / Dark. **Terrain**: AWS Terrarium DEM on/off.
+- **Style** (top-right): CartoDB DARK (spectacle — neon roads on dark, ideal for racing telemetry) / LIGHT (daytime). Fast raster tiles, no API key.
 - Keyboard: **C** = recenter, **N** = reset north, **H** = cycle heading source.
 - **3D car** (Stage 3): an F1-style Three.js car rendered as a MapLibre custom layer, placed at the live fix, oriented by fused heading + MPU roll/pitch, and color-coded by danger level (cyan/yellow/red). It scales with the map zoom.
+- **Basemap**: CartoDB Dark Matter (default) or Positron — free, key-less raster tiles. No terrain/DEM layer (removed; was 404ing and slow).
 
 ### Simulator heading scenarios (dev/server.js)
 Set `SIM_SCENARIO` before starting the server to exercise the heading logic:
