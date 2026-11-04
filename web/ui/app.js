@@ -377,29 +377,6 @@ if (!KEY) {
   // ---- GPS controls -------------------------------------------------------
   window.isRecording = true;
   window.isReplaying = false;
-  let replayIdx = 0;
-  let replaySpeed = 1;
-
-  function toggleRecord() {
-    window.isRecording = !window.isRecording;
-    const btn = $('btnRecord');
-    if (btn) { btn.textContent = window.isRecording ? 'RECORD' : 'PAUSE'; btn.classList.toggle('danger', !window.isRecording); }
-  }
-  function toggleReplay() {
-    window.isReplaying = !window.isReplaying;
-    const btn = $('btnReplay');
-    if (btn) { btn.textContent = window.isReplaying ? 'STOP' : 'REPLAY'; btn.classList.toggle('danger', window.isReplaying); replayIdx = 0; }
-  }
-  function clearTrace() {
-    GPS.trace = []; GPS.origin = null; GPS.totalDist = 0; GPS.elevGain = 0; GPS.elevLoss = 0;
-    GPS.movingTime = 0; GPS.stoppedTime = 0; GPS.maxSpeed = 0; GPS.lastPoint = null;
-    if (typeof MAP !== 'undefined') MAP.clearTrail();
-    updateStatsDOM(); updateSignalDOM();
-  }
-  if ($('btnRecord')) $('btnRecord').addEventListener('click', toggleRecord);
-  if ($('btnReplay')) $('btnReplay').addEventListener('click', toggleReplay);
-  if ($('btnClear')) $('btnClear').addEventListener('click', clearTrace);
-
   // ---- Tab switching ------------------------------------------------------
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
