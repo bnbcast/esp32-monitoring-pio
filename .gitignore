@@ -7,3 +7,4 @@ build/
 .env
 .idea/
 .vscode/
+.playwright-mcp/
