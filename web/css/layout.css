@@ -20,6 +20,9 @@
 .map-area       { grid-area: map; }
 .side-panel     { grid-area: side; display: flex; flex-direction: column; gap: 12px; }
 
+/* Mobile bottom sheet — hidden on desktop */
+.mobile-sheet { display: none; }
+
 /* Map container — fills its cell */
 .map-area { position: relative; }
 #map-container {
@@ -124,8 +127,9 @@
   }
   .side-panel { order: 3; }
 
-  /* Bottom sheet panel on mobile */
-  .side-panel {
+  /* Mobile bottom sheet — show on mobile only */
+  .mobile-sheet {
+    display: block;
     position: fixed;
     inset: auto 0 0 0;
     width: 100%;

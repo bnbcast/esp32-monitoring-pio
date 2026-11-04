@@ -170,7 +170,7 @@ const MAP = (function () {
       pitch: 0,
       bearing: 0,
       interaction: true,
-      attributionControl: true
+      attributionControl: false
     });
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
