@@ -38,9 +38,8 @@ const MAP = (function () {
   let markerEl = null;
 
   // modes
-  let myLocMode = "recenter";   // recenter | follow | compass | north
+  let myLocMode = "recenter";   // recenter | compass | north
   let lockNorth = false;
-  let followMode = false;
 
   // heading fusion
   let fusedHeading = 0;
@@ -266,10 +265,7 @@ const MAP = (function () {
     }
 
     // Auto-follow modes
-    if (followMode || myLocMode === "recenter") {
-      flyTo(lng, lat, 15, lockNorth ? 0 : fusedHeading, 0);
-      if (myLocMode === "recenter") myLocMode = "follow";
-    } else if (myLocMode === "north" || lockNorth) {
+    if (myLocMode === "north" || lockNorth) {
       flyTo(lng, lat, 15, 0, 0);
     }
   }
@@ -458,14 +454,6 @@ const MAP = (function () {
     map.resize();
   }
 
-  function setFollowMode(on) {
-    followMode = !!on;
-    myLocMode = followMode ? "follow" : "recenter";
-    if (followMode && vehicle.lat != null && vehicle.lng != null) {
-      flyTo(vehicle.lng, vehicle.lat, 15, lockNorth ? 0 : fusedHeading, 0);
-    }
-  }
-
   function setLockNorth(on) {
     lockNorth = !!on;
     if (lockNorth) {
@@ -484,7 +472,6 @@ const MAP = (function () {
     recenterNow,
     resetNorth,
     setLockNorth,
-    setFollowMode,
     flyTo,
     getHeading,
     setHeadingSource

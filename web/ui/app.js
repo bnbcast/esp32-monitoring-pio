@@ -390,27 +390,11 @@ if (!KEY) {
 
   // ---- My-location / compass ---------------------------------------------
   const btnMyLocation = $('btnMyLocation');
-  let followMode = false;
   if (btnMyLocation && typeof MAP !== 'undefined') {
     btnMyLocation.textContent = '\u25CF RECENTER';
-    btnMyLocation.className = 'map-btn active';
+    btnMyLocation.className = 'map-btn';
     btnMyLocation.addEventListener('click', () => {
-      followMode = !followMode;
-      if (followMode) {
-        btnMyLocation.textContent = '\u2197 FOLLOW';
-        btnMyLocation.className = 'map-btn active';
-        MAP.setFollowMode(true);
-        if (vehicle.lat != null && vehicle.lng != null) {
-          MAP.flyTo(vehicle.lng, vehicle.lat, 15, lockNorth ? 0 : fusedHeading, 0);
-        }
-      } else {
-        btnMyLocation.textContent = '\u25CF RECENTER';
-        btnMyLocation.className = 'map-btn';
-        MAP.setFollowMode(false);
-        if (vehicle.lat != null && vehicle.lng != null) {
-          MAP.flyTo(vehicle.lng, vehicle.lat, 15, lockNorth ? 0 : fusedHeading, 0);
-        }
-      }
+      MAP.recenterNow();
     });
   }
 

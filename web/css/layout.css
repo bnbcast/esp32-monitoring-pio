@@ -22,8 +22,8 @@
   min-height: 0;
 }
 
-/* Map area — centered and constrained so it's not too big or too small */
-.map-area { grid-area: map; display: flex; justify-content: center; align-items: center; }
+/* Map area — fills its grid cell, map constrained so not too big or small */
+.map-area { grid-area: map; position: relative; }
 
 #map-container {
   width: 100%;
@@ -34,6 +34,7 @@
   box-shadow: var(--shadow);
   background: var(--paper);
   overflow: hidden;
+  position: relative;
 }
 .map-host { width: 100%; height: 100%; overflow: hidden; }
 .map-host .maplibregl-canvas { display: block; width: 100% !important; height: 100% !important; }
