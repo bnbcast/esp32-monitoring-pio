@@ -401,28 +401,38 @@ const MAP = (() => {
     if (vehicle.el) return vehicle.el;
     const el = document.createElement('div');
     el.className = 'vehicle-marker';
-    el.style.width = '20px'; el.style.height = '20px';
+    el.style.width = '24px'; el.style.height = '24px';
     el.style.position = 'relative';
-    const head = document.createElement('div');
-    head.className = 'vehicle-head';
-    el.appendChild(head);
-    const badge = document.createElement('div');
-    badge.className = 'vehicle-heading-badge';
-    badge.textContent = 'HOLD 0%';
-    badge.style.fontSize = '10px';
-    badge.style.fontFamily = 'sans-serif';
-    badge.style.fontWeight = '700';
-    badge.style.background = 'rgba(0,0,0,0.75)';
-    badge.style.color = '#fff';
-    badge.style.border = '1px solid #fff';
-    badge.style.borderRadius = '2px';
-    badge.style.padding = '1px 4px';
-    badge.style.position = 'absolute';
-    badge.style.bottom = '22px';
-    badge.style.left = '50%';
-    badge.style.transform = 'translateX(-50%)';
-    badge.style.pointerEvents = 'none';
-    el.appendChild(badge);
+    el.style.transformOrigin = 'center';
+
+    // Google-style blue dot (the vehicle position)
+    const dot = document.createElement('div');
+    dot.className = 'vehicle-dot';
+    dot.style.position = 'absolute';
+    dot.style.top = '50%'; dot.style.left = '50%';
+    dot.style.width = '10px'; dot.style.height = '10px';
+    dot.style.background = '#06b6d4';
+    dot.style.border = '2px solid #fff';
+    dot.style.borderRadius = '50%';
+    dot.style.transform = 'translate(-50%,-50%)';
+    dot.style.boxShadow = '0 0 8px rgba(6,182,212,0.7)';
+    dot.style.zIndex = '2';
+    el.appendChild(dot);
+
+    // Translucent view cone showing facing direction; width ~ confidence
+    const cone = document.createElement('div');
+    cone.className = 'vehicle-cone';
+    cone.style.position = 'absolute';
+    cone.style.bottom = '12px'; cone.style.left = '50%';
+    cone.style.transform = 'translateX(-50%)';
+    cone.style.width = '24px'; cone.style.height = '34px';
+    cone.style.background = 'rgba(6,182,212,0.28)';
+    cone.style.clipPath = 'polygon(50% 0%, 100% 100%, 0% 100%)';
+    cone.style.transformOrigin = 'center bottom';
+    cone.style.zIndex = '1';
+    el.appendChild(cone);
+    vehicle._cone = cone;
+    vehicle._dot = dot;
     vehicle.el = el;
     return el;
   }
@@ -514,14 +524,36 @@ const MAP = (() => {
     vehicle.headingSource = fused.source;
     vehicle.headingConfidence = fused.confidence;
 
+    const stale = !vehicle.fix || fused.confidence < 0.25;
+    const conf = fused.confidence;
+
     if (vehicle.marker) {
       vehicle.marker.setRotation(vehicle.heading);
       const el = vehicle.marker.getElement();
-      el.style.opacity = vehicle.fix ? '1' : '0.4';
-      el.style.filter = vehicle.fix ? 'none' : 'grayscale(1)';
-      // badge text: source + confidence
-      const badge = el.querySelector('.vehicle-heading-badge');
-      if (badge) badge.textContent = fused.source + ' ' + Math.round(fused.confidence * 100) + '%';
+      // whole marker: fade + grayscale when stale
+      el.style.opacity = stale ? '0.45' : '1';
+      el.style.filter = stale ? 'grayscale(1)' : 'none';
+
+      // dot color: blue when confident/fresh, grey when stale
+      const dot = el.querySelector('.vehicle-dot');
+      if (dot) {
+        dot.style.background = stale ? '#8a8a96' : '#06b6d4';
+        dot.style.borderColor = stale ? '#cfcfd6' : '#fff';
+        dot.style.boxShadow = stale ? '0 0 6px rgba(138,138,150,0.4)' : '0 0 8px rgba(6,182,212,0.7)';
+      }
+
+      // cone: width grows as confidence drops; fades when stale
+      const cone = el.querySelector('.vehicle-cone');
+      if (cone) {
+        const w = 18 + (1 - conf) * 100;   // 18px (conf 1) -> 118px (conf 0)
+        cone.style.width = Math.max(16, Math.min(140, w)) + 'px';
+        cone.style.background = stale ? 'rgba(138,138,150,0.18)' : 'rgba(6,182,212,' + (0.22 + 0.18 * conf) + ')';
+        cone.style.opacity = stale ? '0.35' : (0.5 + 0.3 * conf);
+        const narrow = 50 - (1 - conf) * 18;   // conf1 -> 50%, conf0 -> 32% ... wide base
+        cone.style.clipPath = 'polygon(50% 0%, ' + (50 + (1 - conf) * 25) + '% 100%, ' + (50 - (1 - conf) * 25) + '% 100%)';
+      }
+
+      // badge text: source + confidence, tooltip-style title
     }
 
     // Accuracy circle sized from HDOP (pixels).
