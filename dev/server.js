@@ -246,10 +246,19 @@ function startSimulator() {
 
   console.log(`[SIM] GPS simulator started on topic ${TOPIC_DATA}`);
 
+  // Heading scenarios (env-gated; default 'normal' = unchanged behaviour).
+  //   normal  : car moving, GPS course reliable
+  //   drift   : car STOPPED (speed 0) but MPU yaw keeps rotating -> gyro drift hold
+  //   dropout : periodic GPS fix loss -> stale / no-fix handling
+  //   wrap    : heading sweeps across the 0/360 boundary -> no-spin check
+  const SCENARIO = process.env.SIM_SCENARIO || 'normal';
+  let scenarioPhase = 0;
+
   setInterval(() => {
     try {
       angle += 0.05; // radians per tick (200ms)
       if (angle > Math.PI * 2) angle -= Math.PI * 2;
+      scenarioPhase += 0.05;
 
       // Position on circle
       const dLat = (radius * Math.sin(angle)) / 110540;
@@ -260,20 +269,34 @@ function startSimulator() {
       // Altitude: sinusoidal elevation change +/- 15m
       const alt = 50 + 15 * Math.sin(angle * 2);
 
-      // Speed: 10-30 km/h varying
-      const speedKmh = 15 + 10 * Math.sin(angle * 3);
-
-      // Course: tangent to circle
-      const cog = (angle * 180 / Math.PI + 90) % 360;
-
-      // HDOP: vary between 0.8 and 3.0
-      const hdop = 0.8 + 2.2 * Math.abs(Math.sin(angle * 5));
-
-      // Satellites: fewer when HDOP is high
-      const sats = Math.round(12 - 4 * Math.abs(Math.sin(angle * 5)));
-
-      // Fix: valid most of the time, occasional dropout
-      const fix = Math.random() > 0.02;
+      // ---- heading scenario overrides -------------------------------------
+      let speedKmh, cog, hdop, fix, sats;
+      if (SCENARIO === 'drift') {
+        // Stopped: no GPS course, but MPU yaw keeps rotating (relative change)
+        speedKmh = 0;
+        cog = null; // no course when stopped
+        hdop = 1.0;
+        fix = true;
+      } else if (SCENARIO === 'dropout') {
+        speedKmh = 15 + 10 * Math.sin(angle * 3);
+        cog = (angle * 180 / Math.PI + 90) % 360;
+        hdop = 0.8 + 2.2 * Math.abs(Math.sin(angle * 5));
+        // lose fix for ~3s every 20s
+        fix = (scenarioPhase % (Math.PI * 10)) < (Math.PI * 3);
+      } else if (SCENARIO === 'wrap') {
+        // heading sweeps across 0/360 repeatedly
+        speedKmh = 20;
+        cog = (scenarioPhase * 60) % 360;
+        hdop = 1.0;
+        fix = true;
+      } else {
+        // normal: unchanged behaviour
+        speedKmh = 15 + 10 * Math.sin(angle * 3);
+        cog = (angle * 180 / Math.PI + 90) % 360;
+        hdop = 0.8 + 2.2 * Math.abs(Math.sin(angle * 5));
+        sats = Math.round(12 - 4 * Math.abs(Math.sin(angle * 5)));
+        fix = Math.random() > 0.02;
+      }
 
       // Distance accumulated (haversine from last point)
       if (lastLat !== 0 || lastLng !== 0) {
