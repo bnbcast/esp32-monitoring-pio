@@ -45,96 +45,15 @@
   font-family: var(--font-mono) !important;
 }
 
-/* View mode buttons (top-left on map) */
-.view-mode {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 40;
-  display: flex;
-  gap: 6px;
-  background: var(--paper);
-  border: var(--border-w) solid var(--ink);
-  box-shadow: var(--shadow);
-  padding: 6px;
-}
-.view-mode button {
-  background: var(--yellow);
-  color: var(--ink);
-  border: 3px solid var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
-  padding: 6px 12px;
-  font: inherit;
-  font-weight: 900;
-  text-transform: uppercase;
-  font-size: 0.7rem;
-  cursor: pointer;
-}
-.view-mode button:hover { background: #ff7ad9; }
-.view-mode button.active { background: #b6ff3b; color: var(--ink); }
-
-/* Style toggle (top-right on map) */
-.style-toggle {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 40;
-  background: var(--paper);
-  border: var(--border-w) solid var(--ink);
-  box-shadow: var(--shadow);
-  padding: 6px;
-}
-.style-toggle button {
-  background: var(--blue);
-  color: #fff;
-  border: 3px solid var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
-  padding: 6px 12px;
-  font: inherit;
-  font-weight: 900;
-  text-transform: uppercase;
-  font-size: 0.7rem;
-  cursor: pointer;
-}
-.style-toggle button:hover { background: #ff7ad9; }
-
 /* Bottom-right map controls */
 .map-btns {
   position: absolute;
   bottom: 14px;
   right: 14px;
-  z-index: 40;
+  z-index: 50;
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-/* 3D street view overlay container */
-.view-3d-container {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  display: none;
-  background: #000;
-}
-.view-3d-container.active { display: block; }
-
-/* View switch badge */
-.view-badge {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
-  background: var(--ink);
-  color: var(--paper);
-  border: 3px solid var(--ink);
-  padding: 6px 14px;
-  font-weight: 900;
-  text-transform: uppercase;
-  font-size: 0.85rem;
-  letter-spacing: 1px;
-  box-shadow: var(--shadow);
 }
 
 /* HUD overlay on map */

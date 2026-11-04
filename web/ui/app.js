@@ -55,8 +55,7 @@ let lastPush = 0;
 let linkState = "connecting";
 let deviceState = "unknown";
 
-// View state: 'map2d' | 'street3d'
-let currentView = 'map2d';
+// View state: 'map2d'
 let lockNorth = false;
 let fusedHeading = 0;
 
@@ -369,64 +368,11 @@ if (!KEY) {
   });
   client.start();
 
-  // ---- Init map (2D view by default) -------------------------------------
+  // ---- Init map -----------------------------------------------------------
   if (typeof MAP !== 'undefined') {
     MAP.create('map-container');
     MAP.loaded().then(() => { MAP.resize(); });
   }
-
-  // ---- View switch: 2D MAP <-> 3D STREET ---------------------------------
-  const btnView = $('btnView');
-  const viewBadge = $('viewBadge');
-  const mapContainer = $('map-container');
-  const view3d = $('view3d');
-  const btnMap2D = $('btnMap2D');
-  const btnMap3D = $('btnMap3D');
-
-  function setView(view) {
-    currentView = view;
-    if (view === 'street3d') {
-      mapContainer.style.display = 'none';
-      view3d.style.display = 'block';
-      if (viewBadge) viewBadge.textContent = '3D STREET';
-      if (btnView) btnView.textContent = '3D STREET';
-      if (btnMap2D) btnMap2D.classList.remove('active');
-      if (btnMap3D) btnMap3D.classList.add('active');
-      // 3D street view: pitched, chase camera — handled by map module
-      if (typeof MAP !== 'undefined') MAP.setStreetView(true);
-    } else {
-      mapContainer.style.display = '';
-      view3d.style.display = 'none';
-      if (viewBadge) viewBadge.textContent = '2D MAP';
-      if (btnView) btnView.textContent = '2D MAP';
-      if (btnMap2D) btnMap2D.classList.add('active');
-      if (btnMap3D) btnMap3D.classList.remove('active');
-      if (typeof MAP !== 'undefined') MAP.setStreetView(false);
-    }
-  }
-  if (btnView) btnView.addEventListener('click', () => setView(currentView === 'map2d' ? 'street3d' : 'map2d'));
-  if (btnMap2D) btnMap2D.addEventListener('click', () => setView('map2d'));
-  if (btnMap3D) btnMap3D.addEventListener('click', () => setView('street3d'));
-
-  // ---- Theme toggle -------------------------------------------------------
-  const btnTheme = $('btnTheme');
-  const btnThemePanel = $('btnThemePanel');
-  const themeBody = $('theme-body');
-  function setTheme(dark) {
-    if (dark) {
-      themeBody.classList.add('theme-dark');
-      themeBody.classList.remove('theme-light');
-      if (btnTheme) btnTheme.textContent = 'LIGHT';
-      if (btnThemePanel) btnThemePanel.textContent = 'DARK';
-    } else {
-      themeBody.classList.add('theme-light');
-      themeBody.classList.remove('theme-dark');
-      if (btnTheme) btnTheme.textContent = 'DARK';
-      if (btnThemePanel) btnThemePanel.textContent = 'LIGHT';
-    }
-  }
-  if (btnTheme) btnTheme.addEventListener('click', () => setTheme(!themeBody.classList.contains('theme-dark')));
-  if (btnThemePanel) btnThemePanel.addEventListener('click', () => setTheme(!themeBody.classList.contains('theme-dark')));
 
   // ---- GPS controls -------------------------------------------------------
   window.isRecording = true;
@@ -533,10 +479,6 @@ if (!KEY) {
     if (k === 'c' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.recenterNow(); }
     else if (k === 'n' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.resetNorth(); }
     else if (k === 'h' && typeof MAP !== 'undefined') { e.preventDefault(); if (btnHeadingSrc) btnHeadingSrc.click(); }
-    else if (k === 'v') { e.preventDefault(); if (btnView) btnView.click(); }
-    else if (k === '1' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.setStreetCam('chase'); }
-    else if (k === '2' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.setStreetCam('driver'); }
-    else if (k === '3' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.setStreetCam('orbit'); }
   });
 
   setInterval(renderBanner, 500);

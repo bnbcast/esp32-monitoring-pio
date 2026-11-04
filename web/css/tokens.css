@@ -24,15 +24,9 @@
   --font-mono: "Courier New", Courier, monospace;
 }
 
-/* Dark mode — brutalist inversion, same accents */
-body.theme-dark {
-  --bg:   #0a0a0a;
-  --ink:  #ffffff;
-  --paper: #111111;
+/* Status / danger level colors (solid blocks, not glows) */
+:root {
+  --lv0: var(--green);
+  --lv1: var(--yellow);
+  --lv2: var(--red);
 }
-
-/* Status / danger level colors (solid blocks, not glows) --
-   mapped from d.lvl: 0 = safe(green), 1 = warn(blue/white), 2 = danger(red) */
---lv0: var(--green);
---lv1: var(--yellow);
---lv2: var(--red);

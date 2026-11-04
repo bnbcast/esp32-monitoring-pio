@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <title>ESP32 // LIVE SENSORS</title>
 </head>
-<body class="theme-light" id="theme-body">
+<body>
 <div class="app-shell" id="app-shell">
 
   <!-- Top bar -->
@@ -33,8 +33,6 @@
         <span class="pill wait" id="pGps">GPS</span>
       </div>
       <div class="flex items-center gap-4">
-        <button id="btnView" class="btn small">2D MAP</button>
-        <button id="btnTheme" class="btn small">DARK</button>
       </div>
     </div>
     <div class="status-strip" id="statusStrip">
@@ -49,16 +47,7 @@
     <div class="top-bar-area" style="display:none;"></div>
 
     <div class="map-area">
-      <div class="view-badge" id="viewBadge">2D MAP</div>
-
-      <div class="view-mode">
-        <button id="btnMap2D" class="active">2D</button>
-        <button id="btnMap3D">3D</button>
-      </div>
-
       <div id="map-container" class="map-host"></div>
-
-      <div class="view-3d-container" id="view3d"></div>
 
       <!-- Map HUD (telemetry over the map) -->
       <div class="map-hud">
@@ -192,10 +181,6 @@
           <div class="controls-group" style="margin-top:12px;">
             <label>Heading Source</label>
             <button id="btnHeadingSrc" class="btn small">AUTO</button>
-          </div>
-          <div class="controls-group" style="margin-top:12px;">
-            <label>Theme</label>
-            <button id="btnThemePanel" class="btn small">LIGHT</button>
           </div>
         </div>
       </div>

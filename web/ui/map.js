@@ -2,22 +2,15 @@
 
 // ---------------------------------------------------------------------------
 // web/ui/map.js — MapLibre GL JS module (neo-brutalist refactor)
-// Stack: MapLibre GL JS + CartoDB raster tiles (free, key-less) +
-//        Three.js custom 3D car layer for the street view.
-// No Google Maps, no paid APIs, no API keys. Attribution preserved.
+// Stack: MapLibre GL JS + CartoDB raster tiles (free, key-less).
+// No Google Maps, no paid APIs, no API keys.
 // ---------------------------------------------------------------------------
 
 const MAP = (function () {
   // ---- config -------------------------------------------------------------
-  const RASTER_STYLES = {
-    dark: {
-      name: "CartoDB Dark Matter",
-      url:  "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-    },
-    light: {
-      name: "CartoDB Positron",
-      url:  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-    }
+  const RASTER_STYLE = {
+    name: "CartoDB Positron",
+    url:  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
   };
 
   const HEADING = {
@@ -30,7 +23,6 @@ const MAP = (function () {
 
   // ---- map state ----------------------------------------------------------
   let map = null;
-  let styleName = "light";
 
   // vehicle state
   let vehicle = {
@@ -44,15 +36,11 @@ const MAP = (function () {
 
   // marker + accuracy circle + heading wedge
   let markerEl = null;
-  let accuracyCircle = null;
-  let headingWedge = null;
 
   // modes
   let myLocMode = "recenter";   // recenter | follow | compass | north
   let lockNorth = false;
   let followMode = false;
-  let streetView = false;
-  let streetCam = "chase";     // chase | driver | orbit
 
   // heading fusion
   let fusedHeading = 0;
@@ -164,7 +152,7 @@ const MAP = (function () {
 
     map = new maplibregl.Map({
       container: id,
-      style: RASTER_STYLES[styleName].url,
+      style: RASTER_STYLE.url,
       center: [0, 0],
       zoom: 13,
       pitch: 0,
@@ -275,17 +263,6 @@ const MAP = (function () {
       trailCoords.push(pt);
       if (trailCoords.length > 120) trailCoords.shift();
       updateTrail();
-    }
-
-    // Sync street-view car (local scene: heading + dead-reckoned position)
-    if (streetView) {
-      if (!streetVehicle) streetVehicle = { x: 0, z: 0, heading: 0 };
-      streetVehicle.heading = fusedHeading;
-      // Move forward/back based on speed (km/h -> scene units per frame is handled in animate)
-      // Store last speed for dead reckoning in animate loop
-      streetVehicle._lastSpeed = speed;
-      streetVehicle._dt = (ts - (streetVehicle._lastTs || ts)) / 1000;
-      streetVehicle._lastTs = ts;
     }
 
     // Auto-follow modes
@@ -484,168 +461,6 @@ const MAP = (function () {
   function resize() {
     if (!map || !container) return;
     map.resize();
-    const s = window.__threeStreet;
-    if (s && s.renderer) {
-      const c = s.el;
-      s.renderer.setSize(c.clientWidth, c.clientHeight);
-      if (s.camera) s.camera.aspect = c.clientWidth / c.clientHeight;
-    }
-  }
-
-  let threeLoadPromise = null;
-
-  function loadThree() {
-    if (threeLoadPromise) return threeLoadPromise;
-    threeLoadPromise = new Promise((resolve, reject) => {
-      if (window.THREE) { resolve(window.THREE); return; }
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-      s.onload = () => resolve(window.THREE);
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-    return threeLoadPromise;
-  }
-
-  function setStreetView(on) {
-    streetView = !!on;
-    const el = document.getElementById("view3d");
-    if (!el) return;
-    if (on) {
-      el.classList.add("active");
-      loadThree().then(() => { initThreeStreet(); resize(); });
-    } else {
-      el.classList.remove("active");
-    }
-    resize();
-  }
-
-  let streetVehicle = null; // {x, z, heading} in street scene units
-
-  function initThreeStreet() {
-    if (window.__threeStreet) return;
-    const el = document.getElementById("view3d");
-    const canvas = document.createElement("canvas");
-    el.appendChild(canvas);
-
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
-    renderer.setSize(el.clientWidth, el.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
-    renderer.shadowMap.enabled = true;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a0a);
-    scene.fog = new THREE.Fog(0x0a0a0a, 20, 120);
-
-    const camera = new THREE.PerspectiveCamera(55, el.clientWidth / el.clientHeight, 0.1, 1000);
-
-    // Ground — brutalist dark asphalt
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(400, 400),
-      new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    // Road markings (dashed center line)
-    const markGeo = new THREE.PlaneGeometry(0.4, 400);
-    const markMat = new THREE.MeshStandardMaterial({ color: 0xffe600 });
-    for (let i = -200; i < 200; i += 10) {
-      const m = new THREE.Mesh(markGeo, markMat);
-      m.position.set(0, 0.02, i);
-      m.rotation.x = -Math.PI / 2;
-      if ((i / 10) % 2 === 0) m.visible = false;
-      scene.add(m);
-    }
-
-    // Simple buildings around (brutalist blocks)
-    const bMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const bPos = [
-      [-60, 0, -60], [60, 0, -60], [-60, 0, 60], [60, 0, 60],
-      [-120, 0, -30], [120, 0, -30], [-120, 0, 30], [120, 0, 30]
-    ];
-    bPos.forEach(([x, y, z]) => {
-      const h = 15 + Math.random() * 25;
-      const w = 10 + Math.random() * 8;
-      const d = 10 + Math.random() * 8;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), bMat);
-      b.position.set(x, h / 2, z);
-      b.castShadow = true; b.receiveShadow = true;
-      scene.add(b);
-    });
-
-    // Car
-    const carGeo = new THREE.BoxGeometry(2.2, 0.9, 4.4);
-    const carMat = new THREE.MeshStandardMaterial({ color: 0xff1100 });
-    const car = new THREE.Mesh(carGeo, carMat);
-    car.position.y = 0.45;
-    car.castShadow = true;
-    scene.add(car);
-
-    const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(20, 40, 20);
-    light.castShadow = true;
-    scene.add(light);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-
-    window.__threeStreet = { renderer, scene, camera, car, ground, el, canvas };
-    streetVehicle = { x: 0, z: 0, heading: 0 };
-
-    animateStreet();
-  }
-
-  function animateStreet() {
-    if (!streetView) return;
-    const s = window.__threeStreet;
-    if (!s) return;
-
-    // Sync car to vehicle state (dead reckoning from speed)
-    if (streetVehicle && s.car) {
-      if (streetVehicle._lastSpeed && streetVehicle._dt) {
-        const move = (streetVehicle._lastSpeed / 3.6) * streetVehicle._dt; // m/s * s
-        const hR = streetVehicle.heading * Math.PI / 180;
-        streetVehicle.x -= Math.sin(hR) * move;
-        streetVehicle.z -= Math.cos(hR) * move;
-      }
-      s.car.position.set(streetVehicle.x, 0.45, streetVehicle.z);
-      s.car.rotation.y = -streetVehicle.heading; // Three.js uses -Y for heading
-    }
-
-    s.renderer.render(s.scene, s.camera);
-    requestAnimationFrame(animateStreet);
-  }
-
-  function setStreetCam(mode) {
-    streetCam = mode;
-    const s = window.__threeStreet;
-    if (!s) return;
-    if (mode === "chase") {
-      s.camera.position.set(0, 9, 14);
-      s.camera.lookAt(0, 1, 0);
-    } else if (mode === "driver") {
-      s.camera.position.set(0, 1.6, 1.2);
-      s.camera.lookAt(0, 1.6, -10);
-    } else if (mode === "orbit") {
-      s.camera.position.set(14, 10, 14);
-      s.camera.lookAt(0, 2, 0);
-    }
-  }
-
-  function updateStreetCamera() {
-    if (!streetView || !streetVehicle) return;
-    const s = window.__threeStreet;
-    if (!s) return;
-    const h = streetVehicle.heading;
-    // Chase camera behind the car, offset by heading
-    const dist = 14;
-    const hR = h * Math.PI / 180;
-    s.camera.position.set(
-      -Math.sin(hR) * dist,
-      9,
-      -Math.cos(hR) * dist
-    );
-    s.camera.lookAt(streetVehicle.x, 1, streetVehicle.z);
   }
 
   function setFollowMode(on) {
@@ -677,11 +492,6 @@ const MAP = (function () {
     setFollowMode,
     flyTo,
     getHeading,
-    setHeadingSource,
-    setStreetView,
-    setStreetCam,
-    style: () => styleName,
-    setStyle: (name) => { styleName = name; if (map) map.setStyle(RASTER_STYLES[name].url); },
-    isStreetView: () => streetView
+    setHeadingSource
   };
 })();
