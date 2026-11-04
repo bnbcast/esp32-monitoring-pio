@@ -24,16 +24,22 @@
 .maplibregl-ctrl button:hover { background: var(--yellow) !important; }
 .maplibregl-ctrl-compass { display: flex !important; align-items: center !important; justify-content: center !important; }
 
-/* Attribution — black box, white text */
+/* Attribution — bottom-left, small, brutalist, never overlays UI */
 .maplibregl-ctrl-attrib {
-  background: rgba(0, 0, 0, 0.85) !important;
+  background: rgba(0, 0, 0, 0.7) !important;
   color: #fff !important;
   border: 2px solid var(--ink) !important;
   border-radius: var(--radius) !important;
   padding: 4px 8px !important;
-  font-size: 0.7rem !important;
+  font-size: 0.65rem !important;
   font-weight: 900 !important;
+  max-width: 260px !important;
+  z-index: 20 !important;
+  pointer-events: none !important;
 }
+
+/* Ensure map buttons sit above attribution */
+.map-btns { z-index: 50 !important; }
 
 /* Scale bar */
 .maplibregl-ctrl-scale {
