@@ -469,13 +469,28 @@ const MAP = (function () {
     }
   }
 
+  let threeLoadPromise = null;
+
+  function loadThree() {
+    if (threeLoadPromise) return threeLoadPromise;
+    threeLoadPromise = new Promise((resolve, reject) => {
+      if (window.THREE) { resolve(window.THREE); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+      s.onload = () => resolve(window.THREE);
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    return threeLoadPromise;
+  }
+
   function setStreetView(on) {
     streetView = !!on;
     const el = document.getElementById("view3d");
     if (!el) return;
     if (on) {
       el.classList.add("active");
-      initThreeStreet();
+      loadThree().then(() => { initThreeStreet(); resize(); });
     } else {
       el.classList.remove("active");
     }

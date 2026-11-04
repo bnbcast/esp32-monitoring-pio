@@ -34,7 +34,7 @@ const { chromium } = require('playwright');
     console.log('PAGE CRASHED');
   });
 
-  await page.goto('http://localhost:5003/?dev&t=dev-test-1234', {
+  await page.goto('http://localhost:5003/?dev&t=dev-test-1234#t=dev-test-1234', {
     waitUntil: 'load',
     timeout: 30000,
   });
@@ -43,6 +43,7 @@ const { chromium } = require('playwright');
 
   // Check key elements exist immediately (new brutalist DOM)
   const checks = [
+    ['#setup', 'setup screen (should be hidden)'],
     ['#sim-badge', 'sim badge'],
     ['#statusStrip', 'status strip'],
     ['#statusText', 'status text'],
@@ -79,9 +80,14 @@ const { chromium } = require('playwright');
   for (const [sel, name] of checks) {
     const count = await page.locator(sel).count();
     const found = count > 0;
-    if (!found) allFound = false;
+    if (!found && name !== 'setup screen (should be hidden)') allFound = false;
     console.log(`${found ? 'OK ' : 'MISS'} ${name} (${sel})`);
   }
+
+  // Setup screen must be hidden when key is present
+  const setupVisible = await page.locator('#setup').isVisible().catch(() => false);
+  console.log(`${setupVisible ? 'FAIL' : 'OK '} setup screen hidden (should not be visible)`);
+  if (setupVisible) allFound = false;
 
   // Check for console errors (excluding expected ones)
   const errCount = errors.filter(e =>
