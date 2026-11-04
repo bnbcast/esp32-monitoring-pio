@@ -45,6 +45,7 @@ Toggle **BLUEPRINT ↔ MAP** at top-left of the panel.
 - **Compass button** (bottom-right): tap resets North; long-press locks North.
 - **Style** (top-right): Liberty / Bright / Positron / Dark. **Terrain**: AWS Terrarium DEM on/off.
 - Keyboard: **C** = recenter, **N** = reset north, **H** = cycle heading source.
+- **3D car** (Stage 3): an F1-style Three.js car rendered as a MapLibre custom layer, placed at the live fix, oriented by fused heading + MPU roll/pitch, and color-coded by danger level (cyan/yellow/red). It scales with the map zoom.
 
 ### Simulator heading scenarios (dev/server.js)
 Set `SIM_SCENARIO` before starting the server to exercise the heading logic:

@@ -76,6 +76,7 @@ Panel [07] toggles between the legacy Blueprint Three.js trace and a MapLibre ma
 - **Stack**: maplibre-gl@3 (vendored in `web/vendor/`, no CDN) + OpenFreeMap vector tiles (liberty/bright/positron/dark) + AWS Terrarium Tiles (raster-dem, `s3.amazonaws.com/elevation-tiles-prod/terrarium`, encoding `elevation = -32768 + R*256 + G + B/256`). No Google Maps, no API keys.
 - **Heading fusion** (`MAP.setVehicle` → `_fuseHeading`): GPS course when speed >3 km/h and HDOP ≤ 6; otherwise MPU6050 gyro (`yaw`) integrated from last GPS, with complementary drift pull-back toward GPS. Optional phone compass (DeviceOrientation, iOS permission via `window.__requestPhoneCompass`) or `mag_heading` payload field. Source label + confidence exposed via `MAP.getHeading()`.
 - **Controls**: my-location button (recenter→follow→compass→north), compass button (tap reset north, long-press lock north), style/terrain toggles. Gestures drop to Free and resume tracking after a 3 s debounce. Keyboard: C=recenter, N=reset north, H=cycle heading source.
+- **3D car** (Stage 3): MapLibre custom layer rendering a Three.js F1 car at the live fix, oriented by fused heading + MPU roll/pitch, color-coded by danger level (d.lvl), scales with zoom.
 - **Simulator scenarios** (`SIM_SCENARIO` env): `normal` (default), `drift` (stopped + gyro), `dropout` (GPS loss), `wrap` (0/360 boundary).
 
 ## Environment
