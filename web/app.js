@@ -554,7 +554,9 @@ function onMessage(topic, payload, retained) {
       typeof d.roll === 'number' ? d.roll : null,
       typeof d.pitch === 'number' ? d.pitch : null,
       typeof d.yaw === 'number' ? d.yaw : null,
-      typeof d.mag_heading === 'number' ? d.mag_heading : null);
+      typeof d.mag_heading === 'number' ? d.mag_heading : null,
+      typeof d.lvl === 'number' ? d.lvl : 0,
+      typeof g.alt === 'number' ? g.alt : null);
     if (g.fix) { lastFixPos = { lng: g.lng, lat: g.lat }; lastFixTs = Date.now(); }
   }
 

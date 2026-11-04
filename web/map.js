@@ -102,6 +102,7 @@ const MAP = (() => {
       loadResolve(map);
       if (terrainOn) enableTerrain();
       _initPhoneCompass();
+      try { map.addLayer(carLayer); } catch (e) { console.warn('add car layer failed:', e); }
     });
 
     // Smooth glide: interpolate the rendered marker toward the last fix each frame.
@@ -321,6 +322,188 @@ const MAP = (() => {
   function getCompassBearing() {
     return map ? map.getBearing() : 0;
   }
+
+  // ---- 3D car custom layer (Stage 3) ---------------------------------------
+  // F1-style car built from Three.js primitives, rendered as a MapLibre custom
+  // layer. Positioned at the live GPS fix, oriented by fused heading plus
+  // MPU6050 roll/pitch, and colored by danger level. Constant metre size so it
+  // scales naturally with zoom; a floor scale keeps it visible when zoomed out.
+  const CAR = {
+    LENGTH_M: 4.6,
+    WIDTH_M: 1.9,
+    HEIGHT_M: 1.3,
+    MIN_SCREEN_SCALE: 0.06, // floor multiplier so car never vanishes when zoomed out
+    colors: { safe: 0x06b6d4, warn: 0xffe600, danger: 0xdc2626 },
+  };
+
+  let carLayer = null;
+
+  class CarLayer {
+    constructor() {
+      this.id = 'car-3d-layer';
+      this.type = 'custom';
+      this.renderingMode = '3d';
+      this.map = null;
+      this.gl = null;
+      this.renderer = null;
+      this.scene = null;
+      this.camera = null;
+      this.car = null;
+      this.ready = false;
+      this.lng = 0;
+      this.lat = 0;
+      this.alt = 0;
+      this.heading = 0;
+      this.roll = 0;
+      this.pitch = 0;
+      this.dangerLevel = 0;
+    }
+    onAdd(map, gl) {
+      this.map = map;
+      this.gl = gl;
+      try {
+        this.renderer = new THREE.WebGLRenderer({
+          context: gl,
+          canvas: gl.canvas,
+          antialias: true,
+          premultipliedAlpha: true,
+        });
+        this.renderer.autoClear = false;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.Camera();
+        this.camera.matrixAutoUpdate = false;
+        this._buildCar();
+        this.ready = true;
+      } catch (e) {
+        console.warn('car layer init failed:', e);
+        this.ready = false;
+      }
+    }
+    _buildCar() {
+      const car = new THREE.Group();
+
+      // ---- chassis (main body) ----
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(CAR.LENGTH_M, CAR.HEIGHT_M * 0.5, CAR.WIDTH_M),
+        new THREE.MeshStandardMaterial({ color: 0x111118, roughness: 0.4, metalness: 0.6 })
+      );
+      body.position.y = CAR.HEIGHT_M * 0.35;
+      body.castShadow = true;
+      car.add(body);
+
+      // ---- nose cone (front) ----
+      const nose = new THREE.Mesh(
+        new THREE.ConeGeometry(CAR.WIDTH_M * 0.55, CAR.LENGTH_M * 0.35, 8),
+        new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x4a0000, emissiveIntensity: 0.5 })
+      );
+      nose.rotation.x = -Math.PI / 2;
+      nose.position.set(0, CAR.HEIGHT_M * 0.55, CAR.LENGTH_M * 0.35);
+      car.add(nose);
+
+      // ---- cockpit canopy ----
+      const cabin = new THREE.Mesh(
+        new THREE.BoxGeometry(CAR.LENGTH_M * 0.5, CAR.HEIGHT_M * 0.45, CAR.WIDTH_M * 0.7),
+        new THREE.MeshStandardMaterial({ color: 0x88ccff, transparent: true, opacity: 0.7 })
+      );
+      cabin.position.set(-CAR.LENGTH_M * 0.1, CAR.HEIGHT_M * 0.95, 0);
+      car.add(cabin);
+
+      // ---- rear wing ----
+      const wing = new THREE.Mesh(
+        new THREE.BoxGeometry(CAR.WIDTH_M * 1.1, CAR.HEIGHT_M * 0.25, CAR.LENGTH_M * 0.12),
+        new THREE.MeshStandardMaterial({ color: 0x111118 })
+      );
+      wing.position.set(0, CAR.HEIGHT_M * 1.05, -CAR.LENGTH_M * 0.3);
+      car.add(wing);
+
+      // ---- glow halo (danger color) ----
+      const glow = new THREE.Mesh(
+        new THREE.CylinderGeometry(CAR.WIDTH_M * 0.9, CAR.WIDTH_M * 0.9, 0.05, 16),
+        new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.35 })
+      );
+      glow.rotation.x = Math.PI / 2;
+      glow.position.y = CAR.HEIGHT_M * 0.15;
+      car.add(glow);
+      car._glow = glow;
+
+      this.car = car;
+      this.scene.add(car);
+
+      // lights so the car is visible in dark styles / 3d
+      this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+      const dl = new THREE.DirectionalLight(0xffffff, 0.8);
+      dl.position.set(50, 100, 50);
+      dl.castShadow = true;
+      this.scene.add(dl);
+    }
+    _dangerColor() {
+      const d = this.dangerLevel;
+      if (d >= 2) return CAR.colors.danger;
+      if (d >= 1) return CAR.colors.warn;
+      return CAR.colors.safe;
+    }
+    setPose(lng, lat, alt, heading, roll, pitch, dangerLevel) {
+      this.lng = lng;
+      this.lat = lat;
+      this.alt = typeof alt === 'number' ? alt : 0;
+      this.heading = typeof heading === 'number' ? heading : 0;
+      this.roll = typeof roll === 'number' ? roll : 0;
+      this.pitch = typeof pitch === 'number' ? pitch : 0;
+      this.dangerLevel = typeof dangerLevel === 'number' ? dangerLevel : 0;
+    }
+    render(gl, matrix) {
+      if (!this.ready || !this.map || !this.camera || !this.renderer || !this.car) return;
+      try {
+        // Use MapLibre's view-projection matrix as the camera projection.
+        this.camera.projectionMatrix.fromArray(matrix);
+        this.camera.matrixAutoUpdate = false;
+        this.camera.matrixWorld.identity();
+
+        // Place the car in world space (metres relative to map centre).
+        const center = this.map.getCenter();
+        const latRad = (center.lat * Math.PI) / 180;
+        const worldX = (this.lng - center.lng) * Math.cos(latRad) * 111320; // east
+        const worldZ = (this.lat - center.lat) * 111320; // north (screen-up)
+        this.car.position.set(worldX, this.alt, worldZ);
+
+        // Orientation: heading (yaw around Y), then pitch (X), then roll (Z).
+        const h = (this.heading * Math.PI) / 180;
+        const p = (this.pitch * Math.PI) / 180;
+        const r = (this.roll * Math.PI) / 180;
+        const q = new THREE.Quaternion()
+          .setFromAxisAngle(new THREE.Vector3(0, 1, 0), h)
+          .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), p))
+          .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), r));
+        this.car.quaternion.copy(q);
+
+        // Constant metre size + floor so it stays visible when zoomed out.
+        const zoom = this.map.getZoom();
+        const scale = Math.max(CAR.MIN_SCREEN_SCALE, Math.pow(1.12, zoom - 14));
+        this.car.scale.setScalar(scale);
+
+        // Colour + glow follow danger level.
+        const color = this._dangerColor();
+        const body = this.car.children[0];
+        const nose = this.car.children[1];
+        const glow = this.car._glow;
+        if (body) body.material.color.setHex(color);
+        if (nose) nose.material.color.setHex(color === 0xdc2626 ? 0xdc2626 : 0x6a2a00);
+        if (glow) {
+          glow.material.color.setHex(color);
+          glow.material.opacity = color === 0x06b6d4 ? 0.35 : 0.6;
+        }
+
+        // Restore GL state MapLibre expects, then render.
+        this.renderer.state.reset();
+        this.renderer.render(this.scene, this.camera);
+      } catch (e) {
+        console.warn('car layer render failed:', e);
+      }
+    }
+  }
+
+  carLayer = new CarLayer();
 
   // ---- angle helpers --------------------------------------------------------
   function _normAngle(a) { return ((a % 360) + 360) % 360; }
@@ -611,7 +794,7 @@ const MAP = (() => {
    * @param roll/pitch/yaw MPU6050 orientation (degrees). yaw is integrated as gyro delta.
    * @param magHeading optional compass heading (degrees) from a magnetometer.
    */
-  function setVehicle(lng, lat, heading, speed, hdop, fix, ts, roll, pitch, yaw, magHeading) {
+  function setVehicle(lng, lat, heading, speed, hdop, fix, ts, roll, pitch, yaw, magHeading, lvl, alt) {
     if (!map || !initialized) return;
     _initVehicleLayers();
 
@@ -625,6 +808,8 @@ const MAP = (() => {
     vehicle.speed = typeof speed === 'number' ? speed : 0;
     vehicle.hdop = typeof hdop === 'number' ? hdop : null;
     vehicle.fix = !!fix;
+    vehicle.dangerLevel = typeof lvl === 'number' ? lvl : 0;
+    vehicle.alt = typeof alt === 'number' ? alt : 0;
     if (typeof roll === 'number') vehicle.roll = roll;
     if (typeof pitch === 'number') vehicle.pitch = pitch;
 
@@ -684,6 +869,20 @@ const MAP = (() => {
         if (vehicle.trail.length > vehicle.maxTrail) vehicle.trail.shift();
         _updateTrail();
       }
+    }
+
+    // Drive the 3D car custom layer with the same fused pose as the marker.
+    if (carLayer && carLayer.ready) {
+      carLayer.setPose(
+        vehicle.target.lng,
+        vehicle.target.lat,
+        vehicle.alt,
+        vehicle.heading,
+        vehicle.roll,
+        vehicle.pitch,
+        vehicle.dangerLevel
+      );
+      map.triggerRepaint();
     }
 
     // Unified my-location tracking (respects gesture debounce).
