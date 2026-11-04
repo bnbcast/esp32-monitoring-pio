@@ -1,34 +1,35 @@
 /* ---------------------------------------------------------------------------
-   Layout — desktop + mobile
+   Layout — desktop + mobile (responsive, well-proportioned)
 --------------------------------------------------------------------------- */
 
 /* Page shell */
-.app-shell { display: flex; flex-direction: column; min-height: 100vh; padding: 12px; gap: 12px; }
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; padding: 10px; gap: 10px; }
+
+/* Top bar — compact, fixed height */
+.top-bar-area { grid-area: topbar; }
 
 /* Desktop: top bar | map (left) + side panel (right) */
 .desktop-layout {
   display: grid;
-  grid-template-columns: 1fr 340px;
-  grid-template-rows: auto 1fr;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: auto 1fr auto;
   grid-template-areas:
     "topbar topbar"
-    "map    side";
-  gap: 12px;
+    "map    side"
+    "footer footer";
+  gap: 10px;
   flex: 1;
   min-height: 0;
 }
-.top-bar-area   { grid-area: topbar; }
-.map-area       { grid-area: map; }
-.side-panel     { grid-area: side; display: flex; flex-direction: column; gap: 12px; }
 
-/* Mobile bottom sheet — hidden on desktop */
-.mobile-sheet { display: none; }
+/* Map area — centered and constrained so it's not too big or too small */
+.map-area { grid-area: map; display: flex; justify-content: center; align-items: center; }
 
-/* Map container — fills its cell */
-.map-area { position: relative; }
 #map-container {
   width: 100%;
+  max-width: 700px;
   height: 100%;
+  max-height: 52vh;
   border: var(--border-w-thick) solid var(--ink);
   box-shadow: var(--shadow);
   background: var(--paper);
@@ -36,6 +37,136 @@
 }
 .map-host { width: 100%; height: 100%; overflow: hidden; }
 .map-host .maplibregl-canvas { display: block; width: 100% !important; height: 100% !important; }
+
+/* Side panel — fixed width, scrollable */
+.side-panel {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+/* Mobile bottom sheet — hidden on desktop */
+.mobile-sheet { display: none; }
+
+/* ---- Mobile ---- */
+@media (max-width: 900px) {
+  .app-shell { padding: 8px; gap: 8px; }
+
+  .desktop-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      "topbar"
+      "map"
+      "side";
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Hide desktop side panel on mobile */
+  .side-panel { display: none; }
+
+  /* Mobile bottom sheet — show on mobile only */
+  .mobile-sheet {
+    display: block;
+    position: fixed;
+    inset: auto 0 0 0;
+    width: 100%;
+    max-height: 50vh;
+    background: var(--paper);
+    border-top: var(--border-w-thick) solid var(--ink);
+    box-shadow: -6px -6px 0 var(--ink);
+    z-index: 100;
+    padding: 10px;
+    overflow-y: auto;
+  }
+  /* Drag handle on sheet */
+  .sheet-handle {
+    width: 40px;
+    height: 8px;
+    background: var(--ink);
+    border: 2px solid var(--ink);
+    margin: 0 auto 8px;
+  }
+
+  /* Map takes good portion of screen on mobile but not overwhelming */
+  .map-area { grid-area: map; }
+  #map-container {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: 45vh;
+    border: var(--border-w-thick) solid var(--ink);
+    box-shadow: var(--shadow);
+  }
+
+  .top-bar-area { padding: 8px 10px; }
+  .top-bar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .top-bar .pills { justify-content: center; }
+
+  .tab-btn { font-size: 0.65rem; padding: 6px 2px; }
+  .map-btn { width: 48px; height: 48px; font-size: 0.9rem; }
+
+  .hud-card { padding: 10px; margin-bottom: 8px; }
+  .hud-card h3 { font-size: 0.8rem; margin-bottom: 6px; }
+  .hud-grid { gap: 6px; }
+  .hud-item { padding: 6px; }
+  .hud-item .lbl { font-size: 0.6rem; }
+  .hud-item .val { font-size: 1.2rem; }
+}
+
+/* Telemetry HUD inside side panel */
+.hud-card {
+  border: var(--border-w) solid var(--ink);
+  box-shadow: var(--shadow);
+  background: var(--paper);
+  padding: 12px;
+  margin-bottom: 10px;
+  overflow-y: auto;
+  max-height: 40vh;
+}
+.hud-card h3 {
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.hud-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+}
+.hud-item {
+  border: 3px solid var(--ink);
+  padding: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.hud-item .lbl { font-size: 0.6rem; text-transform: uppercase; color: #666; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-item .val { font-family: var(--font-mono); font-weight: 900; font-size: 1.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Heading source badge */
+.heading-badge {
+  display: inline-block;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+/* Controls group */
+.controls-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
 
 /* Side panel tabs */
 .tab-bar {
@@ -63,101 +194,3 @@
 
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
-
-/* Telemetry HUD inside side panel */
-.hud-card {
-  border: var(--border-w) solid var(--ink);
-  box-shadow: var(--shadow);
-  background: var(--paper);
-  padding: 12px;
-  margin-bottom: 8px;
-}
-.hud-card h3 {
-  font-size: 0.85rem;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  color: var(--ink);
-}
-.hud-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 8px;
-}
-.hud-item {
-  border: 3px solid var(--ink);
-  padding: 8px;
-  background: var(--bg);
-}
-.hud-item .lbl { font-size: 0.65rem; text-transform: uppercase; color: #666; margin-bottom: 2px; }
-.hud-item .val { font-family: var(--font-mono); font-weight: 900; font-size: 1.4rem; }
-
-/* Heading source badge */
-.heading-badge {
-  display: inline-block;
-  border: 2px solid var(--ink);
-  background: var(--paper);
-  padding: 2px 6px;
-  font-size: 0.65rem;
-  font-weight: 900;
-  text-transform: uppercase;
-  margin-top: 4px;
-}
-
-/* Controls group */
-.controls-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-/* ---- Mobile ---- */
-@media (max-width: 900px) {
-  .app-shell { padding: 8px; gap: 8px; }
-
-  .desktop-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr auto;
-    grid-template-areas:
-      "topbar"
-      "map"
-      "side";
-    flex: 1;
-    min-height: 0;
-  }
-  .side-panel { order: 3; display: none; }
-
-  /* Mobile bottom sheet — show on mobile only */
-  .mobile-sheet {
-    display: block;
-    position: fixed;
-    inset: auto 0 0 0;
-    width: 100%;
-    max-height: 55vh;
-    background: var(--paper);
-    border-top: var(--border-w-thick) solid var(--ink);
-    box-shadow: -6px -6px 0 var(--ink);
-    z-index: 100;
-    padding: 12px;
-    overflow-y: auto;
-  }
-  /* Drag handle on sheet */
-  .sheet-handle {
-    width: 40px;
-    height: 8px;
-    background: var(--ink);
-    border: 2px solid var(--ink);
-    margin: 0 auto 8px;
-  }
-
-  /* Map full screen on mobile */
-  .map-area { grid-area: map; min-height: 45vh; }
-
-  .top-bar-area { padding: 10px 12px; }
-  .top-bar { flex-direction: column; align-items: stretch; gap: 10px; }
-  .top-bar .pills { justify-content: center; }
-
-  .tab-btn { font-size: 0.65rem; padding: 6px 2px; }
-  .map-btn { width: 48px; height: 48px; font-size: 0.9rem; }
-}
