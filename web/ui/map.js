@@ -258,8 +258,12 @@ const MAP = (function () {
   }
 
   function onCarLayerAdd(ctx) {
-    const gl = ctx.gl;
-    const canvas = gl.canvas;
+    const gl = ctx && ctx.gl;
+    const canvas = gl && gl.canvas;
+    if (!gl || !canvas) {
+      console.warn('CarLayer: no WebGL context, skipping 3D car');
+      return;
+    }
 
     threeRenderer = new THREE.WebGLRenderer({
       canvas: canvas,
@@ -339,7 +343,7 @@ const MAP = (function () {
   }
 
   function onCarLayerRender(gl, matrix) {
-    if (!threeRenderer || !threeCamera || !threeCar || !vehicle.lat) return;
+    if (!threeRenderer || !threeCamera || !threeCar || !vehicle.lat || !gl) return;
 
     const c = threeCamera;
     const m = matrix;
