@@ -30,7 +30,7 @@ const MAP = (function () {
 
   // ---- map state ----------------------------------------------------------
   let map = null;
-  let styleName = "dark";
+  let styleName = "light";
 
   // vehicle state
   let vehicle = {
@@ -50,6 +50,7 @@ const MAP = (function () {
   // modes
   let myLocMode = "recenter";   // recenter | follow | compass | north
   let lockNorth = false;
+  let followMode = false;
   let streetView = false;
   let streetCam = "chase";     // chase | driver | orbit
 
@@ -174,10 +175,10 @@ const MAP = (function () {
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ position: "bottom-left" }), "bottom-left");
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
 
     map.on("load", () => {
       initLayers();
+      createMarker();
       resize();
     });
 
@@ -288,12 +289,11 @@ const MAP = (function () {
     }
 
     // Auto-follow modes
-    if (myLocMode === "follow" || myLocMode === "recenter") {
-      flyTo(lng, lat, 15, 0, 0);
+    if (followMode || myLocMode === "recenter") {
+      flyTo(lng, lat, 15, lockNorth ? 0 : fusedHeading, 0);
       if (myLocMode === "recenter") myLocMode = "follow";
-    } else if (myLocMode === "north") {
+    } else if (myLocMode === "north" || lockNorth) {
       flyTo(lng, lat, 15, 0, 0);
-      map.easeTo({ bearing: 0, duration: 300 });
     }
 
     // Street view camera
@@ -304,7 +304,7 @@ const MAP = (function () {
 
   function updateMarker() {
     const el = markerEl;
-    if (!el) return;
+    if (!el || !vehicle.lat || !vehicle.lng) return;
     const conf = headingConfidence;
     const size = 24 + 16 * conf;
     el.style.width = size + "px";
@@ -312,9 +312,15 @@ const MAP = (function () {
     el.style.border = "4px solid #000";
     el.style.background = danger >= 2 ? "#ff3b1f" : danger >= 1 ? "#ffe600" : "#00e676";
     el.style.boxShadow = "6px 6px 0 #000";
-    el.style.transform = `translate(-50%, -50%) rotate(${fusedHeading}deg)`;
+    el.style.transformOrigin = 'center';
     el.style.opacity = conf > 0.1 ? "1" : "0.4";
     el.style.transition = conf > 0.1 ? "transform 0.1s" : "none";
+
+    // Project lng/lat to screen pixels
+    const px = map.project({ lng: vehicle.lng, lat: vehicle.lat });
+    el.style.left = (px.x - size / 2) + "px";
+    el.style.top = (px.y - size / 2) + "px";
+    el.style.transform = `translate(-50%, -50%) rotate(${fusedHeading}deg)`;
   }
 
   function updateAccuracy() {
@@ -345,6 +351,23 @@ const MAP = (function () {
         geometry: { type: "Polygon", coordinates: [circle] }
       }]
     });
+  }
+
+  function createMarker() {
+    if (markerEl) return;
+    markerEl = document.createElement('div');
+    markerEl.className = 'vehicle-marker';
+    markerEl.style.position = 'absolute';
+    markerEl.style.width = '24px';
+    markerEl.style.height = '24px';
+    markerEl.style.border = '4px solid #000';
+    markerEl.style.background = '#00e676';
+    markerEl.style.boxShadow = '6px 6px 0 #000';
+    markerEl.style.borderRadius = '0';
+    markerEl.style.transformOrigin = 'center';
+    markerEl.style.pointerEvents = 'none';
+    markerEl.style.zIndex = '100';
+    container.appendChild(markerEl);
   }
 
   function circleCoords(lng, lat, radiusM, n) {
@@ -625,6 +648,22 @@ const MAP = (function () {
     s.camera.lookAt(streetVehicle.x, 1, streetVehicle.z);
   }
 
+  function setFollowMode(on) {
+    followMode = !!on;
+    myLocMode = followMode ? "follow" : "recenter";
+    if (followMode && vehicle.lat != null && vehicle.lng != null) {
+      flyTo(vehicle.lng, vehicle.lat, 15, lockNorth ? 0 : fusedHeading, 0);
+    }
+  }
+
+  function setLockNorth(on) {
+    lockNorth = !!on;
+    if (lockNorth) {
+      myLocMode = "north";
+      if (map) map.easeTo({ bearing: 0, duration: 400 });
+    }
+  }
+
   // ---- public API ---------------------------------------------------------
   return {
     create,
@@ -634,13 +673,13 @@ const MAP = (function () {
     clearTrail,
     recenterNow,
     resetNorth,
-    toggleLockNorth,
-    cycleMyLocation,
+    setLockNorth,
+    setFollowMode,
+    flyTo,
     getHeading,
     setHeadingSource,
     setStreetView,
     setStreetCam,
-    flyTo,
     style: () => styleName,
     setStyle: (name) => { styleName = name; if (map) map.setStyle(RASTER_STYLES[name].url); },
     isStreetView: () => streetView

@@ -57,6 +57,8 @@ let deviceState = "unknown";
 
 // View state: 'map2d' | 'street3d'
 let currentView = 'map2d';
+let lockNorth = false;
+let fusedHeading = 0;
 
 // ---- GPS math helpers -----------------------------------------------------
 function haversineM(lat1, lng1, lat2, lng2) {
@@ -315,6 +317,7 @@ function onMessage(topic, payload, retained) {
       typeof d.lvl === 'number' ? d.lvl : 0,
       typeof g.alt === 'number' ? g.alt : null);
     if (g.fix) { lastFixPos = { lng: g.lng, lat: g.lat }; lastFixTs = Date.now(); }
+    fusedHeading = MAP.getHeading().heading;
   }
 
   ingestGPS(d.gps);
@@ -464,23 +467,41 @@ if (!KEY) {
 
   // ---- My-location / compass ---------------------------------------------
   const btnMyLocation = $('btnMyLocation');
-  const myLocLabels = { recenter: '\u25CF RECENTER', follow: '\u2197 FOLLOW', compass: '\u21BB COMPASS', north: '\u2191 NORTH' };
+  let followMode = false;
   if (btnMyLocation && typeof MAP !== 'undefined') {
+    btnMyLocation.textContent = '\u25CF RECENTER';
+    btnMyLocation.className = 'map-btn active';
     btnMyLocation.addEventListener('click', () => {
-      const m = MAP.cycleMyLocation();
-      btnMyLocation.textContent = myLocLabels[m];
-      btnMyLocation.className = 'map-btn ' + { recenter: 'active', follow: 'active', compass: 'active', north: 'active' }[m];
+      followMode = !followMode;
+      if (followMode) {
+        btnMyLocation.textContent = '\u2197 FOLLOW';
+        btnMyLocation.className = 'map-btn active';
+        MAP.setFollowMode(true);
+        if (vehicle.lat != null && vehicle.lng != null) {
+          MAP.flyTo(vehicle.lng, vehicle.lat, 15, lockNorth ? 0 : fusedHeading, 0);
+        }
+      } else {
+        btnMyLocation.textContent = '\u25CF RECENTER';
+        btnMyLocation.className = 'map-btn';
+        MAP.setFollowMode(false);
+        if (vehicle.lat != null && vehicle.lng != null) {
+          MAP.flyTo(vehicle.lng, vehicle.lat, 15, lockNorth ? 0 : fusedHeading, 0);
+        }
+      }
     });
   }
 
   const btnCompass = $('btnCompass');
   let compassPressTimer = null;
+  let northLocked = false;
   if (btnCompass && typeof MAP !== 'undefined') {
+    btnCompass.textContent = 'N';
     const startPress = () => { compassPressTimer = setTimeout(() => {
-      const locked = MAP.toggleLockNorth();
-      btnCompass.textContent = locked ? 'N \u271A' : 'N';
+      northLocked = !northLocked;
+      btnCompass.textContent = northLocked ? 'N \u271A' : 'N';
+      MAP.setLockNorth(northLocked);
     }, 600); };
-    const endPress = () => { if (compassPressTimer) { clearTimeout(compassPressTimer); compassPressTimer = null; } else MAP.resetNorth(); };
+    const endPress = () => { if (compassPressTimer) { clearTimeout(compassPressTimer); compassPressTimer = null; } else { MAP.resetNorth(); northLocked = false; btnCompass.textContent = 'N'; } };
     btnCompass.addEventListener('mousedown', startPress);
     btnCompass.addEventListener('touchstart', (e) => { e.preventDefault(); startPress(); }, { passive: false });
     btnCompass.addEventListener('mouseup', endPress);
