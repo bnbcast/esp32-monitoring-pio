@@ -272,11 +272,6 @@ const MAP = (function () {
     } else if (myLocMode === "north" || lockNorth) {
       flyTo(lng, lat, 15, 0, 0);
     }
-
-    // Street view camera
-    if (streetView) {
-      updateStreetCamera();
-    }
   }
 
   function updateMarker() {

@@ -51,11 +51,7 @@ const { chromium } = require('playwright');
     ['#pDev', 'device pill'],
     ['#pMpu', 'mpu pill'],
     ['#pGps', 'gps pill'],
-    ['#viewBadge', 'view badge'],
-    ['#btnMap2D', '2D button'],
-    ['#btnMap3D', '3D button'],
     ['#map-container', 'map container'],
-    ['#view3d', '3D view container'],
     ['#hudSpeed', 'HUD speed'],
     ['#hudHeading', 'HUD heading'],
     ['#hudSource', 'HUD source'],
@@ -106,6 +102,23 @@ const { chromium } = require('playwright');
   const mobileSheetHidden = !(await page.locator('.mobile-sheet').isVisible().catch(() => false));
   console.log(`${mobileSheetHidden ? 'OK ' : 'FAIL'} mobile sheet hidden on desktop`);
   if (!mobileSheetHidden) allFound = false;
+
+  // 3D view elements should NOT exist
+  const view3dHidden = !(await page.locator('#view3d').isVisible().catch(() => false));
+  console.log(`${view3dHidden ? 'OK ' : 'FAIL'} 3D view container removed`);
+  if (!view3dHidden) allFound = false;
+
+  const viewBadgeHidden = !(await page.locator('#viewBadge').isVisible().catch(() => false));
+  console.log(`${viewBadgeHidden ? 'OK ' : 'FAIL'} view badge removed`);
+  if (!viewBadgeHidden) allFound = false;
+
+  const btnViewHidden = !(await page.locator('#btnView').isVisible().catch(() => false));
+  console.log(`${btnViewHidden ? 'OK ' : 'FAIL'} view toggle button removed`);
+  if (!btnViewHidden) allFound = false;
+
+  const btnThemeHidden = !(await page.locator('#btnTheme').isVisible().catch(() => false));
+  console.log(`${btnThemeHidden ? 'OK ' : 'FAIL'} theme toggle button removed`);
+  if (!btnThemeHidden) allFound = false;
 
   // Footer should be at bottom (not overlapping content)
   const footerBox = await page.locator('footer').boundingBox().catch(() => null);
