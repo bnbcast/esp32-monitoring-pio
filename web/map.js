@@ -105,6 +105,17 @@ const MAP = (() => {
       try { map.addLayer(carLayer); } catch (e) { console.warn('add car layer failed:', e); }
     });
 
+    // Catch terrain/tile load errors gracefully so a bad tile URL doesn't crash the page.
+    map.on('error', (e) => {
+      if (e.error && /elevation-tiles-prod|terrarium/.test(String(e.error))) {
+        console.warn('terrain tile error (non-fatal):', e.error);
+        terrainOn = false;
+        disableTerrain();
+        const btn = document.getElementById('btnTerrain');
+        if (btn) btn.textContent = 'TERRAIN: N/A';
+      }
+    });
+
     // Smooth glide: interpolate the rendered marker toward the last fix each frame.
     map.on('render', () => {
       if (!vehicle.target || !vehicle.current || !vehicle.marker) return;
@@ -170,7 +181,15 @@ const MAP = (() => {
   function setStyle(key) {
     if (!STYLES[key]) return;
     styleKey = key;
-    if (map) map.setStyle(STYLES[key]);
+    if (map) {
+      map.setStyle(STYLES[key]);
+      // style wipe removes all sources/layers; re-init them on next vehicle update
+      vehicle.layersReady = false;
+      // re-add the 3D car custom layer (wiped by setStyle)
+      if (carLayer && carLayer.ready && !map.getLayer('car-3d-layer')) {
+        try { map.addLayer(carLayer); } catch (e) { /* layer may already exist */ }
+      }
+    }
   }
 
   function getStyle() { return styleKey; }
@@ -186,17 +205,23 @@ const MAP = (() => {
   function enableTerrain() {
     terrainOn = true;
     if (!map || !initialized) return;
-    if (map.getSource(TERRAIN_SOURCE)) {
+    try {
+      if (map.getSource(TERRAIN_SOURCE)) {
+        map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
+        return;
+      }
+      map.addSource(TERRAIN_SOURCE, {
+        type: 'raster-dem',
+        url: TERRAIN_URL,
+        tileSize: 256,
+        maxzoom: 14,
+      });
       map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
-      return;
+    } catch (e) {
+      console.warn('terrain tiles unavailable:', e.message);
+      terrainOn = false;
+      disableTerrain();
     }
-    map.addSource(TERRAIN_SOURCE, {
-      type: 'raster-dem',
-      url: TERRAIN_URL,
-      tileSize: 256,
-      maxzoom: 14,
-    });
-    map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
   }
 
   function disableTerrain() {
@@ -732,43 +757,56 @@ const MAP = (() => {
 
   function _initVehicleLayers() {
     if (vehicle.layersReady || !map || !initialized) return;
-    // accuracy circle (sized from HDOP)
-    map.addSource('vehicle-acc', {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] },
-    });
-    map.addLayer({
-      id: 'vehicle-acc-layer',
-      type: 'circle',
-      source: 'vehicle-acc',
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['get', 'r'], 0, 6, 1, 12, 2, 22, 4, 38, 6, 56],
-        'circle-color': '#06b6d4',
-        'circle-opacity': 0.22,
-        'circle-stroke-color': '#06b6d4',
-        'circle-stroke-width': 1,
-      },
-    });
-    // speed-colored trail
-    map.addSource('vehicle-trail', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({
-      id: 'vehicle-trail-layer',
-      type: 'line',
-      source: 'vehicle-trail',
-      paint: {
-        'line-width': 3,
-        'line-cap': 'round', 'line-join': 'round',
-        'line-color': [
-          'interpolate', ['linear'], ['get', 's'],
-          0, '#06b6d4', 40, '#2447ff', 80, '#ffe600', 120, '#dc2626'],
-        'line-opacity': 0.8,
-      },
-    });
+    // accuracy circle (sized from HDOP) — idempotent: style wipe removes sources
+    if (!map.getSource('vehicle-acc')) {
+      map.addSource('vehicle-acc', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getLayer('vehicle-acc-layer')) {
+      map.addLayer({
+        id: 'vehicle-acc-layer',
+        type: 'circle',
+        source: 'vehicle-acc',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['get', 'r'], 0, 6, 1, 12, 2, 22, 4, 38, 6, 56],
+          'circle-color': '#06b6d4',
+          'circle-opacity': 0.22,
+          'circle-stroke-color': '#06b6d4',
+          'circle-stroke-width': 1,
+        },
+      });
+    }
+    // speed-colored trail — idempotent
+    if (!map.getSource('vehicle-trail')) {
+      map.addSource('vehicle-trail', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+    if (!map.getLayer('vehicle-trail-layer')) {
+      map.addLayer({
+        id: 'vehicle-trail-layer',
+        type: 'line',
+        source: 'vehicle-trail',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-width': 3,
+          'line-color': [
+            'interpolate', ['linear'], ['get', 's'],
+            0, '#06b6d4', 40, '#2447ff', 80, '#ffe600', 120, '#dc2626'],
+          'line-opacity': 0.8,
+        },
+      });
+    }
     vehicle.layersReady = true;
   }
 
   function _updateTrail() {
     if (!map || !initialized || !vehicle.layersReady) return;
+    const src = map.getSource('vehicle-trail');
+    if (!src) return; // style change wiped sources; will be re-added on next _initVehicleLayers
     const feats = [];
     for (let i = 1; i < vehicle.trail.length; i++) {
       const a = vehicle.trail[i - 1], b = vehicle.trail[i];
@@ -778,13 +816,14 @@ const MAP = (() => {
         geometry: { type: 'LineString', coordinates: [[a.lng, a.lat], [b.lng, b.lat]] },
       });
     }
-    map.getSource('vehicle-trail').setData({ type: 'FeatureCollection', features: feats });
+    src.setData({ type: 'FeatureCollection', features: feats });
   }
 
   function clearTrail() {
     vehicle.trail = [];
     if (map && initialized && vehicle.layersReady) {
-      map.getSource('vehicle-trail').setData({ type: 'FeatureCollection', features: [] });
+      const src = map.getSource('vehicle-trail');
+      if (src) src.setData({ type: 'FeatureCollection', features: [] });
     }
   }
 
