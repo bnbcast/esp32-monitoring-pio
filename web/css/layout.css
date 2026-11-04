@@ -14,7 +14,8 @@
     "topbar topbar"
     "map    side";
   gap: 12px;
-  height: calc(100vh - 24px);
+  flex: 1;
+  min-height: 0;
 }
 .top-bar-area   { grid-area: topbar; }
 .map-area       { grid-area: map; }
@@ -80,7 +81,7 @@
 }
 .hud-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
 }
 .hud-item {
@@ -122,10 +123,10 @@
       "topbar"
       "map"
       "side";
-    height: auto;
-    min-height: 100vh;
+    flex: 1;
+    min-height: 0;
   }
-  .side-panel { order: 3; }
+  .side-panel { order: 3; display: none; }
 
   /* Mobile bottom sheet — show on mobile only */
   .mobile-sheet {
