@@ -312,6 +312,31 @@ function trailMetres() {
   return (typeof MAP !== 'undefined' && MAP.getTrailDistance) ? MAP.getTrailDistance() : 0;
 }
 
+// ---- odometer (device counter + local zero offset) ------------------------
+// The firmware counts from boot and there is no downlink to reset it, so the
+// reset is a stored offset; if the device reboots (counter drops below it) the
+// offset clears itself.
+let odoOffset = 0;
+let lastRawOdo = null;
+try { odoOffset = Number(localStorage.getItem('odoOffset') || '0') || 0; } catch (e) { odoOffset = 0; }
+
+function odometerM(raw) {
+  if (!num(raw)) return null;
+  lastRawOdo = raw;
+  if (raw + 5 < odoOffset) {
+    odoOffset = 0;
+    try { localStorage.setItem('odoOffset', '0'); } catch (e) { /* quota */ }
+  }
+  return Math.max(0, raw - odoOffset);
+}
+
+function resetOdometer() {
+  if (lastRawOdo == null) return;
+  odoOffset = lastRawOdo;
+  try { localStorage.setItem('odoOffset', String(odoOffset)); } catch (e) { /* quota */ }
+  updateStatsDOM();
+}
+
 function updateStatsDOM() {
   const avgSpd = GPS.movingTime > 0 ? (GPS.totalDist / 1000) / (GPS.movingTime / 3600) : 0;
   const el = id => $(id);
@@ -319,9 +344,10 @@ function updateStatsDOM() {
   if (el('hudDist')) el('hudDist').textContent = fmtKm(trailM);
   if (el('liveTrailDist')) el('liveTrailDist').textContent = fmtKm(trailM);
   if (el('liveTrailDistMobile')) el('liveTrailDistMobile').textContent = fmtKm(trailM);
-  if (el('vDist')) el('vDist').textContent = GPS.totalDist.toFixed(1);
-  if (el('liveDist')) el('liveDist').textContent = GPS.totalDist.toFixed(1);
-  if (el('liveDistMobile')) el('liveDistMobile').textContent = GPS.totalDist.toFixed(1);
+  const odo = odometerM(GPS.totalDist);
+  if (el('vDist')) el('vDist').textContent = odo == null ? '--' : odo.toFixed(1);
+  if (el('liveDist')) el('liveDist').textContent = odo == null ? '--' : odo.toFixed(1);
+  if (el('liveDistMobile')) el('liveDistMobile').textContent = odo == null ? '--' : odo.toFixed(1);
   if (el('vAvgSpd')) el('vAvgSpd').textContent = avgSpd.toFixed(1);
   if (el('vMaxSpd')) el('vMaxSpd').textContent = GPS.maxSpeed.toFixed(1);
   if (el('liveMaxSpd')) el('liveMaxSpd').textContent = GPS.maxSpeed.toFixed(1);
@@ -377,8 +403,11 @@ function renderData(d) {
   // "NO FIX" instead of "--" makes clear the data was received but has no fix.
   const gv = (v, d) => (!gps.fix ? 'NO FIX' : (num(v) ? fmt(v, d) : '--'));
   const set = (id, val) => { const e = $(id); if (e) e.textContent = val; };
-  set('liveSpeed', gv(gps.kmh));
-  set('liveSpeedMobile', gv(gps.kmh));
+  // A parked receiver reports a couple of km/h of noise; show 0 instead.
+  const parkedNow = (typeof MAP !== 'undefined' && MAP.isParked) ? MAP.isParked() : false;
+  const spdTxt = !gps.fix ? 'NO FIX' : (parkedNow ? '0.0' : gv(gps.kmh));
+  set('liveSpeed', spdTxt);
+  set('liveSpeedMobile', spdTxt);
   set('liveAlt', gv(gps.alt));
   set('liveAltMobile', gv(gps.alt));
   set('liveFix', gps.fix ? 'VALID' : 'NO FIX');
@@ -387,10 +416,14 @@ function renderData(d) {
   set('liveTiltMobile', fmt(d.tilt));
   set('liveAmps', acs.ok ? fmt(acs.amps, 2) : 'ERR');
   set('liveAmpsMobile', acs.ok ? fmt(acs.amps, 2) : 'ERR');
-  set('hudSpeed', gv(gps.kmh));
+  set('hudSpeed', spdTxt);
+  set('gSpd', gps.fix ? (parkedNow ? '0.0 km/h' : (num(gps.kmh) ? fmt(gps.kmh) + ' km/h' : '--')) : 'NO FIX');
   if (num(gps.dist_m)) {
-    set('liveDist', gps.dist_m.toFixed(1));
-    set('liveDistMobile', gps.dist_m.toFixed(1));
+    const odo = odometerM(gps.dist_m);
+    if (odo != null) {
+      set('liveDist', odo.toFixed(1));
+      set('liveDistMobile', odo.toFixed(1));
+    }
   }
 
   // MPU6050 data
@@ -432,7 +465,7 @@ function renderData(d) {
   set('gLat', gps.fix ? fmt(gps.lat, 6) : 'NO FIX');
   set('gLng', gps.fix ? fmt(gps.lng, 6) : 'NO FIX');
   set('gAlt', gps.fix && num(gps.alt) ? fmt(gps.alt) + ' m' : (gps.fix ? '--' : 'NO FIX'));
-  set('gSpd', gps.fix && num(gps.kmh) ? fmt(gps.kmh) + ' km/h' : (gps.fix ? '--' : 'NO FIX'));
+
 
   // Map HUD - position
   set('hudLat', fmt(gps.lat, 6)); set('hudLng', fmt(gps.lng, 6));
@@ -504,19 +537,8 @@ function renderData(d) {
   $('ledW').classList.toggle('on', ok && lvl === 1);
   $('ledR').classList.toggle('on', ok && lvl === 2);
 
-  // Heading badge
-  const hb = $('liveHeadingBadge');
-  if (hb && typeof MAP !== 'undefined' && MAP.isReady()) {
-    const h = MAP.getHeading();
-    const conf = Math.round(h.confidence * 100);
-    hb.textContent = 'HDG: ' + h.source + ' ' + conf + '%';
-    hb.style.background = lvl >= 2 ? varRed() : (lvl >= 1 ? varYellow() : varGreen());
-  }
 }
 
-const varRed = () => getComputedStyle(document.documentElement).getPropertyValue('--red').trim() || '#ff3b1f';
-const varYellow = () => getComputedStyle(document.documentElement).getPropertyValue('--yellow').trim() || '#ffe600';
-const varGreen = () => getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#00e676';
 
 const num = v => typeof v === "number" && Number.isFinite(v);
 function validData(d) {
@@ -588,8 +610,7 @@ function renderBanner() {
   // Heading readout
   if (typeof MAP !== 'undefined' && MAP.isReady()) {
     const h = MAP.getHeading();
-    const conf = Math.round(h.confidence * 100);
-    if ($('hudHeading')) $('hudHeading').textContent = Math.round(h.heading) + '\u00B0  [' + h.source + ' ' + conf + '%]';
+    if ($('hudHeading')) $('hudHeading').textContent = Math.round(h.heading) + '\u00B0';
     if ($('liveCog')) $('liveCog').textContent = Math.round(h.heading);
     if ($('liveCogMobile')) $('liveCogMobile').textContent = Math.round(h.heading);
     if ($('hudSource')) {
@@ -747,26 +768,6 @@ if (!KEY) {
     });
   }
 
-  const btnCompass = $('btnCompass');
-  let compassPressTimer = null;
-  let northLocked = false;
-  if (btnCompass && typeof MAP !== 'undefined') {
-    btnCompass.innerHTML = 'N↑';
-    btnCompass.className = 'map-btn';
-    btnCompass.title = 'Reset north / Lock north';
-    const startPress = () => { compassPressTimer = setTimeout(() => {
-      northLocked = !northLocked;
-      btnCompass.innerHTML = northLocked ? 'N↓' : 'N↑';
-      MAP.setLockNorth(northLocked);
-    }, 600); };
-    const endPress = () => { if (compassPressTimer) { clearTimeout(compassPressTimer); compassPressTimer = null; } else { MAP.resetNorth(); northLocked = false; btnCompass.innerHTML = 'N↑'; } };
-    btnCompass.addEventListener('mousedown', (e) => { e.preventDefault(); startPress(); });
-    btnCompass.addEventListener('touchstart', (e) => { e.preventDefault(); startPress(); }, { passive: false });
-    btnCompass.addEventListener('mouseup', endPress);
-    btnCompass.addEventListener('mouseleave', endPress);
-    btnCompass.addEventListener('touchend', endPress);
-  }
-
   // ---- Measure A->B + trip reset -----------------------------------------
   let measureOn = false;
   function toggleMeasure(force) {
@@ -801,6 +802,10 @@ if (!KEY) {
   if (btnMeasure) btnMeasure.addEventListener('click', () => toggleMeasure());
   const btnResetTrip = $('btnResetTrip');
   if (btnResetTrip) btnResetTrip.addEventListener('click', () => resetTrip());
+  const btnResetOdo = $('btnResetOdo');
+  if (btnResetOdo) btnResetOdo.addEventListener('click', (e) => { e.stopPropagation(); resetOdometer(); });
+  const btnResetOdoM = $('btnResetOdoMobile');
+  if (btnResetOdoM) btnResetOdoM.addEventListener('click', (e) => { e.stopPropagation(); resetOdometer(); });
   if (typeof MAP !== 'undefined' && MAP.onMeasure) MAP.onMeasure(renderMeasure);
 
   // ---- Keyboard shortcuts -------------------------------------------------
@@ -808,7 +813,7 @@ if (!KEY) {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
     const k = e.key.toLowerCase();
     if (k === 'c' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.recenterNow(); }
-    else if (k === 'n' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.resetNorth(); }
+
     else if (k === 'm') { e.preventDefault(); toggleMeasure(); }
     else if (k === 'r') { e.preventDefault(); resetTrip(); }
     else if (k === 'escape') { e.preventDefault(); toggleMeasure(false); }

@@ -204,3 +204,27 @@
   .map-hud .hud-addr { font-size: 0.6rem; padding-top: 2px; margin-top: 2px; -webkit-line-clamp: 1; }
 }
 
+
+/* Phone: attribution becomes a thin strip and the map buttons sit above it */
+@media (max-width: 900px) {
+  .maplibregl-ctrl-scale { display: none !important; }
+  .maplibregl-ctrl-attrib {
+    font-size: 0.45rem !important;
+    padding: 2px 5px !important;
+    line-height: 1.15 !important;
+    max-width: 100% !important;
+  }
+  .map-btns { bottom: 34px; right: 8px; gap: 6px; }
+  .map-btn { width: 42px; height: 42px; font-size: 0.85rem; }
+}
+
+
+@media (max-width: 900px) {
+  .maplibregl-ctrl-attrib,
+  .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner {
+    white-space: normal !important;
+    text-overflow: clip !important;
+    overflow: visible !important;
+  }
+}
+

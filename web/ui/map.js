@@ -132,6 +132,7 @@ const MAP = (function () {
   let anchor = { lng: null, lat: null };
   let lastMoveTs = 0;
   let stopped = true;
+  let parkedNow = false;        // position cloud says "not moving" (trustworthy)
   let frozenHeading = 0;
 
   // trail (speed-colored polyline) + its measured length
@@ -302,8 +303,9 @@ const MAP = (function () {
       pitch: 0,
       bearing: 0,
       interaction: true,
-      attributionControl: true
+      attributionControl: false
     });
+    map.addControl(new maplibregl.AttributionControl({ compact: true }));
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ position: "bottom-left" }), "bottom-left");
@@ -496,6 +498,7 @@ const MAP = (function () {
         const acc = clamp((hdop && hdop > 0 ? hdop : 3) * 5, 5, 40);
         pushRecent(lat, lng, now);
         const parked = recentSpreadM() < Math.max(5, acc);
+        parkedNow = parked;
         const moving = !parked;
         const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2);
 
@@ -539,11 +542,10 @@ const MAP = (function () {
       lastRaw = { lat, lng, ts: now };
     }
 
-    const wasStopped = stopped;
-    stopped = (speed < 0.6) && (now - lastMoveTs > 2500);
-    if (!stopped || !wasStopped) {
-      if (!stopped) frozenHeading = fusedHeading;
-    }
+    // Stopped for the map means "the position cloud is not moving", not "the
+    // receiver reports 0 km/h" - a parked module happily reports 2-4 km/h.
+    stopped = parkedNow || ((speed < 0.6) && (now - lastMoveTs > 2500));
+    if (!stopped) frozenHeading = fusedHeading;
 
     updateMarker();
     updateAccuracy();
@@ -572,6 +574,7 @@ const MAP = (function () {
   // pan when it leaves the middle band of the viewport.
   function followIfNeeded() {
     if (!map || !mapReady) return;
+    if (parkedNow) return;              // never pan a parked vehicle
     if (myLocMode !== "recenter" && myLocMode !== "follow") return;
     if (vehicle.lat == null) return;
     const w = map.getContainer().clientWidth;
@@ -872,6 +875,7 @@ const MAP = (function () {
     getTrailDistance: () => trailDistM,
     getTrailPoints: () => trailCoords.length,
     isStopped: () => stopped,
+    isParked: () => parkedNow,
     setMeasureMode,
     clearMeasure,
     onMeasure,
