@@ -138,14 +138,39 @@ const MAP = (function () {
   let trailCoords = [];
   let trailDistM = 0;
   const TRAIL_MAX = 1200;          // drawn vertices before decimation
-  const TRAIL_STEP_MOVING = 2.5;   // metres between accepted points
-  const TRAIL_STEP_STOPPED = 8.0;  // deadband while parked (grows with HDOP)
+  const TRAIL_STEP_MOVING = 3.0;   // metres between accepted points
+  const TRAIL_STEP_STOPPED = 10.0; // deadband while parked (grows with HDOP)
   let trailRaf = 0;
 
   // Parked-receiver noise often arrives as a single 5-10 m jump. A move is only
   // believed after this many consecutive readings agree on it.
   let stillCount = 0;
   let pending = { lat: null, lng: null };
+  let pendingD = 0;             // distance of that pending point from the anchor
+  let lastRaw = { lat: null, lng: null, ts: 0 };   // previous raw fix
+
+  // Rolling window of raw fixes. Whether the receiver is actually parked is
+  // decided from how much this cloud spreads, not from the reported speed:
+  // a stationary module happily reports 2-4 km/h of "speed noise".
+  let recent = [];
+
+  function pushRecent(lat, lng, now) {
+    recent.push({ lat, lng, ts: now });
+    while (recent.length && now - recent[0].ts > 6000) recent.shift();
+    if (recent.length > 40) recent.shift();
+  }
+
+  function recentSpreadM() {
+    if (recent.length < 4) return Infinity;
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    for (const p of recent) {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lng < minLng) minLng = p.lng;
+      if (p.lng > maxLng) maxLng = p.lng;
+    }
+    return distM(minLat, minLng, maxLat, maxLng);
+  }
 
   // marker + accuracy circle + heading wedge
   let marker = null;
@@ -469,31 +494,49 @@ const MAP = (function () {
         // Position error scales with HDOP; ~5 m per HDOP unit is the usual rule
         // of thumb for a consumer receiver, so the deadband follows the sky.
         const acc = clamp((hdop && hdop > 0 ? hdop : 3) * 5, 5, 40);
-        const moving = speed >= 1.2;         // km/h
-        const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc);
+        pushRecent(lat, lng, now);
+        const parked = recentSpreadM() < Math.max(5, acc);
+        const moving = !parked;
+        const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2);
 
-        if (d >= step) {
-          if (moving) {
+        // Physics check: the jump between two consecutive readings must be
+        // compatible with the reported speed. A parked module happily reports a
+        // few km/h, and a 5 m jump in 0.5 s would imply 36 km/h -> noise.
+        const dtS = Math.max(0.2, (now - (lastRaw.ts || now - 500)) / 1000);
+        const stepDist = (lastRaw.lat != null) ? distM(lastRaw.lat, lastRaw.lng, lat, lng) : d;
+        const impliedKmh = (stepDist / dtS) * 3.6;
+        const speedCap = Math.max(15, speed * 2.5 + 10);
+        // Only worth checking while parked: at speed the cloud is already
+        // spreading, and a dropped/retained message can legitimately imply a
+        // high speed over a short interval.
+        const plausible = moving || impliedKmh <= speedCap;
+
+        // A move must be confirmed by consecutive readings that keep going the
+        // same way: one sample is noise, two (moving) or three (parked) are a
+        // real displacement.
+        if (d >= step && plausible) {
+          if (pending.lat != null && d >= pendingD - 0.5) {
+            stillCount++;
+          } else {
+            pending = { lat, lng };
+            pendingD = d;
+            stillCount = 1;
+          }
+          if (stillCount >= (moving ? 2 : 3)) {
             acceptPoint(lng, lat, speed, d, now);
             stillCount = 0;
             pending = { lat: null, lng: null };
-          } else if (pending.lat != null && distM(pending.lat, pending.lng, lat, lng) <= step) {
-            // Parked and the reading still points the same way: believe it only
-            // after three in a row, which a wandering fix cannot fake.
-            if (++stillCount >= 3) {
-              acceptPoint(lng, lat, speed, d, now);
-              stillCount = 0;
-              pending = { lat: null, lng: null };
-            }
-          } else {
-            pending = { lat, lng };
-            stillCount = 1;
+            pendingD = 0;
           }
         } else {
           stillCount = 0;
           pending = { lat: null, lng: null };
+          pendingD = 0;
         }
       }
+      // Remember every raw fix (accepted or not): the plausibility check below
+      // compares two consecutive readings, not the last accepted one.
+      lastRaw = { lat, lng, ts: now };
     }
 
     const wasStopped = stopped;
@@ -695,6 +738,12 @@ const MAP = (function () {
   function clearTrail() {
     trailCoords = [];
     trailDistM = 0;
+    anchor = { lng: null, lat: null };
+    recent = [];
+    stillCount = 0;
+    pending = { lat: null, lng: null };
+    lastMoveTs = 0;
+    lastRaw = { lat: null, lng: null, ts: 0 };
     if (map && mapReady) {
       const src = map.getSource("trail");
       if (src) src.setData({ type: "FeatureCollection", features: [] });
