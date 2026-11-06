@@ -141,7 +141,7 @@ const MAP = (function () {
   let trailDistM = 0;
   const TRAIL_MAX = 1200;          // drawn vertices before decimation
   const TRAIL_STEP_MOVING = 3.0;   // metres between accepted points
-  const TRAIL_STEP_STOPPED = 20.0; // deadband while parked (grows with HDOP)
+  const TRAIL_STEP_STOPPED = 15.0; // deadband while parked (grows with HDOP)
   let trailRaf = 0;
 
   // Parked-receiver noise often arrives as a single 5-10 m jump. A move is only
@@ -158,14 +158,28 @@ const MAP = (function () {
 
   function pushRecent(lat, lng, now) {
     recent.push({ lat, lng, ts: now });
-    while (recent.length && now - recent[0].ts > 10000) recent.shift();
-    if (recent.length > 40) recent.shift();
+    while (recent.length && now - recent[0].ts > 30000) recent.shift();
+    if (recent.length > 120) recent.shift();
+  }
+
+  // Displacement over the last ~25 s. A parked receiver wanders inside ~10 m;
+  // a person walking covers 30 m+ in that time, which is what separates them.
+  function recentDisplacementM(lat, lng) {
+    const now = Date.now();
+    let ref = null;
+    for (const p of recent) {
+      if (now - p.ts >= 20000) ref = p; else break;
+    }
+    if (!ref) return 0;
+    return distM(ref.lat, ref.lng, lat, lng);
   }
 
   function recentSpreadM() {
-    if (recent.length < 4) return Infinity;
+    const now = Date.now();
+    const pts = recent.filter(p => now - p.ts <= 10000);
+    if (pts.length < 4) return Infinity;
     let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-    for (const p of recent) {
+    for (const p of pts) {
       if (p.lat < minLat) minLat = p.lat;
       if (p.lat > maxLat) maxLat = p.lat;
       if (p.lng < minLng) minLng = p.lng;
@@ -517,12 +531,16 @@ const MAP = (function () {
         if (lastSampleOk) {
           pushRecent(lat, lng, now);
           // Two independent hints say "parked": the module reports less than
-          // 4 km/h (it lies by 0-3 while standing still, but never reports 0
+          // 6 km/h (it lies by 2-4 while standing still, but never reports 0
           // while driving) or the position cloud is tight. Multipath drift of
-          // ~10 m creeps past any small deadband, so the parked step is 20 m+.
-          const parked = numOr0(speed) < 4.0 || recentSpreadM() < Math.max(6, acc);
+          // ~10 m creeps past any small deadband, so the parked step is 15 m+.
+          // A tight cloud (inside the fix accuracy) vetoes any "moving" claim,
+          // so a 7 km/h noise spike on a parked receiver changes nothing.
+          const tight = recentSpreadM() < Math.max(6, acc);
+          const walking = recentDisplacementM(lat, lng) > 20;   // sustained, not wander
+          const moving = !tight && (numOr0(speed) >= 6.0 || walking);
+          const parked = !moving;
           parkedNow = parked;
-          const moving = !parked;
           const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2.5);
 
           // A move must be confirmed by consecutive readings that keep going the
