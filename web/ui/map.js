@@ -59,6 +59,11 @@ const MAP = (function () {
     }
   ];
 
+  // Vector basemap: buildings + POI/street labels, crisp at any zoom, no key.
+  // OpenMapTiles schema on OpenFreeMap (free, no signup). The raster providers
+  // below stay as the fallback if this host is unreachable.
+  const VECTOR_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+
   // Local dev server proxies tiles (adds a proper User-Agent). Only used on
   // localhost, where a proxy is actually reachable.
   if (IS_LOCAL) {
@@ -134,8 +139,13 @@ const MAP = (function () {
   let trailDistM = 0;
   const TRAIL_MAX = 1200;          // drawn vertices before decimation
   const TRAIL_STEP_MOVING = 2.5;   // metres between accepted points
-  const TRAIL_STEP_STOPPED = 5.0;  // larger deadband while parked
+  const TRAIL_STEP_STOPPED = 8.0;  // deadband while parked (grows with HDOP)
   let trailRaf = 0;
+
+  // Parked-receiver noise often arrives as a single 5-10 m jump. A move is only
+  // believed after this many consecutive readings agree on it.
+  let stillCount = 0;
+  let pending = { lat: null, lng: null };
 
   // marker + accuracy circle + heading wedge
   let marker = null;
@@ -261,7 +271,7 @@ const MAP = (function () {
 
     map = new maplibregl.Map({
       container: id,
-      style: MAP_STYLE,
+      style: VECTOR_STYLE_URL,
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
       pitch: 0,
@@ -273,46 +283,36 @@ const MAP = (function () {
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ position: "bottom-left" }), "bottom-left");
 
-    // Readiness must not depend on the 'load' event alone: it only fires once
-    // the first frame is fully painted with every initial tile, and a single
-    // slow/blocked tile keeps it from firing forever (the map then looks fine
-    // but the vehicle, trail and heading HUD never initialise). Initialise on
-    // whichever comes first: load, idle, styledata, or a short poll.
+    let styleKind = VECTOR_STYLE_URL ? "vector" : "raster";
     let initDone = false;
-    function styleParsed() {
-      // isStyleLoaded() stays false while any initial tile is outstanding (one
-      // slow tile is enough), so test for our own layer instead: it only exists
-      // once the style has been parsed and is safe to add layers to.
-      try { return !!map.getLayer('base-layer'); } catch (e) { return false; }
-    }
 
-    function tryInitMap(force) {
-      if (initDone || !map) return;
-      if (!force && !styleParsed()) return;
-      initDone = true;
-      mapReady = true;
-      try { initLayers(); } catch (e) { console.warn('initLayers failed:', e && e.message); }
-      try { createMarker(); } catch (e) { console.warn('createMarker failed:', e && e.message); }
-      try { resize(); } catch (e) { /* ignore */ }
-    }
+    // Our sources/layers are wiped by every setStyle(), so they are (re)added on
+    // each 'style.load' - first load, raster fallback, everything.
+    map.on("style.load", () => {
+      try { ensureLayers(); } catch (e) { console.warn("addLayers failed:", e && e.message); }
+      if (!initDone) {
+        initDone = true;
+        mapReady = true;
+        try { createMarker(); } catch (e) { console.warn("createMarker failed:", e && e.message); }
+        try { updateMarker(); } catch (e) { /* ignore */ }
+        try { resize(); } catch (e) { /* ignore */ }
+      }
+    });
 
-    map.on("load", () => tryInitMap(false));
-    map.on("idle", () => tryInitMap(false));
-    map.on("styledata", () => tryInitMap(false));
-    const readyPoll = setInterval(() => {
-      tryInitMap(false);
-      if (initDone || !map) clearInterval(readyPoll);
-    }, 400);
-    // Hard safety net: after 6 s initialise regardless, so a starved tile server
-    // can never leave the dashboard without a vehicle marker.
-    setTimeout(() => tryInitMap(true), 6000);
-    // ---- tile failover ----------------------------------------------------
-    // A provider can fail two ways: hard errors (blocked / offline), or the
-    // silent 200-with-blank-tile trick OSM plays on foreign Referers. Hard
-    // errors are counted here and we hop to the next provider.
+    // If the vector style never arrives (blocked host, DNS, offline) the map
+    // would stay blank, so drop to the raster provider list after 12 s.
+    setTimeout(() => {
+      if (initDone || styleKind !== "vector") return;
+      console.warn("Vector basemap did not load, falling back to raster");
+      styleKind = "raster";
+      map.setStyle(buildStyle(TILE_PROVIDERS[tileProviderIndex]));
+    }, 12000);
+
+    // ---- raster tile failover --------------------------------------------
     let tileErrors = 0;
     let lastSwap = 0;
     map.on('error', e => {
+      if (styleKind !== "raster") return;
       const src = e && e.sourceId;
       if (src && src !== 'base') return;
       tileErrors++;
@@ -350,7 +350,12 @@ const MAP = (function () {
     });
   }
 
-  function initLayers() {
+  // Idempotent: safe to call after every style load. Re-creates our overlays
+  // (a setStyle wipes them) and repopulates the data they held.
+  function ensureLayers() {
+    if (map.getSource("trail")) return;
+    if (!map.getStyle()) return;
+
     // ---- Trail source (geojson) ----
     map.addSource("trail", {
       type: "geojson",
@@ -433,6 +438,10 @@ const MAP = (function () {
         "fill-opacity": 0.25
       }
     });
+
+    // A style swap threw the old data away; put the current state back.
+    try { updateTrail(); } catch (e) { /* ignore */ }
+    try { renderMeasure(); } catch (e) { /* ignore */ }
   }
 
   // ---- vehicle / trail updates -------------------------------------------
@@ -457,15 +466,32 @@ const MAP = (function () {
         pushTrail(lng, lat, speed);
       } else {
         const d = distM(anchor.lat, anchor.lng, lat, lng);
-        // A parked receiver wanders a few metres. While the reported speed says
-        // "stopped", only a move that clears the deadband is accepted; that
-        // keeps the marker and the trail perfectly still on the map.
-        const step = speed >= 1.0 ? TRAIL_STEP_MOVING : TRAIL_STEP_STOPPED;
+        // Position error scales with HDOP; ~5 m per HDOP unit is the usual rule
+        // of thumb for a consumer receiver, so the deadband follows the sky.
+        const acc = clamp((hdop && hdop > 0 ? hdop : 3) * 5, 5, 40);
+        const moving = speed >= 1.2;         // km/h
+        const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc);
+
         if (d >= step) {
-          trailDistM += d;
-          anchor = { lng, lat };
-          lastMoveTs = now;
-          pushTrail(lng, lat, speed);
+          if (moving) {
+            acceptPoint(lng, lat, speed, d, now);
+            stillCount = 0;
+            pending = { lat: null, lng: null };
+          } else if (pending.lat != null && distM(pending.lat, pending.lng, lat, lng) <= step) {
+            // Parked and the reading still points the same way: believe it only
+            // after three in a row, which a wandering fix cannot fake.
+            if (++stillCount >= 3) {
+              acceptPoint(lng, lat, speed, d, now);
+              stillCount = 0;
+              pending = { lat: null, lng: null };
+            }
+          } else {
+            pending = { lat, lng };
+            stillCount = 1;
+          }
+        } else {
+          stillCount = 0;
+          pending = { lat: null, lng: null };
         }
       }
     }
@@ -480,6 +506,13 @@ const MAP = (function () {
     updateAccuracy();
     updateHeadingWedge();
     followIfNeeded();
+  }
+
+  function acceptPoint(lng, lat, speed, d, now) {
+    trailDistM += d;
+    anchor = { lng, lat };
+    lastMoveTs = now;
+    pushTrail(lng, lat, speed);
   }
 
   // Metres between two WGS84 points (haversine).
@@ -776,7 +809,12 @@ const MAP = (function () {
   // ---- public API ---------------------------------------------------------
   return {
     create,
-    loaded: () => new Promise(res => { if (map) { map.once("load", res); } else res(); }),
+    loaded: () => new Promise(res => {
+      if (!map || mapReady) return res();
+      map.once("load", res);
+      map.once("idle", res);
+      setTimeout(res, 8000);   // never leave the caller hanging
+    }),
     isReady: () => mapReady,
     getMap: () => map,          // debugging/verification hook
     resize,
