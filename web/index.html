@@ -169,8 +169,10 @@
       </div>
     </div>
   </div>
+  </div>
+  <!-- /desktop-layout -->
 
-  <!-- Mobile bottom sheet (hidden on desktop, shown via CSS on mobile only) -->
+  <!-- Mobile bottom sheet (CSS shows this below 900px, hidden on desktop) -->
   <div class="side-panel mobile-sheet">
     <div class="sheet-handle"></div>
     <div class="tab-bar">
@@ -179,30 +181,53 @@
       <button class="tab-btn" data-tab="mpu">MPU</button>
     </div>
     <div class="tab-panels-wrapper">
+
+      <!-- Mobile LIVE tab -->
       <div class="tab-panel active" id="tab-live-mobile">
-      <!-- Mobile LIVE content injected via JS -->
-    </div>
-    <div class="tab-panel" id="tab-wifi-mobile">
-      <div class="hud-card">
-        <h3>Device Status</h3>
-        <div class="hud-grid">
-          <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="wifiUpMobile">--</div><div class="lbl"></div></div>
-          <div class="hud-item"><div class="lbl">WiFi RSSI</div><div class="val" id="wifiRssiMobile">--</div><div class="lbl">dBm</div></div>
-          <div class="hud-item"><div class="lbl">Free Heap</div><div class="val" id="wifiHeapMobile">--</div><div class="lbl">KB</div></div>
-          <div class="hud-item"><div class="lbl">Last Update</div><div class="val" id="wifiLastMobile">--</div><div class="lbl"></div></div>
+        <div class="hud-card">
+          <h3>Telemetry</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">Speed</div><div class="val" id="liveSpeedMobile">--</div><div class="lbl">km/h</div></div>
+            <div class="hud-item"><div class="lbl">Altitude</div><div class="val" id="liveAltMobile">--</div><div class="lbl">m</div></div>
+            <div class="hud-item"><div class="lbl">Sats</div><div class="val" id="liveSatsMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">HDOP</div><div class="val" id="liveHdopMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">Fix</div><div class="val" id="liveFixMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">Heading</div><div class="val" id="liveCogMobile">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Tilt</div><div class="val" id="liveTiltMobile">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Amps</div><div class="val" id="liveAmpsMobile">--</div><div class="lbl">A</div></div>
+            <div class="hud-item"><div class="lbl">Distance</div><div class="val" id="liveDistMobile">--</div><div class="lbl">m</div></div>
+            <div class="hud-item"><div class="lbl">Max Speed</div><div class="val" id="liveMaxSpdMobile">--</div><div class="lbl">km/h</div></div>
+            <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="sUpMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">RSSI</div><div class="val" id="sRssiMobile">--</div><div class="lbl">dBm</div></div>
+          </div>
         </div>
       </div>
-      <div class="hud-card">
-        <h3>WiFi Connection</h3>
-        <div class="hud-grid">
-          <div class="hud-item"><div class="lbl">SSID</div><div class="val" id="wifiSsidMobile">--</div><div class="lbl"></div></div>
-          <div class="hud-item"><div class="lbl">BSSID</div><div class="val" id="wifiBssidMobile">--</div><div class="lbl"></div></div>
-          <div class="hud-item"><div class="lbl">Channel</div><div class="val" id="wifiChanMobile">--</div><div class="lbl"></div></div>
-          <div class="hud-item"><div class="lbl">Status</div><div class="val" id="wifiStatusMobile">--</div><div class="lbl"></div></div>
-          <div class="hud-item"><div class="lbl">IP Address</div><div class="val" id="wifiIpMobile">--</div><div class="lbl"></div></div>
-          <div class="hud-item"><div class="lbl">MAC</div><div class="val" id="wifiMacMobile">--</div><div class="lbl"></div></div>
+
+      <!-- Mobile WIFI tab -->
+      <div class="tab-panel" id="tab-wifi-mobile">
+        <div class="hud-card">
+          <h3>Device Status</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="wifiUpMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">WiFi RSSI</div><div class="val" id="wifiRssiMobile">--</div><div class="lbl">dBm</div></div>
+            <div class="hud-item"><div class="lbl">Free Heap</div><div class="val" id="wifiHeapMobile">--</div><div class="lbl">KB</div></div>
+            <div class="hud-item"><div class="lbl">Last Update</div><div class="val" id="wifiLastMobile">--</div><div class="lbl"></div></div>
+          </div>
+        </div>
+        <div class="hud-card">
+          <h3>WiFi Connection</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">SSID</div><div class="val" id="wifiSsidMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">BSSID</div><div class="val" id="wifiBssidMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">Channel</div><div class="val" id="wifiChanMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">Status</div><div class="val" id="wifiStatusMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">IP Address</div><div class="val" id="wifiIpMobile">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">MAC</div><div class="val" id="wifiMacMobile">--</div><div class="lbl"></div></div>
+          </div>
         </div>
       </div>
+
+      <!-- Mobile MPU6050 tab -->
       <div class="tab-panel" id="tab-mpu-mobile">
         <div class="hud-card">
           <h3>MPU6050</h3>
@@ -221,7 +246,9 @@
           </div>
         </div>
       </div>
+
     </div>
+  </div>
 
   <!-- Setup screen (hidden by default; shown only when no key) -->
   <section id="setup" class="panel" style="display:none;margin-bottom:20px;">

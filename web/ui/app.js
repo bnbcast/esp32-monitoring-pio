@@ -10,6 +10,10 @@
 const DEV_MODE = /(?:^|[?&])dev(?:&|$|#)/.test(location.search) || location.hostname === 'localhost';
 const BROKER_URL = DEV_MODE ? 'ws://localhost:5003/mqtt' : 'wss://broker.hivemq.com:8884/mqtt';
 const TOPIC_ROOT = "esp32-dash/";
+// Must match TOPIC_KEY in src/mqtt_simple/mqtt_simple.cpp. Used only when the
+// page is opened without a #t=<key> fragment, so the deployed dashboard shows
+// live data straight away instead of the setup form.
+const DEFAULT_KEY = 'ea77aca95507194b8e46';
 const STALE_AFTER_MS = 6000;
 const N = 120;
 
@@ -18,8 +22,12 @@ const $ = id => document.getElementById(id);
 const C = { ink: "#000", blue: "#2447ff", red: "#ff3b1f", green: "#00e676", yellow: "#ffe600" };
 const fmt = (v, d = 1) => (typeof v !== "number" || Number.isNaN(v)) ? "--" : v.toFixed(d);
 const setPill = (el, text, cls) => { if (!el) return; el.textContent = text; el.className = "pill " + cls; };
-const uptime = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60]
-  .map(n => String(n).padStart(2, "0")).join(":");
+const uptime = s => {
+  const d = Math.floor(s / 86400);
+  const hms = [Math.floor(s / 3600) % 24, Math.floor(s / 60) % 60, Math.floor(s % 60)]
+    .map(n => String(n).padStart(2, "0")).join(":");
+  return d > 0 ? d + "d " + hms : hms;
+};
 
 // ---- Tilt History Chart ----------------------------------------------------
 function drawTiltChart() {
@@ -73,9 +81,11 @@ async function reverseGeocode(lat, lng) {
 }
 
 // ---- topic key ------------------------------------------------------------
+// Accepts the key either as #t=<key> (shareable link) or ?t=<key> (dev server).
 function readKey() {
-  const raw = location.hash.slice(1);
-  const key = raw.startsWith("t=") ? raw.slice(2) : raw;
+  const fromQuery = new URLSearchParams(location.search).get('t') || '';
+  const raw = fromQuery || location.hash.slice(1);
+  const key = raw.startsWith('t=') ? raw.slice(2) : raw;
   return /^[A-Za-z0-9_-]{8,64}$/.test(key) ? key : null;
 }
 
@@ -148,6 +158,8 @@ function ingestGPS(g) {
     kmh: typeof g.kmh === 'number' ? g.kmh : 0,
     cog: typeof g.cog === 'number' ? g.cog : 0,
     hdop: typeof g.hdop === 'number' ? g.hdop : null,
+    sats: typeof g.sats === 'number' ? g.sats : null,
+    fix: !!g.fix,
     ts: now
   };
 
@@ -191,9 +203,11 @@ function updateStatsDOM() {
   const el = id => $(id);
   if (el('vDist')) el('vDist').textContent = GPS.totalDist.toFixed(1);
   if (el('liveDist')) el('liveDist').textContent = GPS.totalDist.toFixed(1);
+  if (el('liveDistMobile')) el('liveDistMobile').textContent = GPS.totalDist.toFixed(1);
   if (el('vAvgSpd')) el('vAvgSpd').textContent = avgSpd.toFixed(1);
   if (el('vMaxSpd')) el('vMaxSpd').textContent = GPS.maxSpeed.toFixed(1);
   if (el('liveMaxSpd')) el('liveMaxSpd').textContent = GPS.maxSpeed.toFixed(1);
+  if (el('liveMaxSpdMobile')) el('liveMaxSpdMobile').textContent = GPS.maxSpeed.toFixed(1);
   if (el('vMoveT')) el('vMoveT').textContent = Math.round(GPS.movingTime);
   if (el('vElevGain')) el('vElevGain').textContent = Math.round(GPS.elevGain);
   if (el('vElevLoss')) el('vElevLoss').textContent = Math.round(GPS.elevLoss);
@@ -204,10 +218,13 @@ function updateSignalDOM() {
   if (!last) return;
   if ($('vHdop')) $('vHdop').textContent = last.hdop != null ? last.hdop.toFixed(2) : '--';
   if ($('liveHdop')) $('liveHdop').textContent = last.hdop != null ? last.hdop.toFixed(2) : '--';
+  if ($('liveHdopMobile')) $('liveHdopMobile').textContent = last.hdop != null ? last.hdop.toFixed(2) : '--';
   if ($('vSats')) $('vSats').textContent = last.sats != null ? last.sats : '--';
   if ($('liveSats')) $('liveSats').textContent = last.sats != null ? last.sats : '--';
+  if ($('liveSatsMobile')) $('liveSatsMobile').textContent = last.sats != null ? last.sats : '--';
   if ($('vFix')) $('vFix').textContent = last.fix ? 'VALID' : 'INVALID';
   if ($('liveFix')) $('liveFix').textContent = last.fix ? 'VALID' : 'INVALID';
+  if ($('liveFixMobile')) $('liveFixMobile').textContent = last.fix ? 'VALID' : 'INVALID';
   if ($('vChars')) $('vChars').textContent = GPS.lastChars != null ? GPS.lastChars + '/s' : '--';
 }
 
@@ -225,10 +242,15 @@ function renderData(d) {
   // Telemetry readouts (LIVE tab + map HUD)
   const set = (id, val) => { const e = $(id); if (e) e.textContent = val; };
   set('liveSpeed', fmt(gps.kmh));
+  set('liveSpeedMobile', fmt(gps.kmh));
   set('liveAlt', num(gps.alt) ? fmt(gps.alt) : '--');
+  set('liveAltMobile', num(gps.alt) ? fmt(gps.alt) : '--');
   set('liveFix', gps.fix ? 'VALID' : 'INVALID');
+  set('liveFixMobile', gps.fix ? 'VALID' : 'INVALID');
   set('liveTilt', fmt(d.tilt) + ' deg');
+  set('liveTiltMobile', fmt(d.tilt));
   set('liveAmps', acs.ok ? fmt(acs.amps, 2) : 'ERR');
+  set('liveAmpsMobile', acs.ok ? fmt(acs.amps, 2) : 'ERR');
   set('hudSpeed', fmt(gps.kmh));
 
   // MPU6050 data
@@ -263,6 +285,10 @@ function renderData(d) {
 
   // GPS values
   set('gSat', num(gps.sats) ? gps.sats : '--');
+  set('liveSats', num(gps.sats) ? gps.sats : '--');
+  set('liveSatsMobile', num(gps.sats) ? gps.sats : '--');
+  set('liveHdop', num(gps.hdop) ? gps.hdop.toFixed(2) : '--');
+  set('liveHdopMobile', num(gps.hdop) ? gps.hdop.toFixed(2) : '--');
   set('gLat', fmt(gps.lat, 6)); set('gLng', fmt(gps.lng, 6));
   set('gAlt', num(gps.alt) ? fmt(gps.alt) + ' m' : '--');
   set('gSpd', num(gps.kmh) ? fmt(gps.kmh) + ' km/h' : '--');
@@ -273,7 +299,9 @@ function renderData(d) {
 
   // Device values
   set('sUp', num(d.up) ? uptime(d.up) : '--');
+  set('sUpMobile', num(d.up) ? uptime(d.up) : '--');
   set('sRssi', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
+  set('sRssiMobile', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
   set('sHeap', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
 
   // WiFi tab values (desktop)
@@ -398,11 +426,13 @@ function renderBanner() {
   if ($('fTime')) $('fTime').textContent = new Date().toLocaleTimeString();
 
   // Heading readout
-  if ($('hudHeading') && typeof MAP !== 'undefined' && MAP.isReady()) {
+  if (typeof MAP !== 'undefined' && MAP.isReady()) {
     const h = MAP.getHeading();
     const conf = Math.round(h.confidence * 100);
-    $('hudHeading').textContent = Math.round(h.heading) + '\u00B0  [' + h.source + ' ' + conf + '%]';
-    if (GPS.lastPoint) {
+    if ($('hudHeading')) $('hudHeading').textContent = Math.round(h.heading) + '\u00B0  [' + h.source + ' ' + conf + '%]';
+    if ($('liveCog')) $('liveCog').textContent = Math.round(h.heading);
+    if ($('liveCogMobile')) $('liveCogMobile').textContent = Math.round(h.heading);
+    if (GPS.lastPoint && $('hudSource')) {
       $('hudSource').textContent = GPS.lastPoint.lat.toFixed(4) + ', ' + GPS.lastPoint.lng.toFixed(4);
     }
   }
@@ -440,31 +470,42 @@ function onMessage(topic, payload, retained) {
 
   ingestGPS(d.gps);
 
-  if (!retained) {
-    lastLiveAt = Date.now();
-    const now = Date.now();
-    if (now - lastPush >= 1000) {
-      lastPush = now;
-      H.t.push(d.tilt); H.a.push(d.acs.ok && num(d.acs.amps) ? d.acs.amps : 0);
-      if (H.t.length > N) { H.t.shift(); H.a.shift(); }
-    }
+  // The firmware publishes every reading with retain=true, so the retained flag
+  // does NOT mean "history": a retained message can arrive right after the
+  // previous one. Receipt time is the only reliable liveness signal.
+  lastLiveAt = Date.now();
+  const now = Date.now();
+  if (now - lastPush >= 1000) {
+    lastPush = now;
+    H.t.push(d.tilt); H.a.push(d.acs.ok && num(d.acs.amps) ? d.acs.amps : 0);
+    if (H.t.length > N) { H.t.shift(); H.a.shift(); }
   }
   renderData(d);
   renderBanner();
 }
 
 // ---- start ----------------------------------------------------------------
-let KEY = readKey();
+const rawHash = location.hash.slice(1);
+const hashKey = readKey();
+// No key given at all -> use the built-in key. A key that is present but
+// malformed must NOT silently fall back, otherwise a typo would quietly show
+// somebody else's data.
+let KEY = hashKey || (rawHash.length ? null : DEFAULT_KEY);
 if (!KEY && DEV_MODE) {
   KEY = 'dev-test-1234';
   location.hash = 't=' + KEY;
 }
+
+// "SIMULATED" only makes sense against the local simulator, never on a live page.
+const simBadge = $('sim-badge');
+if (simBadge) simBadge.style.display = DEV_MODE ? '' : 'none';
 
 const TOPIC_DATA = KEY ? TOPIC_ROOT + KEY + "/data" : "";
 const TOPIC_STATUS = KEY ? TOPIC_ROOT + KEY + "/status" : "";
 
 if (!KEY) {
   $('setup').style.display = 'block';
+  if (simBadge) simBadge.style.display = 'none';
   if ($('grid')) $('grid').style.display = 'none';
   if ($('banner')) $('banner').style.display = 'none';
   $('keyForm').addEventListener('submit', e => {

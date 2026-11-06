@@ -7,9 +7,12 @@
 // ---------------------------------------------------------------------------
 
 const MAP = (function () {
-  // CSP-safe worker — must be set before Map constructor
+  // CSP-safe worker — must be set before Map constructor.
+  // Resolved against the document base URI so the app also works when it is
+  // served from a sub-path (GitHub Pages: /esp32-monitoring-pio/), not only
+  // from the domain root.
   if (typeof maplibregl !== 'undefined' && !maplibregl.workerUrl) {
-    maplibregl.workerUrl = '/vendor/maplibre-gl-csp-worker.js';
+    maplibregl.workerUrl = new URL('vendor/maplibre-gl-csp-worker.js', document.baseURI).href;
   }
 
   // ---- config -------------------------------------------------------------

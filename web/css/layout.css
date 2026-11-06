@@ -3,7 +3,16 @@
 --------------------------------------------------------------------------- */
 
 /* Page shell */
-.app-shell { display: flex; flex-direction: column; min-height: 100vh; padding: 10px; gap: 10px; }
+html, body { height: 100%; }
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  padding: 10px;
+  gap: 10px;
+  overflow: auto;
+}
 
 /* Top bar — compact, fixed height */
 .top-bar-area { grid-area: topbar; }
@@ -28,7 +37,7 @@
 #map-container {
   width: 100%;
   flex: 1;
-  min-height: 300px;
+  min-height: 240px;
   border: var(--border-w-thick) solid var(--ink);
   box-shadow: var(--shadow);
   background: var(--paper);
@@ -74,7 +83,7 @@
 
 /* ---- Mobile ---- */
 @media (max-width: 900px) {
-  .app-shell { padding: 8px; gap: 8px; }
+  .app-shell { padding: 8px; gap: 8px; height: auto; min-height: 100dvh; overflow: visible; }
 
   .desktop-layout {
     grid-template-columns: 1fr;
