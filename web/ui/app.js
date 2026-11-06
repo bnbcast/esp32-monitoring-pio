@@ -300,9 +300,9 @@ function ingestGPS(g) {
 function fmtKm(m) {
   if (!num(m)) return '--';
   const km = m / 1000;
-  if (km < 0.01) return (m).toFixed(0) + ' m';
-  if (km < 10) return km.toFixed(2);
-  return km.toFixed(1);
+  // Always km: the HUD/label unit is fixed, so "0 m" under a "km" caption reads
+  // like a bug. Two decimals below 10 km keeps 10 m resolution.
+  return km < 10 ? km.toFixed(2) : km.toFixed(1);
 }
 function fmtDist(m) {
   if (!num(m)) return '--';
