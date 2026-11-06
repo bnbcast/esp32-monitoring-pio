@@ -143,7 +143,7 @@
 .map-hud .hud-measure .hud-unit { color: rgba(255,255,255,0.85); }
 
 /* ---------------------------------------------------------------------------
-   Vehicle marker — MapLibre positions it; we only style the box.
+   Vehicle marker - MapLibre positions it; we only style the box.
    No transform transition: the marker must never lag behind the map.
 --------------------------------------------------------------------------- */
 .vehicle-marker {
