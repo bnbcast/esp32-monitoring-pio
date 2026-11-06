@@ -254,13 +254,39 @@ const MAP = (function () {
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ position: "bottom-left" }), "bottom-left");
 
-    map.on("load", () => {
-      mapReady = true;
-      initLayers();
-      createMarker();
-      resize();
-    });
+    // Readiness must not depend on the 'load' event alone: it only fires once
+    // the first frame is fully painted with every initial tile, and a single
+    // slow/blocked tile keeps it from firing forever (the map then looks fine
+    // but the vehicle, trail and heading HUD never initialise). Initialise on
+    // whichever comes first: load, idle, styledata, or a short poll.
+    let initDone = false;
+    function styleParsed() {
+      // isStyleLoaded() stays false while any initial tile is outstanding (one
+      // slow tile is enough), so test for our own layer instead: it only exists
+      // once the style has been parsed and is safe to add layers to.
+      try { return !!map.getLayer('base-layer'); } catch (e) { return false; }
+    }
 
+    function tryInitMap(force) {
+      if (initDone || !map) return;
+      if (!force && !styleParsed()) return;
+      initDone = true;
+      mapReady = true;
+      try { initLayers(); } catch (e) { console.warn('initLayers failed:', e && e.message); }
+      try { createMarker(); } catch (e) { console.warn('createMarker failed:', e && e.message); }
+      try { resize(); } catch (e) { /* ignore */ }
+    }
+
+    map.on("load", () => tryInitMap(false));
+    map.on("idle", () => tryInitMap(false));
+    map.on("styledata", () => tryInitMap(false));
+    const readyPoll = setInterval(() => {
+      tryInitMap(false);
+      if (initDone || !map) clearInterval(readyPoll);
+    }, 400);
+    // Hard safety net: after 6 s initialise regardless, so a starved tile server
+    // can never leave the dashboard without a vehicle marker.
+    setTimeout(() => tryInitMap(true), 6000);
     // ---- tile failover ----------------------------------------------------
     // A provider can fail two ways: hard errors (blocked / offline), or the
     // silent 200-with-blank-tile trick OSM plays on foreign Referers. Hard
@@ -594,6 +620,7 @@ const MAP = (function () {
     create,
     loaded: () => new Promise(res => { if (map) { map.once("load", res); } else res(); }),
     isReady: () => mapReady,
+    getMap: () => map,          // debugging/verification hook
     resize,
     setVehicle,
     clearTrail,
