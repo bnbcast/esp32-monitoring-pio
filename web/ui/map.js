@@ -505,13 +505,15 @@ const MAP = (function () {
         // the marker nor widen the "parked" window nor add trail distance.
         const dtS = Math.max(0.2, (now - (lastRaw.ts || now - 500)) / 1000);
         const stepDist = (lastRaw.lat != null) ? distM(lastRaw.lat, lastRaw.lng, lat, lng) : d;
-        const impliedKmh = (stepDist / dtS) * 3.6;
-        const speedCap = parkedNow
-          ? Math.max(20, speed * 2.5 + 10)
-          : Math.max(90, speed * 3 + 40);
         lastRaw = { lat, lng, ts: now };
 
-        lastSampleOk = impliedKmh <= speedCap;
+        // How far could the vehicle have moved since the previous fix? The
+        // reported speed is the only trustworthy scale here (the position is
+        // what we are trying to filter), so allow 2.5x its distance plus 4 m of
+        // slack, and never more than a hard 200 km/h equivalent.
+        const vMs = (numOr0(speed)) / 3.6;
+        const allowM = Math.min(vMs * dtS * 2.5 + 4, 55 * dtS + 12);
+        lastSampleOk = stepDist <= allowM;
         if (lastSampleOk) {
           pushRecent(lat, lng, now);
           const parked = recentSpreadM() < Math.max(6, acc);
@@ -564,6 +566,8 @@ const MAP = (function () {
   }
 
   // Metres between two WGS84 points (haversine).
+  function numOr0(v) { return (typeof v === "number" && isFinite(v) && v > 0) ? v : 0; }
+
   function distM(lat1, lng1, lat2, lng2) {
     const R = 6371000, toRad = Math.PI / 180;
     const dLat = (lat2 - lat1) * toRad;
