@@ -15,8 +15,16 @@
 #include <Wire.h>
 
 // ============ NETWORK (EDIT THESE) ============
-#define WIFI_SSID     "Gi Joe"
-#define WIFI_PASS     "arduino1234"
+// Candidate Wi-Fi networks, tried in order against what the ESP32 can see.
+// The first one that is actually visible wins, so the board comes up on
+// whatever hotspot is around without a reflash. Exact SSID match first, then
+// prefix match (e.g. "ESP32_AP2" matches "ESP32"). Empty password = open AP.
+struct WifiCandidate { const char* ssid; const char* pass; };
+static const WifiCandidate WIFI_NETS[] = {
+  { "Gi Joe",  "arduino1234" },
+  { "ESP32",   "" },
+};
+static const size_t WIFI_NET_COUNT = sizeof(WIFI_NETS) / sizeof(WIFI_NETS[0]);
 
 #define MQTT_HOST     "broker.hivemq.com"
 #define MQTT_PORT     1883
@@ -300,6 +308,49 @@ bool acsWiringOK() {
 }
 
 // ============ NETWORK ============
+// Scan once, then connect to the first candidate network that is visible.
+// Keeps the board usable on several hotspots without reflashing.
+bool connectBestWifi() {
+  int n = WiFi.scanNetworks();
+  if (n <= 0) {
+    Serial.println("Wi-Fi: scan found no networks, retrying primary");
+    WiFi.begin(WIFI_NETS[0].ssid, WIFI_NETS[0].pass);
+    return false;
+  }
+
+  int best = -1;
+  for (size_t c = 0; c < WIFI_NET_COUNT && best < 0; c++) {
+    for (int i = 0; i < n; i++) {
+      String seen = WiFi.SSID(i);
+      if (seen == WIFI_NETS[c].ssid || seen.startsWith(WIFI_NETS[c].ssid)) { best = (int)c; break; }
+    }
+  }
+  WiFi.scanDelete();
+
+  if (best < 0) {
+    Serial.printf("Wi-Fi: %d network(s) visible, none matches a candidate, retrying '%s'\n",
+                  n, WIFI_NETS[0].ssid);
+    WiFi.begin(WIFI_NETS[0].ssid, WIFI_NETS[0].pass);
+    return false;
+  }
+
+  Serial.printf("Wi-Fi: connecting to '%s'%s\n", WIFI_NETS[best].ssid,
+                WIFI_NETS[best].pass[0] ? "" : " (open)");
+  WiFi.begin(WIFI_NETS[best].ssid, WIFI_NETS[best].pass);
+  return true;
+}
+
+const char* wifiStatusStr() {
+  switch (WiFi.status()) {
+    case WL_CONNECTED:     return "Connected";
+    case WL_NO_SSID_AVAIL: return "No SSID";
+    case WL_CONNECT_FAILED:return "Connect failed";
+    case WL_IDLE_STATUS:   return "Idle";
+    case WL_DISCONNECTED:  return "Disconnected";
+    default:               return "Unknown";
+  }
+}
+
 bool connectMqtt() {
   Serial.print("MQTT: connecting... ");
   // Last will: if the ESP32 vanishes, the broker publishes "offline" for us
@@ -331,7 +382,7 @@ void publishData() {
   if (gps.time.isValid())  { utc_h = gps.time.hour();  utc_m = gps.time.minute();  utc_s = gps.time.second(); }
   if (gps.date.isValid())  { utc_y = gps.date.year();  utc_mo = gps.date.month();  utc_d = gps.date.day(); }
 
-  char b[800];
+  char b[1200];
   int n = snprintf(b, sizeof b,
     "{\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
     "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"temp\":%.1f,\"lvl\":%d,"
@@ -340,7 +391,9 @@ void publishData() {
     "\"gps\":{\"chars\":%lu,\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
     "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,"
     "\"utc_h\":%d,\"utc_m\":%d,\"utc_s\":%d,\"utc_y\":%d,\"utc_mo\":%d,\"utc_d\":%d},"
-    "\"sys\":{\"heap\":%u,\"rssi\":%d}}",
+    "\"sys\":{\"heap\":%u,\"rssi\":%d,"
+    "\"wifi\":{\"ssid\":\"%.32s\",\"bssid\":\"%.17s\",\"channel\":%d,\"status\":\"%s\","
+    "\"ip\":\"%.15s\",\"mac\":\"%.17s\"}}}",
     (unsigned long)(millis() / 1000), mpuValid ? "true" : "false",
     roll, pitch, yaw, tilt, lax, lay, laz, lt, level,
     (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt, peakAmps,
@@ -349,7 +402,9 @@ void publishData() {
     fix ? "true" : "false", lat, lng, alt, spd,
     cog, hdop, gpsDistTotalM,
     utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d,
-    (unsigned)ESP.getFreeHeap(), WiFi.RSSI());
+    (unsigned)ESP.getFreeHeap(), WiFi.RSSI(),
+    WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.channel(), wifiStatusStr(),
+    WiFi.localIP().toString().c_str(), WiFi.macAddress().c_str());
 
   if (n > 0 && n < (int)sizeof b) {
     mqtt.publish(TOPIC_DATA, b, true);   // retained: new viewers get the last reading at once
@@ -366,7 +421,7 @@ void networkService() {
       lastWifiTry = now;
       Serial.println("Wi-Fi: (re)connecting...");
       WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASS);
+      connectBestWifi();
     }
     return;
   }
@@ -434,7 +489,7 @@ void mqtt_simple_setup() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  connectBestWifi();
   lastWifiTry = millis();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setBufferSize(1024);
