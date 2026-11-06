@@ -55,6 +55,50 @@ web/
 - Libraries: PubSubClient (MQTT), TinyGPSPlus (GPS)
 - **Fix applied:** Copied `Network` library headers/sources into WiFi library src to resolve linker dependencies
 
+## Serial console (firmware)
+
+`pio device monitor` (COM4 @ 115200) prints one framed panel every 2 s plus event
+lines as they happen. Every line is `[HH:MM:SS.mmm] LEVEL [TAG] message`, so a
+capture can be grepped by level (`WARN|ERR`) or tag (`GPS|NET|MQTT|IMU|PWR|CAL`).
+
+```
++------------------------------------------------------------------------------
+| SYS   up 00:02:14.384   heap 212K   rssi -46 dBm   ch 6   ip 10.163.133.191
+| LINK  wifi OK   mqtt OK   tx 426  ok 426  fail 0  drop 0  q 0
+| GPS   NO FIX  used 0   view 0   snr 0   q 0  hdop 25.50  nmea 0s ago
+| NMEA  2210 sent  0 bad  gga 551  rmc 551  gsa 551  gsv 557  other 0
+| IMU   tilt  64.6  DANGER  roll 12.3  pitch -4.5  yaw 3.1  mpu OK
+| PWR     0.55 A  peak  1.11 A  zero 0.439 V  acs OK
++------------------------------------------------------------------------------
+  ! GPS  0 satellites in view - antenna / sky view, not the wiring
+```
+
+Keys (single byte, no Enter): `g` raw NMEA echo (on at boot), `v` verbose
+(one line per publish), `c` colours, `p` panel, `r` yaw=0, `z` re-zero ACS712,
+`?` help.
+
+`monitor_filters = log2file` tees the whole session to
+`logs/device-monitor-<timestamp>.log`.
+
+### GPS diagnostics
+
+The firmware taps the raw UART (`GpsMon`) alongside TinyGPSPlus, because
+TinyGPSPlus exposes only sanitised GGA/GSA/RMC fields and cannot tell "antenna
+hears nothing" from "hears satellites but will not lock":
+
+| Payload field | Source | Meaning |
+|---|---|---|
+| `gps.chars` | `gps.charsProcessed()` | bytes seen on RX; flat counter = module stopped sending |
+| `gps.bad` | tap | NMEA checksum/length failures |
+| `gps.view` | GSV field 3 | satellites **in view** (−1 = module sends no GSV) |
+| `gps.snr` | GSV field 7 | best SNR in the current GSV cycle |
+| `gps.q` | GGA field 6 | fix quality (0 none, 1 GPS, 2 DGPS) |
+| `gps.sats` | GGA field 7 | satellites **used** (0 whenever there is no fix) |
+
+Reading it: `chars` climbing + `view 0` = receiver alive, antenna hears nothing;
+`view 6` + `sats 0` = hears satellites, no lock yet; `chars` frozen = the module
+stopped sending (power/contact), which the console reports as a `WARN`.
+
 ## Secrets
 
 Wi-Fi credentials and MQTT topic key are in the source file. Edit:
@@ -116,6 +160,31 @@ Playwright check (`dev/debug-browser.js`): loads the dev URL, verifies key
 DOM elements, asserts zero console errors. Chromium install:
 `cd dev && npm install playwright && npx playwright install chromium`
 (Headless screenshot capture may fail due to WebGL; element checks are the gate.)
+
+### Trip distance, A→B measuring, address
+
+- **JARAK TEMPUH (HUD)** is measured from the drawn trail, client-side: every
+  accepted point adds a haversine chord to `trailDistM` in [map.js](web/ui/map.js).
+  Points are accepted at **2.5 m** while moving and **5 m** while parked, so GPS
+  wobble cannot inflate the number. The drawn polyline is decimated (drop every
+  other vertex at 1200 points) but the distance counter is *not*, so a long trip
+  keeps 1-point resolution while the GeoJSON stays small.
+- **Odometer (LIVE tab)** is the firmware `dist_m` counter; **Trail** is the
+  browser session. They differ after a reload — the device keeps counting, the
+  browser starts at zero. `R` (or the **0** button) resets the trail.
+- **Measure A→B**: press `M` (or the **M** button), click two points, read the
+  distance in the blue HUD badge. Click again to restart, `Esc` to leave.
+- **Stationary:** below 0.6 km/h for 2.5 s the marker snaps to the last accepted
+  point, its rotation freezes and the trail stops growing. No pulsing, no
+  spinning emoji, no drift.
+- **Address** under Position is reverse-geocoded from OSM Nominatim, keyless.
+  It is deliberately conservative: min 8 s between calls, min 80 m of movement,
+  skipped while the tab is hidden, cached per ~110 m cell in localStorage for 7
+  days, and suspended for 10 min after a 403/429. CSP must keep
+  `https://nominatim.openstreetmap.org` in `connect-src`.
+- The vehicle marker is a **MapLibre Marker** (not a hand-positioned div), so it
+  re-projects correctly on pan/zoom; a CSS transform transition would make it
+  lag the map and is intentionally absent.
 
 ### Verifying the deployed site (live)
 Live URL: <https://bnbcast.github.io/esp32-monitoring-pio/> (GitHub Pages, built from

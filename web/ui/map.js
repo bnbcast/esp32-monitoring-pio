@@ -122,11 +122,30 @@ const MAP = (function () {
     magHeading: null, danger: 0
   };
 
-  // trail (speed-colored polyline)
+  // Last accepted trail point. The marker snaps to this while stationary, so a
+  // +-3 m GPS wobble cannot make it drift or spin on the spot.
+  let anchor = { lng: null, lat: null };
+  let lastMoveTs = 0;
+  let stopped = true;
+  let frozenHeading = 0;
+
+  // trail (speed-colored polyline) + its measured length
   let trailCoords = [];
+  let trailDistM = 0;
+  const TRAIL_MAX = 1200;          // drawn vertices before decimation
+  const TRAIL_STEP_MOVING = 2.5;   // metres between accepted points
+  const TRAIL_STEP_STOPPED = 5.0;  // larger deadband while parked
+  let trailRaf = 0;
 
   // marker + accuracy circle + heading wedge
-  let markerEl = null;
+  let marker = null;
+  let markerInner = null;
+
+  // A-to-B measuring tool
+  let measureMode = false;
+  let measureA = null;
+  let measureB = null;
+  let measureCb = null;
 
   // modes
   let myLocMode = "recenter";   // recenter | compass | north
@@ -314,8 +333,20 @@ const MAP = (function () {
       }
     });
 
-    map.on("move", () => {
-      if (myLocMode === "free") myLocMode = "free"; // user gestured -> free mode
+    // Any user gesture drops out of follow mode; the recenter button (or C)
+    // puts it back. Without this the camera fights the user while panning.
+    map.on("dragstart", () => { myLocMode = "free"; });
+    map.on("zoomstart", e => {
+      if (e.originalEvent) myLocMode = "free";
+    });
+
+    map.on("click", e => {
+      if (!measureMode) return;
+      const p = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      if (!measureA || measureB) { measureA = p; measureB = null; }
+      else { measureB = p; }
+      renderMeasure();
+      notifyMeasure();
     });
   }
 
@@ -360,6 +391,35 @@ const MAP = (function () {
       }
     });
 
+    // ---- Measure (A to B) ----
+    map.addSource("measure", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] }
+    });
+    map.addLayer({
+      id: "measure-line",
+      type: "line",
+      source: "measure",
+      filter: ["==", ["geometry-type"], "LineString"],
+      paint: {
+        "line-color": "#2447ff",
+        "line-width": 3,
+        "line-dasharray": [2, 2]
+      }
+    });
+    map.addLayer({
+      id: "measure-pts",
+      type: "circle",
+      source: "measure",
+      filter: ["==", ["geometry-type"], "Point"],
+      paint: {
+        "circle-radius": 7,
+        "circle-color": "#ffffff",
+        "circle-stroke-color": "#000000",
+        "circle-stroke-width": 3
+      }
+    });
+
     // ---- Heading wedge (translucent view cone) ----
     map.addLayer({
       id: "heading-wedge",
@@ -389,52 +449,78 @@ const MAP = (function () {
     updateHeadingFusion(heading, ts, yaw ? yaw * 10 : 0, ts,
       magHeading, speed, hdop);
 
-    // DOM (map HUD / banner) is updated by app.renderData / renderBanner
-
-    // Marker DOM element
-    updateMarker();
-
-    // Accuracy circle
-    updateAccuracy();
-
-    // Heading wedge
-    updateHeadingWedge();
-
-    // Trail
+    const now = Date.now();
     if (fix && lng != null && lat != null) {
-      const pt = { lng, lat, kmh: speed, hdop };
-      trailCoords.push(pt);
-      if (trailCoords.length > 120) trailCoords.shift();
-      updateTrail();
+      if (anchor.lat == null) {
+        anchor = { lng, lat };
+        lastMoveTs = now;
+        pushTrail(lng, lat, speed);
+      } else {
+        const d = distM(anchor.lat, anchor.lng, lat, lng);
+        // A parked receiver wanders a few metres. While the reported speed says
+        // "stopped", only a move that clears the deadband is accepted; that
+        // keeps the marker and the trail perfectly still on the map.
+        const step = speed >= 1.0 ? TRAIL_STEP_MOVING : TRAIL_STEP_STOPPED;
+        if (d >= step) {
+          trailDistM += d;
+          anchor = { lng, lat };
+          lastMoveTs = now;
+          pushTrail(lng, lat, speed);
+        }
+      }
     }
 
-    // Auto-follow modes
-    if (myLocMode === "north" || lockNorth) {
-      flyTo(lng, lat, 15, 0, 0);
+    const wasStopped = stopped;
+    stopped = (speed < 0.6) && (now - lastMoveTs > 2500);
+    if (!stopped || !wasStopped) {
+      if (!stopped) frozenHeading = fusedHeading;
+    }
+
+    updateMarker();
+    updateAccuracy();
+    updateHeadingWedge();
+    followIfNeeded();
+  }
+
+  // Metres between two WGS84 points (haversine).
+  function distM(lat1, lng1, lat2, lng2) {
+    const R = 6371000, toRad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * toRad;
+    const dLng = (lng2 - lng1) * toRad;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // Keep the vehicle in view without re-centring on every single reading: only
+  // pan when it leaves the middle band of the viewport.
+  function followIfNeeded() {
+    if (!map || !mapReady) return;
+    if (myLocMode !== "recenter" && myLocMode !== "follow") return;
+    if (vehicle.lat == null) return;
+    const w = map.getContainer().clientWidth;
+    const h = map.getContainer().clientHeight;
+    const p = map.project([vehicle.lng, vehicle.lat]);
+    if (p.x < w * 0.2 || p.x > w * 0.8 || p.y < h * 0.2 || p.y > h * 0.8) {
+      map.easeTo({ center: [vehicle.lng, vehicle.lat], duration: 400 });
     }
   }
 
+  // The marker is a MapLibre Marker, so MapLibre re-projects it on every pan,
+  // zoom and pitch change. A hand-positioned div (the old approach) stayed
+  // glued to the last pixel position and slid away from the map as soon as the
+  // user moved it, which is what made the position look wrong.
   function updateMarker() {
-    if (!map || !mapReady) return;
-    const el = markerEl;
-    if (!el || !vehicle.lat || !vehicle.lng) return;
-    const conf = headingConfidence;
-    const size = 28 + 16 * conf;
-    el.style.width = size + "px";
-    el.style.height = size + "px";
-    el.style.fontSize = (size * 0.75) + "px";
-    el.style.border = "3px solid #000";
-    el.style.background = "rgba(255,255,255,0.95)";
-    el.style.boxShadow = "6px 6px 0 #000";
-    el.style.transformOrigin = 'center';
-    el.style.opacity = conf > 0.1 ? "1" : "0.4";
-    el.style.transition = conf > 0.1 ? "transform 0.1s" : "none";
-
-    // Project lng/lat to screen pixels
-    const px = map.project({ lng: vehicle.lng, lat: vehicle.lat });
-    el.style.left = (px.x - size / 2) + "px";
-    el.style.top = (px.y - size / 2) + "px";
-    el.style.transform = `translate(-50%, -50%) rotate(${fusedHeading}deg)`;
+    if (!mapReady || !marker || !markerInner) return;
+    const lat = (stopped && anchor.lat != null) ? anchor.lat : vehicle.lat;
+    const lng = (stopped && anchor.lng != null) ? anchor.lng : vehicle.lng;
+    if (lat == null || lng == null) return;
+    marker.setLngLat([lng, lat]);
+    // Freeze the rotation while parked: gyro drift would otherwise spin the
+    // marker forever on a stationary vehicle.
+    marker.setRotation(stopped ? frozenHeading : fusedHeading);
+    markerInner.classList.toggle("stopped", stopped);
+    markerInner.classList.toggle("nofix", !vehicle.fix);
   }
 
   function updateAccuracy() {
@@ -469,24 +555,13 @@ const MAP = (function () {
   }
 
   function createMarker() {
-    if (markerEl) return;
-    markerEl = document.createElement('div');
-    markerEl.className = 'vehicle-marker';
-    markerEl.style.position = 'absolute';
-    markerEl.style.width = '32px';
-    markerEl.style.height = '32px';
-    markerEl.style.fontSize = '24px';
-    markerEl.style.lineHeight = '1';
-    markerEl.style.textAlign = 'center';
-    markerEl.style.border = '3px solid #000';
-    markerEl.style.background = 'rgba(255,255,255,0.95)';
-    markerEl.style.boxShadow = '6px 6px 0 #000';
-    markerEl.style.borderRadius = '0';
-    markerEl.style.transformOrigin = 'center';
-    markerEl.style.pointerEvents = 'none';
-    markerEl.style.zIndex = '100';
-    markerEl.textContent = '🥺';
-    container.appendChild(markerEl);
+    if (marker) return;
+    markerInner = document.createElement('div');
+    markerInner.className = 'vehicle-marker';
+    markerInner.textContent = '\uD83E\uDD7A';
+    marker = new maplibregl.Marker({ element: markerInner, rotationAlignment: 'map' })
+      .setLngLat([DEFAULT_CENTER[0], DEFAULT_CENTER[1]])
+      .addTo(map);
   }
 
   function circleCoords(lng, lat, radiusM, n) {
@@ -536,29 +611,112 @@ const MAP = (function () {
     });
   }
 
+  function pushTrail(lng, lat, kmh) {
+    trailCoords.push({ lng, lat, kmh });
+    if (trailCoords.length > TRAIL_MAX) decimateTrail();
+    scheduleTrailRender();
+  }
+
+  // Halve the vertex count, always keeping the newest point. The travelled
+  // distance is accumulated separately, so thinning the drawn line never
+  // changes the measured total.
+  function decimateTrail() {
+    const out = [];
+    for (let i = 0; i < trailCoords.length; i += 2) out.push(trailCoords[i]);
+    const lastPt = trailCoords[trailCoords.length - 1];
+    if (out[out.length - 1] !== lastPt) out.push(lastPt);
+    trailCoords = out;
+  }
+
+  // Coalesce redraws to one per frame: several readings can land between frames
+  // and rebuilding the GeoJSON each time is wasted work.
+  function scheduleTrailRender() {
+    if (trailRaf) return;
+    trailRaf = requestAnimationFrame(() => { trailRaf = 0; updateTrail(); });
+  }
+
   function updateTrail() {
     if (!map || !mapReady) return;
     const src = map.getSource("trail");
     if (!src) return;
-    const coords = trailCoords.map(p => [p.lng, p.lat]);
-    if (coords.length < 2) return;
-    src.setData({
-      type: "FeatureCollection",
-      features: [{
+    if (trailCoords.length < 2) {
+      src.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+    // One feature per segment so line-color can read that segment's speed.
+    const features = [];
+    for (let i = 1; i < trailCoords.length; i++) {
+      const a = trailCoords[i - 1], b = trailCoords[i];
+      features.push({
         type: "Feature",
-        properties: {},
-        geometry: { type: "LineString", coordinates: coords }
-      }]
-    });
+        properties: { kmh: b.kmh || 0 },
+        geometry: {
+          type: "LineString",
+          coordinates: [[a.lng, a.lat], [b.lng, b.lat]]
+        }
+      });
+    }
+    src.setData({ type: "FeatureCollection", features });
   }
 
   function clearTrail() {
     trailCoords = [];
+    trailDistM = 0;
     if (map && mapReady) {
       const src = map.getSource("trail");
       if (src) src.setData({ type: "FeatureCollection", features: [] });
     }
   }
+
+  // ---- measure tool (A -> B) ----------------------------------------------
+  function renderMeasure() {
+    if (!map || !mapReady) return;
+    const src = map.getSource("measure");
+    if (!src) return;
+    const features = [];
+    if (measureA && measureB) {
+      features.push({
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "LineString",
+          coordinates: [[measureA.lng, measureA.lat], [measureB.lng, measureB.lat]]
+        }
+      });
+    }
+    for (const p of [measureA, measureB]) {
+      if (!p) continue;
+      features.push({
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Point", coordinates: [p.lng, p.lat] }
+      });
+    }
+    src.setData({ type: "FeatureCollection", features });
+  }
+
+  function measureDistanceM() {
+    if (!measureA || !measureB) return null;
+    return distM(measureA.lat, measureA.lng, measureB.lat, measureB.lng);
+  }
+
+  function notifyMeasure() {
+    if (measureCb) measureCb({ a: measureA, b: measureB, distM: measureDistanceM() });
+  }
+
+  function setMeasureMode(on) {
+    measureMode = !!on;
+    if (map) map.getCanvas().style.cursor = measureMode ? "crosshair" : "";
+  }
+
+  function clearMeasure() {
+    measureA = null;
+    measureB = null;
+    renderMeasure();
+    notifyMeasure();
+  }
+
+  function onMeasure(cb) { measureCb = cb; }
 
   // ---- camera / controls --------------------------------------------------
   function flyTo(lng, lat, zoom, bearing, pitch, duration = 600) {
@@ -624,6 +782,12 @@ const MAP = (function () {
     resize,
     setVehicle,
     clearTrail,
+    getTrailDistance: () => trailDistM,
+    getTrailPoints: () => trailCoords.length,
+    isStopped: () => stopped,
+    setMeasureMode,
+    clearMeasure,
+    onMeasure,
     recenterNow,
     resetNorth,
     setLockNorth,

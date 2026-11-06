@@ -109,3 +109,98 @@
   font-size: 1.5rem;
 }
 .map-hud .hud-unit { font-size: 0.7rem; color: #666; }
+
+/* ---------------------------------------------------------------------------
+   Live position block (HUD): coordinates + reverse-geocoded street name
+--------------------------------------------------------------------------- */
+.map-hud .hud-box-pos { max-width: 320px; }
+.map-hud .hud-addr {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  color: #111;
+  border-top: 2px solid #000;
+  padding-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.map-hud .hud-addr.loading { color: #777; }
+
+/* Measure tool readout */
+.map-hud .hud-measure {
+  pointer-events: auto;
+  background: var(--blue);
+  color: #fff;
+  border: var(--border-w) solid var(--ink);
+  box-shadow: var(--shadow);
+  padding: 10px 14px;
+}
+.map-hud .hud-measure .hud-label,
+.map-hud .hud-measure .hud-unit { color: rgba(255,255,255,0.85); }
+
+/* ---------------------------------------------------------------------------
+   Vehicle marker — MapLibre positions it; we only style the box.
+   No transform transition: the marker must never lag behind the map.
+--------------------------------------------------------------------------- */
+.vehicle-marker {
+  width: 34px;
+  height: 34px;
+  line-height: 28px;
+  text-align: center;
+  font-size: 22px;
+  border: 3px solid var(--ink);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 5px 5px 0 var(--ink);
+  border-radius: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+.vehicle-marker.stopped { box-shadow: 5px 5px 0 var(--ink); }
+.vehicle-marker.nofix { opacity: 0.45; border-style: dashed; }
+
+
+/* Compact HUD on narrow screens: the stacked column would cover the whole map. */
+@media (max-width: 640px) {
+  .map-hud {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    right: 12px;
+  }
+  .map-hud .hud-box {
+    margin-bottom: 0;
+    padding: 6px 8px;
+  }
+  .map-hud .hud-label { font-size: 0.6rem; }
+  .map-hud .hud-value { font-size: 1.05rem; }
+  .map-hud .hud-addr { font-size: 0.62rem; -webkit-line-clamp: 2; }
+  .map-hud .hud-box-pos { grid-column: 1 / -1; max-width: none; }
+  .map-hud .hud-measure { grid-column: 1 / -1; padding: 6px 8px; }
+}
+
+
+/* Mobile: keep only speed, distance and position on the map; heading lives in
+   the LIVE tab and the HUD would otherwise cover the whole viewport. */
+@media (max-width: 640px) {
+  .map-hud .hud-box-tilt { display: none; }
+  .map-hud .hud-box-pos .hud-value { font-size: 0.95rem; }
+}
+
+
+/* Very compact HUD on phones: the visible map strip is short once the bottom
+   sheet is open, so units are dropped and the address is clamped to one line. */
+@media (max-width: 640px) {
+  .map-hud { top: 8px; left: 8px; right: 8px; }
+  .map-hud .hud-box { padding: 4px 6px; }
+  .map-hud .hud-label { font-size: 0.55rem; margin-bottom: 0; }
+  .map-hud .hud-value { font-size: 0.95rem; line-height: 1.1; }
+  .map-hud .hud-unit { display: none; }
+  .map-hud .hud-box-pos { padding: 4px 6px; }
+  .map-hud .hud-box-pos .hud-value { font-size: 0.8rem; }
+  .map-hud .hud-addr { font-size: 0.6rem; padding-top: 2px; margin-top: 2px; -webkit-line-clamp: 1; }
+}
+

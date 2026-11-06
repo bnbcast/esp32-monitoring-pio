@@ -13,6 +13,8 @@
 #include <PubSubClient.h>
 #include <TinyGPSPlus.h>
 #include <Wire.h>
+#include <esp_system.h>
+#include <stdarg.h>
 
 // ============ NETWORK (EDIT THESE) ============
 // Candidate Wi-Fi networks, tried in order against what the ESP32 can see.
@@ -36,6 +38,22 @@ static const size_t WIFI_NET_COUNT = sizeof(WIFI_NETS) / sizeof(WIFI_NETS[0]);
 #define TOPIC_STATUS  "esp32-dash/" TOPIC_KEY "/status"
 
 #define PUBLISH_INTERVAL_MS 500
+
+// ============ IDENTITY ============
+#define FW_NAME     "esp32-dash"
+#define FW_VERSION  "1.3.0"
+
+// ============ SERIAL CONSOLE ============
+// One framed panel every DASH_INTERVAL_MS plus event lines as they happen.
+// Keys: g raw NMEA echo | v verbose | c colours | p panel | ? help
+#define ANSI_RESET  "\033[0m"
+#define ANSI_BOLD   "\033[1m"
+#define ANSI_DIM    "\033[2m"
+#define ANSI_RED    "\033[31m"
+#define ANSI_GRN    "\033[32m"
+#define ANSI_YEL    "\033[33m"
+#define ANSI_CYN    "\033[36m"
+#define ANSI_MAG    "\033[35m"
 
 // ---- reliability tuning -----------------------------------------------
 #define MQTT_KEEPALIVE_S      15      // broker ping period
@@ -148,6 +166,213 @@ float gpsDistTotalM = 0;
 bool gpsHasPrev = false;
 float gpsPrevLat = 0, gpsPrevLng = 0;
 
+// ============ SERIAL CONSOLE ============
+// Every event is one greppable line: "<up-time> <level> [TAG] message".
+// Static flags are toggled from the monitor with single keys (see helpText()).
+static bool useColor  = true;    // 'c'
+static bool showNmea  = true;    // 'g' raw NMEA echo
+static bool verbose   = false;   // 'v'
+static bool showPanel = true;    // 'p'
+
+enum LogLvl { L_DBG, L_INFO, L_OK, L_WARN, L_ERR };
+
+static const char* lvlColor(LogLvl l) {
+  if (!useColor) return "";
+  switch (l) {
+    case L_OK:   return ANSI_GRN;
+    case L_WARN: return ANSI_YEL;
+    case L_ERR:  return ANSI_RED;
+    case L_DBG:  return ANSI_DIM;
+    default:     return ANSI_CYN;
+  }
+}
+
+static const char* lvlName(LogLvl l) {
+  switch (l) {
+    case L_OK:   return "OK  ";
+    case L_WARN: return "WARN";
+    case L_ERR:  return "ERR ";
+    case L_DBG:  return "dbg ";
+    default:     return "info";
+  }
+}
+
+// "00:02:14.384" from boot. Monotonic, so log files sort without a clock.
+static void stamp(char* out, size_t n) {
+  unsigned long ms = millis();
+  snprintf(out, n, "%02lu:%02lu:%02lu.%03lu",
+           ms / 3600000UL, (ms / 60000UL) % 60UL, (ms / 1000UL) % 60UL, ms % 1000UL);
+}
+
+static void logMsg(LogLvl lvl, const char* tag, const char* fmt, ...) {
+  char msg[192];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(msg, sizeof msg, fmt, ap);
+  va_end(ap);
+
+  char up[24];
+  stamp(up, sizeof up);
+  Serial.printf("%s[%s]%s %s%s%s %s%-4s%s %s\n",
+                useColor ? ANSI_DIM : "", up, useColor ? ANSI_RESET : "",
+                lvlColor(lvl), lvlName(lvl), useColor ? ANSI_RESET : "",
+                useColor ? ANSI_BOLD : "", tag, useColor ? ANSI_RESET : "",
+                msg);
+}
+
+// ============ RAW NMEA TAP ============
+// TinyGPSPlus only exposes sanitised GGA/GSA/RMC fields, so on its own it cannot
+// tell "the antenna hears nothing" from "it hears satellites but will not lock".
+// This tap keeps the sentence stream itself: per-type counters, checksum
+// failures, GSV satellites-in-view and the best SNR of each GSV cycle.
+struct GpsMon {
+  char     line[128];
+  uint8_t  len;
+  bool     active;
+  bool     overflow;
+  uint32_t sentences, bad, cGGA, cRMC, cGSA, cGSV, cOther;
+  int      view;      // GSV field 3: satellites in view (-1 = no GSV yet)
+  int      snr;       // GSV field 7: best SNR of the last completed cycle
+  int      snrCycle;  // peak SNR inside the cycle that is still arriving
+  int      fixQ;      // GGA field 6: 0 none, 1 GPS, 2 DGPS
+  uint32_t lastMs;    // last complete sentence
+  char     lastType[6];
+  bool     silent;    // silence warning already printed
+};
+
+static GpsMon gm;
+
+static int hexVal(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  return -1;
+}
+
+// Copy comma field n (1 = first field after the sentence name) into out.
+// A valid but empty field yields "": that is itself a meaningful NMEA result.
+static bool nmeaField(const char* s, int n, char* out, size_t outLen) {
+  const char* p = (*s == '$') ? s + 1 : s;
+  while (*p && *p != ',') p++;            // skip the sentence name
+  if (*p != ',') return false;
+  p++;
+  int idx = 0;
+  while (*p && idx < n) {
+    const char* start = p;
+    while (*p && *p != ',' && *p != '*') p++;
+    if (++idx == n) {
+      size_t len = (size_t)(p - start);
+      if (len >= outLen) len = outLen - 1;
+      memcpy(out, start, len);
+      out[len] = '\0';
+      return true;
+    }
+    if (*p == ',') p++;
+    else return false;
+  }
+  return false;
+}
+
+static void gpsMonParse() {
+  gm.sentences++;
+  gm.lastMs = millis();
+
+  // Terminate before anything reads gm.line as a C string, otherwise the tail
+  // of a previously longer sentence leaks into this one (and into nmeaField()).
+  gm.line[gm.len] = '\0';
+
+  if (gm.overflow || gm.len < 7 || gm.line[0] != '$') { gm.bad++; return; }
+
+  int star = -1;
+  for (int i = 1; i < gm.len; i++) if (gm.line[i] == '*') { star = i; break; }
+
+  bool ok = false;
+  if (star > 0 && star + 3 <= gm.len) {
+    uint8_t sum = 0;
+    for (int i = 1; i < star; i++) sum ^= (uint8_t)gm.line[i];
+    int hi = hexVal(gm.line[star + 1]);
+    int lo = hexVal(gm.line[star + 2]);
+    ok = (hi >= 0 && lo >= 0 && (uint8_t)((hi << 4) | lo) == sum);
+  }
+  if (!ok) gm.bad++;
+
+  char type[6];
+  memcpy(type, gm.line + 1, 5);
+  type[5] = '\0';
+  memcpy(gm.lastType, type, sizeof type);
+
+  const char* kind = type + 2;            // "GPGGA"/"GNGGA" -> "GGA"
+
+  char f[16];
+  char note[72];
+  note[0] = '\0';
+
+  if (!strcmp(kind, "GGA")) {
+    gm.cGGA++;
+    if (nmeaField(gm.line, 6, f, sizeof f) && f[0]) gm.fixQ = atoi(f);
+    snprintf(note, sizeof note, "q=%d used=%d", gm.fixQ, (int)gps.satellites.value());
+  } else if (!strcmp(kind, "GSV")) {
+    gm.cGSV++;
+    // Field 2 == 1 starts a new GSV cycle: publish the previous cycle's peak so
+    // the value does not flicker back to 0 every second.
+    if (nmeaField(gm.line, 2, f, sizeof f) && f[0] == '1' && f[1] == '\0') {
+      if (gm.snrCycle > 0) gm.snr = gm.snrCycle;
+      gm.snrCycle = 0;
+    }
+    if (nmeaField(gm.line, 3, f, sizeof f) && f[0]) {
+      gm.view = atoi(f);
+      if (gm.view == 0) gm.snr = 0;      // nothing in view, nothing to report
+    }
+    if (nmeaField(gm.line, 7, f, sizeof f) && f[0]) {
+      int s = atoi(f);
+      if (s > gm.snrCycle) gm.snrCycle = s;
+    }
+    snprintf(note, sizeof note, "in view=%d snr=%d", gm.view,
+             gm.snrCycle > 0 ? gm.snrCycle : gm.snr);
+  } else if (!strcmp(kind, "RMC")) {
+    gm.cRMC++;
+    char st[8] = "?", dt[16] = "?";
+    nmeaField(gm.line, 2, st, sizeof st);
+    nmeaField(gm.line, 9, dt, sizeof dt);
+    snprintf(note, sizeof note, "status=%s date=%s", st[0] ? st : "?", dt);
+  } else if (!strcmp(kind, "GSA")) {
+    gm.cGSA++;
+  } else {
+    gm.cOther++;
+  }
+
+  if (showNmea) {
+    char up[24];
+    stamp(up, sizeof up);
+    char echo[208];
+    if (note[0]) snprintf(echo, sizeof echo, "%-62s %s", gm.line, note);
+    else         snprintf(echo, sizeof echo, "%s", gm.line);
+    Serial.printf("%s[%s]%s %s%s%s\n",
+                  useColor ? ANSI_DIM : "", up, useColor ? ANSI_RESET : "",
+                  ok ? "" : (useColor ? ANSI_RED : ""),
+                  echo, useColor ? ANSI_RESET : "");
+  }
+}
+
+static void gpsMonFeed(char c) {
+  if (c == '$') {                       // NMEA start delimiter
+    gm.len = 0;
+    gm.active = true;
+    gm.overflow = false;
+    gm.line[gm.len++] = '$';
+    return;
+  }
+  if (!gm.active) return;               // drop garbage between sentences
+  if (c == '\r' || c == '\n') {
+    gpsMonParse();
+    gm.active = false;
+    gm.len = 0;
+    return;
+  }
+  if (gm.len < sizeof(gm.line) - 1) gm.line[gm.len++] = c;
+  else gm.overflow = true;
+}
+
 // Haversine distance between two GPS points (meters)
 float haversineM(float lat1, float lng1, float lat2, float lng2) {
   float radLat1 = lat1 * PI / 180.0f;
@@ -178,7 +403,6 @@ bool acsWiringOK();
 bool connectMqtt();
 void publishData();
 void networkService();
-void printStatus();
 void wifiService(unsigned long now);
 int8_t pickBestNetwork(int found);
 bool gpsFixUsable();
@@ -286,6 +510,7 @@ bool mpuRead(float &ax, float &ay, float &az, float &temp,
 void updateMotion() {
   float ax, ay, az, t, gx, gy, gz;
   if (!mpuRead(ax, ay, az, t, gx, gy, gz)) {
+    if (mpuValid) logMsg(L_ERR, "IMU", "MPU6050 stopped responding (I2C 0x%02X)", MPU_ADDR);
     mpuValid = false;
     if (millis() - lastRetry > 500) {
       lastRetry = millis();
@@ -297,6 +522,7 @@ void updateMotion() {
   if (!mpuValid) {
     mpuValid = true;
     lastMicros = micros();
+    logMsg(L_OK, "IMU", "MPU6050 back online at 0x%02X", MPU_ADDR);
   }
 
   unsigned long now = micros();
@@ -386,9 +612,9 @@ void wifiService(unsigned long now) {
       for (size_t c = 0; c < WIFI_NET_COUNT; c++) {
         if (cur == WIFI_NETS[c].ssid || cur.startsWith(WIFI_NETS[c].ssid)) { lastGoodNet = (int8_t)c; break; }
       }
-      Serial.printf("Wi-Fi: connected to '%s'  ip=%s  rssi=%d dBm  ch=%d  (slot %d)\n",
-                    WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(),
-                    (int)WiFi.RSSI(), (int)WiFi.channel(), (int)lastGoodNet);
+      logMsg(L_OK, "NET", "connected '%s'  ip=%s  rssi=%d dBm  ch=%d  (slot %d)",
+             WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(),
+             (int)WiFi.RSSI(), (int)WiFi.channel(), (int)lastGoodNet);
     }
     return;
   }
@@ -399,12 +625,12 @@ void wifiService(unsigned long now) {
       lastWifiTry = now;
       if (lastGoodNet >= 0) {
         // Fast path: re-associate with the AP that worked before, no scan.
-        Serial.printf("Wi-Fi: retrying '%s'...\n", WIFI_NETS[lastGoodNet].ssid);
+        logMsg(L_INFO, "NET", "retrying '%s'", WIFI_NETS[lastGoodNet].ssid);
         WiFi.begin(WIFI_NETS[lastGoodNet].ssid, WIFI_NETS[lastGoodNet].pass);
         wifiPhase = WF_CONNECTING;
         wifiPhaseSince = now;
       } else {
-        Serial.println("Wi-Fi: scanning (async)...");
+        logMsg(L_INFO, "NET", "scanning (async)");
         WiFi.scanNetworks(true /*async*/, false);
         wifiPhase = WF_SCANNING;
         wifiPhaseSince = now;
@@ -418,17 +644,17 @@ void wifiService(unsigned long now) {
         return;
       }
       if (found < 0) {                       // WIFI_SCAN_FAILED
-        Serial.println("Wi-Fi: scan failed");
+        logMsg(L_WARN, "NET", "scan failed");
         wifiPhase = WF_IDLE;
         return;
       }
       int8_t best = pickBestNetwork(found);
-      Serial.printf("Wi-Fi: %d network(s) visible, best candidate=%s\n",
-                    found, best >= 0 ? WIFI_NETS[best].ssid : "none");
+      logMsg(L_INFO, "NET", "%d network(s) visible, best candidate=%s",
+             found, best >= 0 ? WIFI_NETS[best].ssid : "none");
       WiFi.scanDelete();
       if (best >= 0) {
-        Serial.printf("Wi-Fi: connecting to '%s'%s\n", WIFI_NETS[best].ssid,
-                      WIFI_NETS[best].pass[0] ? "" : " (open)");
+        logMsg(L_INFO, "NET", "connecting to '%s'%s", WIFI_NETS[best].ssid,
+               WIFI_NETS[best].pass[0] ? "" : " (open)");
         WiFi.begin(WIFI_NETS[best].ssid, WIFI_NETS[best].pass);
         wifiPhase = WF_CONNECTING;
         wifiPhaseSince = now;
@@ -440,7 +666,7 @@ void wifiService(unsigned long now) {
 
     case WF_CONNECTING:
       if (now - wifiPhaseSince > WIFI_CONNECT_TIMEOUT) {
-        Serial.printf("Wi-Fi: association timeout (status=%d), backing off\n", (int)WiFi.status());
+        logMsg(L_WARN, "NET", "association timeout (status=%d), backing off", (int)WiFi.status());
         WiFi.disconnect(true);
         wifiPhase = WF_IDLE;
         lastWifiTry = now;
@@ -461,18 +687,18 @@ const char* wifiStatusStr() {
 }
 
 bool connectMqtt() {
-  Serial.printf("MQTT: connecting to %s:%d ... ", MQTT_HOST, MQTT_PORT);
+  logMsg(L_INFO, "MQTT", "connecting to %s:%d", MQTT_HOST, MQTT_PORT);
   // Last will: if the ESP32 vanishes, the broker publishes "offline" for us
   if (mqtt.connect(clientId, nullptr, nullptr, TOPIC_STATUS, 0, true, "offline")) {
     mqtt.publish(TOPIC_STATUS, "online", true);
-    Serial.println("OK");
+    logMsg(L_OK, "MQTT", "session up, status=online (retained)");
     mqttBackoff = MQTT_BACKOFF_MIN_MS;
     mqttWasConnected = true;
     lastPublishOk = millis();          // watchdog baseline
     return true;
   }
-  Serial.printf("failed (state=%d), next try in %lus\n",
-                mqtt.state(), mqttBackoff / 1000);
+  logMsg(L_WARN, "MQTT", "connect failed (state=%d), retry in %lus",
+         mqtt.state(), mqttBackoff / 1000UL);
   return false;
 }
 
@@ -556,7 +782,8 @@ void publishData() {
     "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"temp\":%.1f,\"lvl\":%d,"
     "\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,\"peakA\":%.2f,"
     "\"acs\":{\"ok\":%s,\"amps\":%.3f,\"v\":%.3f,\"zero\":%.3f},"
-    "\"gps\":{\"chars\":%lu,\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
+    "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
+    "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
     "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,"
     "\"utc_h\":%d,\"utc_m\":%d,\"utc_s\":%d,\"utc_y\":%d,\"utc_mo\":%d,\"utc_d\":%d},"
     "\"sys\":{\"heap\":%u,\"rssi\":%d,"
@@ -567,38 +794,43 @@ void publishData() {
     tRoll, tPitch, tYaw, tilt, lax, lay, laz, lt, level,
     (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt, peakAmps,
     acsWiringOK() ? "true" : "false", tAmps, acsFiltV, acsOffsetV,
-    (unsigned long)gps.charsProcessed(), (int)gps.satellites.value(),
+    (unsigned long)gps.charsProcessed(), gm.cGSV ? gm.view : -1, gm.snr, gm.fixQ, (unsigned long)gm.bad,
+    (int)gps.satellites.value(),
     fix ? "true" : "false", lat, lng, alt, spd,
     cog, hdop, gpsDistTotalM,
     utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d,
     (unsigned)ESP.getFreeHeap(), WiFi.RSSI(),
-    WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.channel(), wifiStatusStr(),
+    WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), wifiStatusStr(),
     WiFi.localIP().toString().c_str(), WiFi.macAddress().c_str());
 
   if (n < 0) {                       // snprintf failure
-    Serial.println("!! payload snprintf failed, reading dropped");
+    logMsg(L_ERR, "MQTT", "payload snprintf failed, reading dropped");
     txFail++;
     return;
   }
   if (n >= (int)sizeof b) {          // would be truncated: send the slim form
-    Serial.printf("!! payload truncated (%d >= %d), publishing slim variant\n", n, (int)sizeof b);
+    logMsg(L_WARN, "MQTT", "payload truncated (%d >= %d), publishing slim variant", n, (int)sizeof b);
     n = snprintf(b, sizeof b,
       "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
       "\"lvl\":%d,\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,\"peakA\":%.2f,"
       "\"acs\":{\"ok\":%s,\"amps\":%.3f,\"v\":%.3f,\"zero\":%.3f},"
-      "\"gps\":{\"chars\":%lu,\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
+      "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
+      "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
       "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f},"
       "\"sys\":{\"heap\":%u,\"rssi\":%d}}",
       (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
       mpuValid ? "true" : "false", tRoll, tPitch, tYaw, tilt, level,
       (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt, peakAmps,
       acsWiringOK() ? "true" : "false", tAmps, acsFiltV, acsOffsetV,
-      (unsigned long)gps.charsProcessed(), (int)gps.satellites.value(),
+      (unsigned long)gps.charsProcessed(), gm.cGSV ? gm.view : -1, gm.snr, gm.fixQ, (unsigned long)gm.bad,
+      (int)gps.satellites.value(),
       fix ? "true" : "false", lat, lng, alt, spd, cog, hdop, gpsDistTotalM,
       (unsigned)ESP.getFreeHeap(), WiFi.RSSI());
     if (n <= 0 || n >= (int)sizeof b) { txFail++; return; }
   }
 
+  if (verbose) logMsg(L_DBG, "MQTT", "queued #%lu (%d bytes, q=%u)",
+                      (unsigned long)txSeq, n, (unsigned)txqCount);
   txqPush(b);
 }
 
@@ -618,7 +850,7 @@ void networkService() {
   if (!mqtt.connected()) {
     if (mqttWasConnected) {
       mqttWasConnected = false;
-      Serial.printf("MQTT: link lost after %lu ok publishes\n", (unsigned long)txOk);
+      logMsg(L_WARN, "MQTT", "link lost after %lu ok publishes", (unsigned long)txOk);
     }
     if (now - lastMqttTry >= mqttBackoff) {
       lastMqttTry = now;
@@ -633,8 +865,8 @@ void networkService() {
   // Half-open TCP guard: the socket can look connected while nothing is
   // delivered. If no publish has succeeded for a while, force a clean session.
   if (lastPublishOk != 0 && now - lastPublishOk > MQTT_WATCHDOG_MS) {
-    Serial.printf("MQTT: watchdog - nothing delivered for %lus, reconnecting\n",
-                  (unsigned long)((now - lastPublishOk) / 1000));
+    logMsg(L_WARN, "MQTT", "watchdog: nothing delivered for %lus, reconnecting",
+           (unsigned long)((now - lastPublishOk) / 1000));
     mqtt.disconnect();
     lastMqttTry = 0;                     // reconnect immediately
     mqttBackoff = MQTT_BACKOFF_MIN_MS;
@@ -652,35 +884,171 @@ void networkService() {
 #endif
 }
 
-// ============ SERIAL STATUS LINE ============
-// One aligned line for the monitor. Everything a human needs to decide whether
-// the device is healthy is on it: link state, GPS state, delivery counters.
-void printStatus() {
-  unsigned long up = (millis() - bootMillis) / 1000;
-  const char* wifi = (WiFi.status() == WL_CONNECTED) ? "OK  " : "DOWN";
-  const char* mq = mqtt.connected() ? "OK  " : "DOWN";
-  int sats = (int)gps.satellites.value();
+// ============ SERIAL PANEL ============
+// Framed snapshot every DASH_INTERVAL_MS. Columns are fixed so a captured log
+// can be scanned vertically; the state words carry the colour, not the padding.
+static const char* A(const char* code) { return useColor ? code : ""; }
 
-  char gpsTxt[40];
-  if (!gps.charsProcessed())            snprintf(gpsTxt, sizeof gpsTxt, "NO DATA");
-  else if (gpsFixUsable())              snprintf(gpsTxt, sizeof gpsTxt, "FIX   %2d sats", sats);
-  else                                  snprintf(gpsTxt, sizeof gpsTxt, "NO FIX %2d sats", sats);
+static void printStatus() {
+  if (!showPanel) return;
 
-  char rssiTxt[12];
-  if (WiFi.status() == WL_CONNECTED) snprintf(rssiTxt, sizeof rssiTxt, "%ddBm", (int)WiFi.RSSI());
-  else                               snprintf(rssiTxt, sizeof rssiTxt, "  --");
+  unsigned long ms = millis();
+  const bool wifiOk  = WiFi.status() == WL_CONNECTED;
+  const bool mqttOk  = mqtt.connected();
+  const bool gpsLive = gps.charsProcessed() > 0;
+  const bool fix     = gpsFixUsable();
+  const bool stale   = gpsLive && gm.sentences > 0 && (ms - gm.lastMs) > 3000UL;
+  const bool garbage = gpsLive && gm.sentences == 0;   // bytes but no NMEA frames
+  const int  used    = (int)gps.satellites.value();
 
-  Serial.printf("[%5lus] tilt=%5.1f %s | %6.2fA pk%5.2f | GPS %-12s | wifi %s %6s | mqtt %s | "
-                "seq=%lu ok=%lu fail=%lu drop=%lu q=%u | heap=%uK\n",
-                up, tilt, level == 2 ? "DANGER" : (level == 1 ? "WARN  " : "safe  "),
-                amps, peakAmps, gpsTxt, wifi, rssiTxt, mq,
+  // "FIX" green, "NO FIX" yellow only when the antenna actually sees satellites,
+  // red when it hears nothing at all - that distinction is the point of the tap.
+  const char* gpsWord = fix ? "FIX"
+                      : (!gpsLive ? "NO DATA" : (garbage ? "NO NMEA" : "NO FIX"));
+  const char* gpsCol  = fix ? ANSI_GRN
+                      : ((gpsLive && !stale && gm.view > 0) ? ANSI_YEL : ANSI_RED);
+  const char* lvlWord = level == 2 ? "DANGER" : (level == 1 ? "WARN" : "safe");
+  const char* lvlCol  = level == 2 ? ANSI_RED : (level == 1 ? ANSI_YEL : ANSI_GRN);
+
+  char up[24];
+  stamp(up, sizeof up);
+
+  char hdop[12];
+  if (gps.hdop.isValid()) snprintf(hdop, sizeof hdop, "%.2f", gps.hdop.hdop());
+  else                    snprintf(hdop, sizeof hdop, "--");
+
+  char age[12];
+  if (gpsLive) snprintf(age, sizeof age, "%lus", (unsigned long)((ms - gm.lastMs) / 1000UL));
+  else         snprintf(age, sizeof age, "--");
+
+  // -1 = the module sent no GSV at all, so "0 in view" would be a lie.
+  char viewTxt[8], snrTxt[8];
+  if (gm.cGSV > 0) { snprintf(viewTxt, sizeof viewTxt, "%d", gm.view); snprintf(snrTxt, sizeof snrTxt, "%d", gm.snr); }
+  else             { snprintf(viewTxt, sizeof viewTxt, "--");          snprintf(snrTxt, sizeof snrTxt, "--"); }
+
+  Serial.printf("\n%s+------------------------------------------------------------------------------%s\n",
+                A(ANSI_DIM), A(ANSI_RESET));
+
+  Serial.printf("%s|%s SYS   up %s   heap %uK   rssi %d dBm   ch %d   ip %s\n",
+                A(ANSI_DIM), A(ANSI_RESET), up,
+                (unsigned)(ESP.getFreeHeap() / 1024),
+                wifiOk ? (int)WiFi.RSSI() : 0,
+                wifiOk ? (int)WiFi.channel() : 0,
+                wifiOk ? WiFi.localIP().toString().c_str() : "-");
+
+  Serial.printf("%s|%s LINK  wifi %s%-4s%s  mqtt %s%-4s%s  tx %lu  ok %lu  fail %lu  drop %lu  q %u\n",
+                A(ANSI_DIM), A(ANSI_RESET),
+                A(wifiOk ? ANSI_GRN : ANSI_RED), wifiOk ? "OK" : "DOWN", A(ANSI_RESET),
+                A(mqttOk ? ANSI_GRN : ANSI_RED), mqttOk ? "OK" : "DOWN", A(ANSI_RESET),
                 (unsigned long)txSeq, (unsigned long)txOk, (unsigned long)txFail,
-                (unsigned long)txDrop, (unsigned)txqCount,
-                (unsigned)(ESP.getFreeHeap() / 1024));
+                (unsigned long)txDrop, (unsigned)txqCount);
 
-  if (!mpuValid)      Serial.println("  !! MPU6050 NOT READING - check VCC, GND, SDA, SCL");
-  if (!acsWiringOK()) Serial.println("  !! ACS712 out of range - check VCC 5V, GND, OUT, divider");
+  Serial.printf("%s|%s GPS   %s%-7s%s used %-2d  view %-3s  snr %-3s  q %d  hdop %-5s  nmea %s ago\n",
+                A(ANSI_DIM), A(ANSI_RESET),
+                A(gpsCol), gpsWord, A(ANSI_RESET),
+                used, viewTxt, snrTxt, gm.fixQ, hdop, age);
+
+  Serial.printf("%s|%s NMEA  %lu sent  %lu bad  gga %lu  rmc %lu  gsa %lu  gsv %lu  other %lu\n",
+                A(ANSI_DIM), A(ANSI_RESET),
+                (unsigned long)gm.sentences, (unsigned long)gm.bad,
+                (unsigned long)gm.cGGA, (unsigned long)gm.cRMC,
+                (unsigned long)gm.cGSA, (unsigned long)gm.cGSV, (unsigned long)gm.cOther);
+
+  Serial.printf("%s|%s IMU   tilt %5.1f  %s%-6s%s  roll %5.1f  pitch %5.1f  yaw %6.1f  mpu %s%s%s\n",
+                A(ANSI_DIM), A(ANSI_RESET),
+                tilt, A(lvlCol), lvlWord, A(ANSI_RESET),
+                roll, pitch, yaw,
+                A(mpuValid ? ANSI_GRN : ANSI_RED), mpuValid ? "OK" : "FAIL", A(ANSI_RESET));
+
+  Serial.printf("%s|%s PWR   %6.2f A  peak %5.2f A  zero %.3f V  acs %s%s%s\n",
+                A(ANSI_DIM), A(ANSI_RESET),
+                amps, peakAmps, acsOffsetV,
+                A(acsWiringOK() ? ANSI_GRN : ANSI_RED), acsWiringOK() ? "OK" : "FAIL", A(ANSI_RESET));
+
+  Serial.printf("%s+------------------------------------------------------------------------------%s\n",
+                A(ANSI_DIM), A(ANSI_RESET));
+
+  // One hint per failure, phrased as the next physical thing to check.
+  if (!gpsLive)
+    Serial.println("  ! GPS  no bytes at all - check TX->GPIO25, common GND, module VCC");
+  else if (garbage)
+    Serial.println("  ! GPS  bytes but no NMEA sentences - wrong baud, TX noise or swapped pin");
+  else if (stale)
+    Serial.printf("  ! GPS  stream stopped %lus ago - module lost power or the TX wire moved\n",
+                  (unsigned long)((ms - gm.lastMs) / 1000UL));
+  else if (gm.cGSV == 0)
+    Serial.println("  ! GPS  no GSV sentences - module is not reporting satellites at all");
+  else if (!fix && gm.view == 0)
+    Serial.println("  ! GPS  0 satellites in view - antenna / sky view, not the wiring");
+  else if (!fix && gm.view > 0)
+    Serial.printf("  ! GPS  %d in view, %d used, q=%d - still locking (needs 4+)\n",
+                  gm.view, used, gm.fixQ);
+
+  if (!mpuValid)
+    Serial.println("  ! IMU  MPU6050 not reading - check VCC, GND, SDA, SCL");
+  if (!acsWiringOK())
+    Serial.println("  ! PWR  ACS712 out of range - check 5V, GND, OUT, divider");
 }
+
+// ============ BANNER / HELP ============
+static const char* resetReasonStr() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "power-on";
+    case ESP_RST_EXT:       return "external pin";
+    case ESP_RST_SW:        return "software";
+    case ESP_RST_PANIC:     return "PANIC - exception";
+    case ESP_RST_INT_WDT:   return "interrupt watchdog";
+    case ESP_RST_TASK_WDT:  return "task watchdog";
+    case ESP_RST_WDT:       return "other watchdog";
+    case ESP_RST_DEEPSLEEP: return "deep-sleep wake";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT - supply sagged";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "unknown";
+  }
+}
+
+static void rule(char c) {
+  char line[81];
+  memset(line, c, 80);
+  line[80] = '\0';
+  Serial.printf("%s%s%s\n", A(ANSI_DIM), line, A(ANSI_RESET));
+}
+
+void printHelp();
+
+void printBanner() {
+  uint64_t mac = ESP.getEfuseMac();
+  char macStr[18];
+  snprintf(macStr, sizeof macStr, "%02X:%02X:%02X:%02X:%02X:%02X",
+           (unsigned)(mac & 0xFF), (unsigned)((mac >> 8) & 0xFF),
+           (unsigned)((mac >> 16) & 0xFF), (unsigned)((mac >> 24) & 0xFF),
+           (unsigned)((mac >> 32) & 0xFF), (unsigned)((mac >> 40) & 0xFF));
+
+  Serial.println();
+  rule('=');
+  Serial.printf(" %s%s %s%s\n", A(ANSI_BOLD), FW_NAME, FW_VERSION, A(ANSI_RESET));
+  Serial.printf(" %sbuilt %s %s%s\n", A(ANSI_DIM), __DATE__, __TIME__, A(ANSI_RESET));
+  uint16_t rev = ESP.getChipRevision();
+  Serial.printf(" chip  %s rev %u.%u  %u core(s) @ %u MHz  flash %u KB  heap %u KB\n",
+                ESP.getChipModel(), (unsigned)(rev / 100), (unsigned)(rev % 100),
+                ESP.getChipCores(), (unsigned)ESP.getCpuFreqMHz(),
+                (unsigned)(ESP.getFlashChipSize() / 1024), (unsigned)(ESP.getFreeHeap() / 1024));
+  Serial.printf(" reset %s   mac %s\n", resetReasonStr(), macStr);
+  Serial.printf(" topic %s\n", TOPIC_DATA);
+  Serial.printf(" broker %s:%d  keepalive %ds  publish %dms\n",
+                MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_S, PUBLISH_INTERVAL_MS);
+  Serial.printf(" gps   uart2  RX=%d  TX=%d  9600 8N1\n", GPS_RX_PIN, GPS_TX_PIN);
+  Serial.printf(" pins  i2c SDA=%d SCL=%d @100kHz   acs ADC1/%d   leds %d/%d/%d\n",
+                I2C_SDA_PIN, I2C_SCL_PIN, ACS_PIN, LED_BLUE_PIN, LED_WHITE_PIN, LED_RED_PIN);
+  rule('=');
+  printHelp();
+}
+
+void printHelp() {
+  Serial.printf("%skeys  g raw nmea | v verbose | c colours | p panel | r yaw=0 | z acs zero | x reboot | ? help%s\n",
+                A(ANSI_DIM), A(ANSI_RESET));
+}
+
 
 // ============ SETUP ============
 void mqtt_simple_setup() {
@@ -698,6 +1066,9 @@ void mqtt_simple_setup() {
     digitalWrite(testPins[i], LOW);
   }
 
+  // 1 KB RX buffer: a Wi-Fi/MQTT stall must not drop mid-sentence bytes, which
+  // would show up as checksum failures in the NMEA tap.
+  gpsSerial.setRxBufferSize(1024);
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(100000);
@@ -705,11 +1076,8 @@ void mqtt_simple_setup() {
   analogSetPinAttenuation(ACS_PIN, ADC_11db);
   delay(500);
 
-  Serial.println();
-  Serial.println("=== ESP32 dash | MQTT ===");
-  Serial.printf("topic  : %s\n", TOPIC_DATA);
-  Serial.printf("broker : %s:%d  keepalive=%ds\n", MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_S);
-  Serial.println("=========================");
+  gm.lastMs = millis();
+  printBanner();
 
 #if VIEWER_MODE == 0
   // Start Wi-Fi in the background so calibration is not delayed. At boot we do
@@ -719,7 +1087,7 @@ void mqtt_simple_setup() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  Serial.println("Wi-Fi: scanning (async) for a known network...");
+  logMsg(L_INFO, "NET", "scanning for a known network (async)");
   WiFi.scanNetworks(true /*async*/, false);
   wifiPhase = WF_SCANNING;
   wifiPhaseSince = millis();
@@ -730,14 +1098,15 @@ void mqtt_simple_setup() {
   mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
 #endif
 
+  logMsg(L_INFO, "IMU", "probing MPU6050 on SDA=%d SCL=%d", I2C_SDA_PIN, I2C_SCL_PIN);
   int tries = 0;
   while (!(mpuFind() && mpuInit())) {
-    if (tries++ == 40) Serial.println("MPU6050 not found - check VCC, GND, SDA, SCL");
+    if (tries++ == 40) logMsg(L_ERR, "IMU", "MPU6050 not found - check VCC, GND, SDA, SCL");
     ledsFault();
     delay(100);
   }
 
-  Serial.println("Calibrating (about 3 seconds): keep the board still, no current in ACS712...");
+  logMsg(L_INFO, "CAL", "keep the board still, no current in the ACS712 (about 3 s)");
   digitalWrite(LED_WHITE_PIN, HIGH);
   const int N = 500;
   int good = 0;
@@ -768,25 +1137,125 @@ void mqtt_simple_setup() {
   ledsOff();
   lastMicros = micros();
 
-  Serial.printf("MPU6050 found at 0x%02X\n", MPU_ADDR);
-  Serial.printf("ACS712 zero-current level: %.3f V (about 2.3 to 2.5 V is normal)\n", acsOffsetV);
-  Serial.println("Ready");
   bootMillis = millis();
+
+  logMsg(L_OK, "IMU", "MPU6050 at 0x%02X  gyro bias %.2f/%.2f/%.2f dps",
+         MPU_ADDR, gyroBiasX, gyroBiasY, gyroBiasZ);
+  if (acsOffsetV >= 2.3f && acsOffsetV <= 2.55f)
+    logMsg(L_OK, "PWR", "ACS712 zero %.3f V (expected 2.3-2.5 V)", acsOffsetV);
+  else
+    logMsg(L_WARN, "PWR", "ACS712 zero %.3f V - outside 2.3-2.5 V, check 5V/GND/OUT", acsOffsetV);
+  logMsg(L_OK, "SYS", "ready - %s %s", FW_NAME, FW_VERSION);
+}
+
+// ============ CONSOLE KEYS ============
+static void handleKeys() {
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    switch (c) {
+      case 'g': case 'G':
+        showNmea = !showNmea;
+        logMsg(L_INFO, "UI", "raw NMEA echo %s", showNmea ? "on" : "off");
+        break;
+      case 'v': case 'V':
+        verbose = !verbose;
+        logMsg(L_INFO, "UI", "verbose %s", verbose ? "on" : "off");
+        break;
+      case 'c': case 'C':
+        useColor = !useColor;
+        logMsg(L_INFO, "UI", "colours %s", useColor ? "on" : "off");
+        break;
+      case 'p': case 'P':
+        showPanel = !showPanel;
+        logMsg(L_INFO, "UI", "panel %s", showPanel ? "on" : "off");
+        break;
+      case 'r': case 'R':
+        yaw = 0;
+        logMsg(L_INFO, "IMU", "yaw reset to 0");
+        break;
+      case 'z': case 'Z':
+        acsCalibrate();
+        peakAmps = 0;
+        logMsg(L_OK, "PWR", "ACS712 re-zeroed at %.3f V", acsOffsetV);
+        break;
+      case 'x': case 'X':
+        logMsg(L_WARN, "SYS", "restart requested from console");
+        Serial.flush();
+        delay(100);
+        ESP.restart();
+        break;
+      case '?': case 'h': case 'H':
+        printHelp();
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+// ============ GPS WATCHDOG ============
+// Turns the raw counters into events: stream died, stream came back, fix
+// acquired/lost, satellites appeared in view. These are the lines worth grepping
+// in a long capture.
+static int lastFixState = -1;   // -1 unknown, 0 no data, 1 no fix, 2 fix
+static int lastView = -1;
+
+static void gpsWatch() {
+  unsigned long ms = millis();
+  const uint32_t chars = gps.charsProcessed();
+
+  if (chars > 0 && gm.sentences > 0 && ms - gm.lastMs > 3000UL) {
+    if (!gm.silent) {
+      gm.silent = true;
+      lastFixState = -1;
+      logMsg(L_WARN, "GPS", "no NMEA for %lus (chars=%lu) - module power or TX wire",
+             (unsigned long)((ms - gm.lastMs) / 1000UL), (unsigned long)chars);
+    }
+  } else if (gm.silent && ms - gm.lastMs < 1000UL) {
+    gm.silent = false;
+    logMsg(L_OK, "GPS", "NMEA stream resumed");
+  }
+
+  static unsigned long lastCheck = 0;
+  if (ms - lastCheck < 1000UL) return;
+  lastCheck = ms;
+
+  const bool fix = gpsFixUsable();
+  const int st = fix ? 2 : (chars > 0 ? 1 : 0);
+  if (st != lastFixState) {
+    if (st == 2) {
+      char hd[12];
+      if (gps.hdop.isValid()) snprintf(hd, sizeof hd, "%.2f", gps.hdop.hdop());
+      else                    snprintf(hd, sizeof hd, "--");
+      logMsg(L_OK, "GPS", "FIX acquired: %d sats used, %d in view, hdop %s",
+             (int)gps.satellites.value(), gm.view, hd);
+    } else if (st == 1 && lastFixState == 2) {
+      logMsg(L_WARN, "GPS", "fix lost");
+    } else if (st == 0) {
+      logMsg(L_WARN, "GPS", "no NMEA data on the RX pin");
+    }
+    lastFixState = st;
+  }
+
+  if (gm.view != lastView) {
+    if (verbose || (gm.view > 0 && lastView <= 0))
+      logMsg(L_INFO, "GPS", "satellites in view: %d (best snr %d)", gm.view, gm.snr);
+    lastView = gm.view;
+  }
 }
 
 // ============ LOOP ============
 void mqtt_simple_loop() {
-  while (gpsSerial.available()) gps.encode(gpsSerial.read());
-
-  while (Serial.available()) {
-    char c = Serial.read();
-    if (c == 'r' || c == 'R') yaw = 0;
-    if (c == 'z' || c == 'Z') {
-      acsCalibrate();
-      peakAmps = 0;
-      Serial.println("ACS712 re-zeroed");
-    }
+  // Every byte feeds TinyGPSPlus (parsed fields) and the tap (raw sentence
+  // stream: counters, GSV view/SNR, checksum failures).
+  while (gpsSerial.available()) {
+    char gc = (char)gpsSerial.read();
+    gps.encode(gc);
+    gpsMonFeed(gc);
   }
+
+  handleKeys();
+  gpsWatch();
 
   // GPS odometer: accumulate distance on valid location updates
   if (gps.location.isUpdated() && gps.location.isValid()) {

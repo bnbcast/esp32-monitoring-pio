@@ -203,6 +203,16 @@ html, body { height: 100%; }
 }
 .hud-item .lbl { font-size: 0.6rem; text-transform: uppercase; color: #666; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-item .val { font-family: var(--font-mono); font-weight: 900; font-size: 1.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Wide cell: street address needs more than one grid column and may wrap. */
+.hud-item.wide { grid-column: 1 / -1; }
+.hud-item .val.small {
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.25;
+}
 
 /* Heading source badge */
 .heading-badge {

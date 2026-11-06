@@ -71,13 +71,104 @@ function drawTiltChart() {
   }
 }
 
-// ---- Reverse Geocoding (disabled - keyless/mailless only) -----------------
-// Nominatim requires a contact email in User-Agent and rate-limits to 1 req/s.
-// Removed to stay keyless + mailless. The hudAddress element does not exist
-// in the HTML, so this was a no-op that generated 403 errors.
-async function reverseGeocode(lat, lng) {
-  // Disabled. No-op to avoid Nominatim 403 / console errors.
-  return;
+// ---- Reverse geocoding (keyless: OSM Nominatim) ---------------------------
+// The usage policy allows a browser app if it is gentle: one request at a time,
+// never faster than ~1/s, and results must be cached. We are far stricter than
+// that (3 s minimum, 25 m minimum movement, 7-day cache per ~110 m cell) so a
+// dashboard that sits open all day costs a handful of requests.
+const GEO = {
+  lastAt: 0, lat: null, lng: null, pending: false,
+  blockedUntil: 0, cache: null, text: ''
+};
+const GEO_MIN_MS = 8000;   // never faster than this (policy is 1 req/s)
+const GEO_MIN_M = 80;      // and never for less than this much movement
+
+const GEO_CACHE_TTL = 7 * 24 * 3600 * 1000;
+
+function geoCache() {
+  if (GEO.cache) return GEO.cache;
+  try { GEO.cache = JSON.parse(localStorage.getItem('geoCache') || '{}') || {}; }
+  catch (e) { GEO.cache = {}; }
+  return GEO.cache;
+}
+
+function setAddress(text, loading) {
+  if (GEO.text === text && !loading) return;
+  GEO.text = text;
+  const ids = ['hudAddress', 'liveAddr', 'liveAddrMobile'];
+  for (const id of ids) {
+    const el = $(id);
+    if (!el) continue;
+    el.textContent = text;
+    el.classList.toggle('loading', !!loading);
+  }
+}
+
+function formatAddress(j) {
+  const a = (j && j.address) || {};
+  const road = a.road || a.pedestrian || a.footway || a.cycleway || a.path || a.residential;
+  const area = a.suburb || a.village || a.neighbourhood || a.hamlet || a.city_district;
+  const city = a.city || a.town || a.municipality || a.county || a.state;
+  const parts = [road, area, city].filter(Boolean);
+  if (parts.length) return parts.slice(0, 3).join(', ');
+  const d = (j && j.display_name) || '';
+  return d.split(',').slice(0, 2).join(',').trim();
+}
+
+async function fetchAddress(lat, lng) {
+  const key = lat.toFixed(3) + ',' + lng.toFixed(3);
+  const cache = geoCache();
+  const hit = cache[key];
+  if (hit && (Date.now() - hit.ts) < GEO_CACHE_TTL) {
+    setAddress(hit.text, false);
+    return;
+  }
+
+  GEO.pending = true;
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), 6000) : 0;
+  try {
+    const url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1'
+      + '&lat=' + lat.toFixed(6) + '&lon=' + lng.toFixed(6);
+    const res = await fetch(url, ctrl ? { signal: ctrl.signal } : {});
+    if (!res.ok) {
+      // 403/429 = the policy engine is unhappy: stop asking for a while.
+      if (res.status === 403 || res.status === 429) GEO.blockedUntil = Date.now() + 10 * 60 * 1000;
+      throw new Error('geocode ' + res.status);
+    }
+    const j = await res.json();
+    const text = formatAddress(j);
+    if (text) {
+      cache[key] = { text, ts: Date.now() };
+      const keys = Object.keys(cache);
+      if (keys.length > 200) {
+        keys.sort((x, y) => cache[x].ts - cache[y].ts);
+        for (const k of keys.slice(0, keys.length - 200)) delete cache[k];
+      }
+      try { localStorage.setItem('geoCache', JSON.stringify(cache)); } catch (e) { /* quota */ }
+      setAddress(text, false);
+    } else {
+      setAddress('alamat tidak ditemukan', false);
+    }
+  } catch (e) {
+    setAddress(GEO.blockedUntil > Date.now() ? 'alamat tidak tersedia' : 'alamat tidak tersedia', false);
+  } finally {
+    if (timer) clearTimeout(timer);
+    GEO.pending = false;
+  }
+}
+
+function maybeAddress(lat, lng) {
+  if (!num(lat) || !num(lng)) return;
+  if (document.hidden) return;            // no point burning requests in a background tab
+  const now = Date.now();
+  if (now < GEO.blockedUntil || GEO.pending) return;
+  if (now - GEO.lastAt < GEO_MIN_MS) return;
+  if (GEO.lat != null && haversineM(GEO.lat, GEO.lng, lat, lng) < GEO_MIN_M) return;
+  GEO.lastAt = now;
+  GEO.lat = lat;
+  GEO.lng = lng;
+  fetchAddress(lat, lng);
 }
 
 // ---- topic key ------------------------------------------------------------
@@ -178,6 +269,7 @@ function ingestGPS(g) {
   }
 
   if (typeof g.dist_m === 'number') GPS.totalDist = g.dist_m;
+  maybeAddress(g.lat, g.lng);
   if (GPS.lastPoint) {
     const dy = pt.alt - GPS.lastPoint.alt;
     if (dy > 0) GPS.elevGain += dy; else GPS.elevLoss -= dy;
@@ -204,9 +296,29 @@ function ingestGPS(g) {
 }
 
 // ---- DOM rendering --------------------------------------------------------
+// Kilometres with a precision that stays readable from 10 m to 100 km.
+function fmtKm(m) {
+  if (!num(m)) return '--';
+  const km = m / 1000;
+  if (km < 0.01) return (m).toFixed(0) + ' m';
+  if (km < 10) return km.toFixed(2);
+  return km.toFixed(1);
+}
+function fmtDist(m) {
+  if (!num(m)) return '--';
+  return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km';
+}
+function trailMetres() {
+  return (typeof MAP !== 'undefined' && MAP.getTrailDistance) ? MAP.getTrailDistance() : 0;
+}
+
 function updateStatsDOM() {
   const avgSpd = GPS.movingTime > 0 ? (GPS.totalDist / 1000) / (GPS.movingTime / 3600) : 0;
   const el = id => $(id);
+  const trailM = trailMetres();
+  if (el('hudDist')) el('hudDist').textContent = fmtKm(trailM);
+  if (el('liveTrailDist')) el('liveTrailDist').textContent = fmtKm(trailM);
+  if (el('liveTrailDistMobile')) el('liveTrailDistMobile').textContent = fmtKm(trailM);
   if (el('vDist')) el('vDist').textContent = GPS.totalDist.toFixed(1);
   if (el('liveDist')) el('liveDist').textContent = GPS.totalDist.toFixed(1);
   if (el('liveDistMobile')) el('liveDistMobile').textContent = GPS.totalDist.toFixed(1);
@@ -217,6 +329,21 @@ function updateStatsDOM() {
   if (el('vMoveT')) el('vMoveT').textContent = Math.round(GPS.movingTime);
   if (el('vElevGain')) el('vElevGain').textContent = Math.round(GPS.elevGain);
   if (el('vElevLoss')) el('vElevLoss').textContent = Math.round(GPS.elevLoss);
+}
+
+// Measure badge on the map (A -> B distance).
+function renderMeasure({ a, b, distM }) {
+  const box = $('measureInfo');
+  if (!box) return;
+  box.hidden = false;
+  const val = $('measureValue');
+  const hint = $('measureHint');
+  if (!a) { if (val) val.textContent = '--'; if (hint) hint.textContent = 'klik titik A di peta'; }
+  else if (!b) { if (val) val.textContent = '--'; if (hint) hint.textContent = 'klik titik B di peta'; }
+  else {
+    if (val) val.textContent = fmtDist(distM);
+    if (hint) hint.textContent = 'klik lagi untuk ukur ulang';
+  }
 }
 
 function updateSignalDOM() {
@@ -488,6 +615,10 @@ function onMessage(topic, payload, retained) {
 
   last = d;
 
+  // Ask for the street name even when the vehicle is parked and sends no new
+  // trail point (the first retained fix on page load lands here).
+  if (d.gps && d.gps.fix && !GEO.text) maybeAddress(d.gps.lat, d.gps.lng);
+
   // Feed live GPS into the map
   if (typeof MAP !== 'undefined' && MAP.isReady() && d.gps && typeof d.gps.lat === 'number') {
     const g = d.gps;
@@ -636,12 +767,51 @@ if (!KEY) {
     btnCompass.addEventListener('touchend', endPress);
   }
 
+  // ---- Measure A->B + trip reset -----------------------------------------
+  let measureOn = false;
+  function toggleMeasure(force) {
+    measureOn = (typeof force === 'boolean') ? force : !measureOn;
+    if (typeof MAP === 'undefined') return;
+    MAP.setMeasureMode(measureOn);
+    const b = $('btnMeasure');
+    if (b) b.classList.toggle('active', measureOn);
+    const box = $('measureInfo');
+    if (box) box.hidden = !measureOn;
+    if (!measureOn) {
+      MAP.clearMeasure();
+      if (box) box.hidden = true;
+    } else {
+      renderMeasure({ a: null, b: null, distM: null });
+    }
+  }
+
+  function resetTrip() {
+    if (typeof MAP !== 'undefined') MAP.clearTrail();
+    GPS.trace.length = 0;
+    GPS.lastPoint = null;
+    GPS.maxSpeed = 0;
+    GPS.movingTime = 0;
+    GPS.stoppedTime = 0;
+    GPS.elevGain = 0;
+    GPS.elevLoss = 0;
+    updateStatsDOM();
+  }
+
+  const btnMeasure = $('btnMeasure');
+  if (btnMeasure) btnMeasure.addEventListener('click', () => toggleMeasure());
+  const btnResetTrip = $('btnResetTrip');
+  if (btnResetTrip) btnResetTrip.addEventListener('click', () => resetTrip());
+  if (typeof MAP !== 'undefined' && MAP.onMeasure) MAP.onMeasure(renderMeasure);
+
   // ---- Keyboard shortcuts -------------------------------------------------
   window.addEventListener('keydown', (e) => {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
     const k = e.key.toLowerCase();
     if (k === 'c' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.recenterNow(); }
     else if (k === 'n' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.resetNorth(); }
+    else if (k === 'm') { e.preventDefault(); toggleMeasure(); }
+    else if (k === 'r') { e.preventDefault(); resetTrip(); }
+    else if (k === 'escape') { e.preventDefault(); toggleMeasure(false); }
   });
 
   setInterval(renderBanner, 500);
