@@ -117,6 +117,28 @@ DOM elements, asserts zero console errors. Chromium install:
 `cd dev && npm install playwright && npx playwright install chromium`
 (Headless screenshot capture may fail due to WebGL; element checks are the gate.)
 
+### Verifying the deployed site (live)
+Live URL: <https://bnbcast.github.io/esp32-monitoring-pio/> (GitHub Pages, built from
+`web/` by `.github/workflows/deploy-pages.yml` on every push that touches `web/**`).
+
+| Command | What it proves |
+|---|---|
+| `node dev/check-live.mjs` | Loads the live page, asserts broker connect, map canvas, zero JS errors / 4xx assets / CSP violations. Exit 1 = FAIL. |
+| `node dev/check-live.mjs http://localhost:5003/?dev&t=dev-test-1234 0 8000` | Same gate against the local dev server. |
+| `node dev/mqtt-watch.mjs <key> 60000` | Raw MQTT traffic without a browser. `live messages = 0` + retained `offline` status = broker fine, **device not connected**. |
+| `C:/Users/User/.platformio/penv/Scripts/python.exe dev/serial-read.py COM4 20` | Prints 20 s of ESP32 serial log (needs COM4 free). |
+
+Frontend facts that matter when debugging "no data":
+
+- The page opens with **no key needed**: `DEFAULT_KEY` in `web/ui/app.js` matches the
+  firmware `TOPIC_KEY`. A `#t=<key>` fragment (or `?t=` for the dev server) overrides it;
+  a malformed fragment shows the setup form instead of silently falling back.
+- The firmware publishes **every** reading with `retain=true`, so the retained flag does
+  **not** mean "history". Liveness is therefore based on message arrival time
+  (`STALE_AFTER_MS` = 6 s). Do not reintroduce a `!retained` check for `lastLiveAt`.
+- The retained `status` topic carries the last will (`offline`), so `DEVICE OFFLINE` means
+  the device's broker connection dropped and has not come back.
+
 ## Environment
 
 - `.pio` directory contains build artifacts — do **not** commit.
