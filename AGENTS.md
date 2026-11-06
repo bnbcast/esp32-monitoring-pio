@@ -189,6 +189,15 @@ DOM elements, asserts zero console errors. Chromium install:
   re-projects correctly on pan/zoom; a CSS transform transition would make it
   lag the map and is intentionally absent.
 
+### ACS712 setup tab
+
+`ACS` tab (desktop and mobile) shows the live module voltage, zero, current and
+a 60 s history, plus model (5/20/30 A), sensitivity, divider ratio and a manual
+zero. The board only publishes, so re-zeroing is done in the browser: the tab
+recomputes amps from `acs.v` and the LIVE readout uses the same number. Config
+is stored in `localStorage.acsCfg`. A voltage outside 0.3-4.9 V shows "NO
+SIGNAL - sensor unplugged or pin floating (0 A should read ~2.5 V)".
+
 ### UI details worth not breaking
 
 - **Mobile** is a single non-scrolling column: top bar, map (`flex:1`), bottom

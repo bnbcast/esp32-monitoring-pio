@@ -7,12 +7,12 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23ffe600' stroke='%23000' stroke-width='5'/%3E%3Ccircle cx='21' cy='25' r='6.5' fill='%23000'/%3E%3Ccircle cx='43' cy='25' r='6.5' fill='%23000'/%3E%3Cpath d='M17 41q15 13 30 0' fill='none' stroke='%23000' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/tokens.css?v=19">
-<link rel="stylesheet" href="css/base.css?v=19">
-<link rel="stylesheet" href="css/components.css?v=19">
-<link rel="stylesheet" href="css/layout.css?v=19">
-<link rel="stylesheet" href="css/map.css?v=19">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=19">
+<link rel="stylesheet" href="css/tokens.css?v=20">
+<link rel="stylesheet" href="css/base.css?v=20">
+<link rel="stylesheet" href="css/components.css?v=20">
+<link rel="stylesheet" href="css/layout.css?v=20">
+<link rel="stylesheet" href="css/map.css?v=20">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=20">
 <title>ESP32 // LIVE SENSORS</title>
 </head>
 <body>
@@ -88,7 +88,8 @@
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="live">LIVE</button>
         <button class="tab-btn" data-tab="wifi">WIFI</button>
-        <button class="tab-btn" data-tab="mpu">MPU6050</button>
+        <button class="tab-btn" data-tab="mpu">MPU</button>
+        <button class="tab-btn" data-tab="acs">ACS</button>
       </div>
 
       <div class="tab-panels-wrapper">
@@ -162,6 +163,9 @@
         </div>
       </div>
 
+      <!-- ACS712 tab -->
+      <div class="tab-panel" id="tab-acs"></div>
+
       <!-- MPU6050 tab -->
       <div class="tab-panel" id="tab-mpu">
         <div class="hud-card">
@@ -197,6 +201,7 @@
       <button class="tab-btn active" data-tab="live">LIVE</button>
       <button class="tab-btn" data-tab="wifi">WIFI</button>
       <button class="tab-btn" data-tab="mpu">MPU</button>
+      <button class="tab-btn" data-tab="acs">ACS</button>
     </div>
     <div class="tab-panels-wrapper">
 
@@ -250,6 +255,9 @@
         </div>
       </div>
 
+      <!-- Mobile ACS712 tab -->
+      <div class="tab-panel" id="tab-acs-mobile"></div>
+
       <!-- Mobile MPU6050 tab -->
       <div class="tab-panel" id="tab-mpu-mobile">
         <div class="hud-card">
@@ -273,6 +281,48 @@
     </div>
   </div>
 
+
+<template id="tpl-acs">
+  <div class="hud-card">
+    <h3>ACS712 LIVE</h3>
+    <div class="hud-grid">
+      <div class="hud-item"><div class="lbl">Module V</div><div class="val a-v">--</div><div class="lbl">volt</div></div>
+      <div class="hud-item"><div class="lbl">Zero</div><div class="val a-zero">--</div><div class="lbl">volt</div></div>
+      <div class="hud-item"><div class="lbl">Current</div><div class="val a-amp">--</div><div class="lbl">amp</div></div>
+      <div class="hud-item"><div class="lbl">Peak</div><div class="val a-peak">--</div><div class="lbl">amp</div></div>
+      <div class="hud-item wide"><div class="lbl">Status</div><div class="val small a-state">--</div><div class="lbl"></div></div>
+    </div>
+    <canvas class="mini-chart a-chart"></canvas>
+  </div>
+
+  <div class="hud-card">
+    <h3>Sensor setup</h3>
+    <div class="cfg">
+      <label for="acs-model">Model</label>
+      <select class="a-model" id="acs-model">
+        <option value="5">5 A &mdash; 185 mV/A</option>
+        <option value="20">20 A &mdash; 100 mV/A</option>
+        <option value="30">30 A &mdash; 66 mV/A</option>
+      </select>
+
+      <label>Sensitivity (V/A)</label>
+      <input class="a-sens" type="number" step="0.001" min="0.01" max="1" inputmode="decimal">
+
+      <label>Divider ratio</label>
+      <input class="a-div" type="number" step="0.001" min="0.1" max="1" inputmode="decimal">
+
+      <label>Zero (V)</label>
+      <input class="a-zeroin" type="number" step="0.001" min="0" max="5" inputmode="decimal" placeholder="auto">
+    </div>
+    <div class="cfg-actions">
+      <button class="small a-zeronow" type="button">Zero now</button>
+      <button class="small secondary a-zerodev" type="button">Device zero</button>
+      <button class="small danger a-reset" type="button">Defaults</button>
+    </div>
+    <p class="hint a-hint"></p>
+  </div>
+</template>
+
   <!-- Setup screen (hidden by default; shown only when no key) -->
   <section id="setup" class="panel" style="display:none;margin-bottom:20px;">
     <h2><span>[!] TOPIC KEY NEEDED</span></h2>
@@ -292,9 +342,9 @@
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=19"></script>
-<script src="ui/map.js?v=19"></script>
-<script src="ui/mqtt-mini.js?v=19"></script>
-<script src="ui/app.js?v=19"></script>
+<script src="vendor/maplibre-gl-csp.js?v=20"></script>
+<script src="ui/map.js?v=20"></script>
+<script src="ui/mqtt-mini.js?v=20"></script>
+<script src="ui/app.js?v=20"></script>
 </body>
 </html>
