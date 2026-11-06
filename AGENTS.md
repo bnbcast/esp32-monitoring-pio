@@ -147,9 +147,10 @@ no gradients/blur/glassmorphism. Single light theme, MapLibre 2D map only.
   and HDOP ≤ 6; otherwise MPU6050 gyro (`yaw`) integrated from last GPS, with
   complementary drift pull-back toward GPS. Optional phone compass or `mag_heading`
   payload field. Source label + confidence exposed via `MAP.getHeading()`.
-- **Controls**: my-location button (recenter/follow toggle), compass button
-  (tap reset north, long-press lock north). Gestures drop to Free and resume tracking
-  after a 3 s debounce. Keyboard: C=recenter, N=reset north, H=cycle heading source.
+- **Controls**: my-location button (recenter/follow, off while parked), measure
+  A→B (M) and trip reset (0). The custom compass button was removed; MapLibre's
+  own compass in the navigation control still resets north. Keyboard: C=recenter,
+  M=measure, R=reset trip, Esc=clear measure.
 - **Simulator scenarios** (`SIM_SCENARIO` env): `normal` (default), `drift`
   (stopped + gyro), `dropout` (GPS loss), `wrap` (0/360 boundary).
 
@@ -185,6 +186,18 @@ DOM elements, asserts zero console errors. Chromium install:
 - The vehicle marker is a **MapLibre Marker** (not a hand-positioned div), so it
   re-projects correctly on pan/zoom; a CSS transform transition would make it
   lag the map and is intentionally absent.
+
+### UI details worth not breaking
+
+- **Mobile** is a single non-scrolling column: top bar, map (`flex:1`), bottom
+  sheet in normal flow (`height: 38dvh`). The sheet used to be `position: fixed`,
+  which covered the bottom of the map; do not bring that back.
+- **Parked** is decided from the spread of the last 6 s of fixes, not from the
+  reported speed (a parked module reports 2-4 km/h). While parked: speed shows
+  `0.0`, the trail and the marker freeze, and the camera never re-centres.
+- **Odometer reset** is a browser-side offset over the firmware `dist_m`
+  (localStorage `odoOffset`); it clears itself when the counter drops (reboot).
+- **Favicon** is an inline SVG data URI in the theme colours - no extra request.
 
 ### Verifying the deployed site (live)
 Live URL: <https://bnbcast.github.io/esp32-monitoring-pio/> (GitHub Pages, built from
