@@ -143,12 +143,14 @@ const MAP = (function () {
   const TRAIL_STEP_MOVING = 3.0;   // metres between accepted points
   const TRAIL_STEP_STOPPED = 15.0; // deadband while parked (grows with HDOP)
   let trailRaf = 0;
+  let trailSeg = 0;             // bumped after a fix outage, so lines do not bridge it
 
   // Parked-receiver noise often arrives as a single 5-10 m jump. A move is only
   // believed after this many consecutive readings agree on it.
   let stillCount = 0;
   let pending = { lat: null, lng: null };
   let pendingD = 0;             // distance of that pending point from the anchor
+  let lastAcceptTs = 0;         // wall clock of the last accepted point
   let lastRaw = { lat: null, lng: null, ts: 0 };   // previous raw fix
 
   // Rolling window of raw fixes. Whether the receiver is actually parked is
@@ -581,9 +583,15 @@ const MAP = (function () {
   }
 
   function acceptPoint(lng, lat, speed, d, now) {
-    trailDistM += d;
+    // Returning after a fix outage is a relocation, not travel: start a new
+    // segment instead of drawing a straight line across the gap and adding its
+    // length to the trip.
+    const gap = lastAcceptTs > 0 && (now - lastAcceptTs > 30000);
+    if (gap) trailSeg++;
+    else trailDistM += d;
     anchor = { lng, lat };
     lastMoveTs = now;
+    lastAcceptTs = now;
     pushTrail(lng, lat, speed);
   }
 
@@ -728,8 +736,8 @@ const MAP = (function () {
     });
   }
 
-  function pushTrail(lng, lat, kmh) {
-    trailCoords.push({ lng, lat, kmh });
+  function pushTrail(lng, lat, kmh, seg) {
+    trailCoords.push({ lng, lat, kmh, seg: seg == null ? trailSeg : seg });
     if (trailCoords.length > TRAIL_MAX) decimateTrail();
     scheduleTrailRender();
   }
@@ -764,6 +772,7 @@ const MAP = (function () {
     const features = [];
     for (let i = 1; i < trailCoords.length; i++) {
       const a = trailCoords[i - 1], b = trailCoords[i];
+      if (a.seg !== b.seg) continue;      // fix outage: no line across it
       features.push({
         type: "Feature",
         properties: { kmh: b.kmh || 0 },
@@ -784,6 +793,8 @@ const MAP = (function () {
     stillCount = 0;
     pending = { lat: null, lng: null };
     lastMoveTs = 0;
+    lastAcceptTs = 0;
+    trailSeg = 0;
     lastRaw = { lat: null, lng: null, ts: 0 };
     if (map && mapReady) {
       const src = map.getSource("trail");
