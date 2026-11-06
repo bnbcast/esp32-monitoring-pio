@@ -37,10 +37,33 @@ static const size_t WIFI_NET_COUNT = sizeof(WIFI_NETS) / sizeof(WIFI_NETS[0]);
 
 #define PUBLISH_INTERVAL_MS 500
 
+// ---- reliability tuning -----------------------------------------------
+#define MQTT_KEEPALIVE_S      15      // broker ping period
+#define MQTT_SOCKET_TIMEOUT_S 3       // per-attempt socket timeout
+#define MQTT_BACKOFF_MIN_MS   2000UL  // first retry delay
+#define MQTT_BACKOFF_MAX_MS   30000UL // cap for exponential backoff
+#define MQTT_WATCHDOG_MS      20000UL // connected but nothing delivered -> reconnect
+#define WIFI_RETRY_MS         10000UL // retry pause when idle
+#define WIFI_CONNECT_TIMEOUT  15000UL // give up one association attempt after this
+
+// Publishes that fail are kept here and re-sent, oldest first, as soon as the
+// broker is reachable again. 3 x 1 KB is ~3 KB of static RAM.
+#define TXQ_SLOTS 3
+#define TXQ_LEN   1024
+
+// GPS sanity gates (a "fix" below these is not worth publishing as a position)
+#define GPS_MIN_SATS  4
+#define GPS_MAX_HDOP  20.0
+#define GPS_MAX_KMH   200.0          // anything faster is a bad frame, not a vehicle
+
+// Physical plausibility clamps
+#define GYRO_MAX_DPS  500.0f         // MPU6050 configured range is +-500 dps
+#define AMPS_MAX      30.0f          // ACS712 30 A module limit
+
 // GPS privacy: decimals published for latitude/longitude.
-//   2 = about 1.1 km accuracy (default)   3 = about 110 m   6 = exact
+//   2 = about 1.1 km accuracy   5 = about 1.1 m   6 = about 0.11 m (exact)
 //  -1 = never publish coordinates (only fix status, satellites, altitude, speed)
-#define GPS_DECIMALS  2
+#define GPS_DECIMALS  6
 
 // ============ MODE ============
 #define VIEWER_MODE 0
@@ -80,6 +103,26 @@ char clientId[32];
 unsigned long lastWifiTry = 0;
 unsigned long lastMqttTry = 0;
 unsigned long lastPublish = 0;
+unsigned long lastPublishOk = 0;
+unsigned long lastStatusLog = 0;
+unsigned long bootMillis = 0;
+
+// MQTT backoff state
+unsigned long mqttBackoff = MQTT_BACKOFF_MIN_MS;
+bool mqttWasConnected = false;
+
+// Delivery counters (shown on the serial status line)
+uint32_t txSeq = 0, txOk = 0, txFail = 0, txDrop = 0;
+
+// Wi-Fi non-blocking state machine
+enum WifiPhase { WF_IDLE, WF_SCANNING, WF_CONNECTING };
+WifiPhase wifiPhase = WF_IDLE;
+unsigned long wifiPhaseSince = 0;
+int8_t lastGoodNet = -1;        // index into WIFI_NETS of the last working AP
+
+// Pending publish ring (oldest at txqHead)
+static char txq[TXQ_SLOTS][TXQ_LEN];
+static uint8_t txqHead = 0, txqCount = 0;
 
 uint8_t MPU_ADDR = 0x68;
 bool mpuValid = false;
@@ -136,6 +179,9 @@ bool connectMqtt();
 void publishData();
 void networkService();
 void printStatus();
+void wifiService(unsigned long now);
+int8_t pickBestNetwork(int found);
+bool gpsFixUsable();
 
 // ============ LEDs ============
 void ledsOff() {
@@ -158,9 +204,13 @@ void updateLevel(float t) {
 
 void setLeds(int lvl) {
   bool fast = ((millis() / 150) % 2 == 0);
-  digitalWrite(LED_BLUE_PIN,  lvl == 0 ? HIGH : LOW);
-  digitalWrite(LED_WHITE_PIN, lvl == 1 ? HIGH : LOW);
-  digitalWrite(LED_RED_PIN,   (lvl == 2 && fast) ? HIGH : LOW);
+  bool wifiOk = WiFi.status() == WL_CONNECTED;
+  bool mqttOk = mqtt.connected();
+  // Danger level still colours the panel, but a broken link blinks the LED of
+  // the failing stage so a stuck dashboard is obvious from across the room.
+  digitalWrite(LED_BLUE_PIN,  lvl == 0 ? HIGH : (!wifiOk && fast ? HIGH : LOW));
+  digitalWrite(LED_WHITE_PIN, lvl == 1 ? HIGH : (!mqttOk && fast ? HIGH : LOW));
+  digitalWrite(LED_RED_PIN,   lvl == 2 ? (fast ? HIGH : LOW) : (!wifiOk && !fast ? HIGH : LOW));
 }
 
 void ledsFault() {
@@ -308,83 +358,201 @@ bool acsWiringOK() {
 }
 
 // ============ NETWORK ============
-// Scan once, then connect to the first candidate network that is visible.
-// Keeps the board usable on several hotspots without reflashing.
-bool connectBestWifi() {
-  int n = WiFi.scanNetworks();
-  if (n <= 0) {
-    Serial.println("Wi-Fi: scan found no networks, retrying primary");
-    WiFi.begin(WIFI_NETS[0].ssid, WIFI_NETS[0].pass);
-    return false;
-  }
-
-  int best = -1;
-  for (size_t c = 0; c < WIFI_NET_COUNT && best < 0; c++) {
-    for (int i = 0; i < n; i++) {
+// Pick the best visible candidate: exact SSID match beats prefix match, and the
+// previously working network wins ties so we do not flap between APs.
+int8_t pickBestNetwork(int found) {
+  int8_t exact = -1, prefix = -1;
+  for (size_t c = 0; c < WIFI_NET_COUNT; c++) {
+    for (int i = 0; i < found; i++) {
       String seen = WiFi.SSID(i);
-      if (seen == WIFI_NETS[c].ssid || seen.startsWith(WIFI_NETS[c].ssid)) { best = (int)c; break; }
+      if (seen == WIFI_NETS[c].ssid) { if (exact < 0) exact = (int8_t)c; }
+      else if (seen.startsWith(WIFI_NETS[c].ssid)) { if (prefix < 0) prefix = (int8_t)c; }
     }
   }
-  WiFi.scanDelete();
+  if (exact >= 0) return exact;
+  if (prefix >= 0) return prefix;
+  if (lastGoodNet >= 0) return lastGoodNet;   // last resort: known-good AP
+  return -1;
+}
 
-  if (best < 0) {
-    Serial.printf("Wi-Fi: %d network(s) visible, none matches a candidate, retrying '%s'\n",
-                  n, WIFI_NETS[0].ssid);
-    WiFi.begin(WIFI_NETS[0].ssid, WIFI_NETS[0].pass);
-    return false;
+// Non-blocking Wi-Fi driver. Never calls the blocking scanNetworks(); the async
+// form returns immediately and is polled here, so sensors and MQTT keep running.
+void wifiService(unsigned long now) {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (wifiPhase != WF_IDLE) {
+      wifiPhase = WF_IDLE;
+      // Remember the AP that actually worked so reconnects skip the scan.
+      String cur = WiFi.SSID();
+      for (size_t c = 0; c < WIFI_NET_COUNT; c++) {
+        if (cur == WIFI_NETS[c].ssid || cur.startsWith(WIFI_NETS[c].ssid)) { lastGoodNet = (int8_t)c; break; }
+      }
+      Serial.printf("Wi-Fi: connected to '%s'  ip=%s  rssi=%d dBm  ch=%d  (slot %d)\n",
+                    WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(),
+                    (int)WiFi.RSSI(), (int)WiFi.channel(), (int)lastGoodNet);
+    }
+    return;
   }
 
-  Serial.printf("Wi-Fi: connecting to '%s'%s\n", WIFI_NETS[best].ssid,
-                WIFI_NETS[best].pass[0] ? "" : " (open)");
-  WiFi.begin(WIFI_NETS[best].ssid, WIFI_NETS[best].pass);
-  return true;
+  switch (wifiPhase) {
+    case WF_IDLE:
+      if (now - lastWifiTry < WIFI_RETRY_MS) return;
+      lastWifiTry = now;
+      if (lastGoodNet >= 0) {
+        // Fast path: re-associate with the AP that worked before, no scan.
+        Serial.printf("Wi-Fi: retrying '%s'...\n", WIFI_NETS[lastGoodNet].ssid);
+        WiFi.begin(WIFI_NETS[lastGoodNet].ssid, WIFI_NETS[lastGoodNet].pass);
+        wifiPhase = WF_CONNECTING;
+        wifiPhaseSince = now;
+      } else {
+        Serial.println("Wi-Fi: scanning (async)...");
+        WiFi.scanNetworks(true /*async*/, false);
+        wifiPhase = WF_SCANNING;
+        wifiPhaseSince = now;
+      }
+      break;
+
+    case WF_SCANNING: {
+      int found = WiFi.scanComplete();
+      if (found == WIFI_SCAN_RUNNING) {
+        if (now - wifiPhaseSince > 15000) { wifiPhase = WF_IDLE; }   // scan stuck
+        return;
+      }
+      if (found < 0) {                       // WIFI_SCAN_FAILED
+        Serial.println("Wi-Fi: scan failed");
+        wifiPhase = WF_IDLE;
+        return;
+      }
+      int8_t best = pickBestNetwork(found);
+      Serial.printf("Wi-Fi: %d network(s) visible, best candidate=%s\n",
+                    found, best >= 0 ? WIFI_NETS[best].ssid : "none");
+      WiFi.scanDelete();
+      if (best >= 0) {
+        Serial.printf("Wi-Fi: connecting to '%s'%s\n", WIFI_NETS[best].ssid,
+                      WIFI_NETS[best].pass[0] ? "" : " (open)");
+        WiFi.begin(WIFI_NETS[best].ssid, WIFI_NETS[best].pass);
+        wifiPhase = WF_CONNECTING;
+        wifiPhaseSince = now;
+      } else {
+        wifiPhase = WF_IDLE;
+      }
+      break;
+    }
+
+    case WF_CONNECTING:
+      if (now - wifiPhaseSince > WIFI_CONNECT_TIMEOUT) {
+        Serial.printf("Wi-Fi: association timeout (status=%d), backing off\n", (int)WiFi.status());
+        WiFi.disconnect(true);
+        wifiPhase = WF_IDLE;
+        lastWifiTry = now;
+      }
+      break;
+  }
 }
 
 const char* wifiStatusStr() {
   switch (WiFi.status()) {
-    case WL_CONNECTED:     return "Connected";
-    case WL_NO_SSID_AVAIL: return "No SSID";
-    case WL_CONNECT_FAILED:return "Connect failed";
-    case WL_IDLE_STATUS:   return "Idle";
-    case WL_DISCONNECTED:  return "Disconnected";
-    default:               return "Unknown";
+    case WL_CONNECTED:      return "Connected";
+    case WL_NO_SSID_AVAIL:  return "No SSID";
+    case WL_CONNECT_FAILED: return "Connect failed";
+    case WL_IDLE_STATUS:    return "Idle";
+    case WL_DISCONNECTED:   return "Disconnected";
+    default:                return "Unknown";
   }
 }
 
 bool connectMqtt() {
-  Serial.print("MQTT: connecting... ");
+  Serial.printf("MQTT: connecting to %s:%d ... ", MQTT_HOST, MQTT_PORT);
   // Last will: if the ESP32 vanishes, the broker publishes "offline" for us
   if (mqtt.connect(clientId, nullptr, nullptr, TOPIC_STATUS, 0, true, "offline")) {
     mqtt.publish(TOPIC_STATUS, "online", true);
-    Serial.println("connected");
+    Serial.println("OK");
+    mqttBackoff = MQTT_BACKOFF_MIN_MS;
+    mqttWasConnected = true;
+    lastPublishOk = millis();          // watchdog baseline
     return true;
   }
-  Serial.printf("failed (rc=%d), will retry\n", mqtt.state());
+  Serial.printf("failed (state=%d), next try in %lus\n",
+                mqtt.state(), mqttBackoff / 1000);
   return false;
 }
 
+// ---- pending publish queue ------------------------------------------------
+void txqPush(const char* payload) {
+  uint8_t slot = (uint8_t)((txqHead + txqCount) % TXQ_SLOTS);
+  if (txqCount == TXQ_SLOTS) {           // full: drop the oldest
+    txqHead = (uint8_t)((txqHead + 1) % TXQ_SLOTS);
+    txqCount--;
+    txDrop++;
+  }
+  strncpy(txq[slot], payload, TXQ_LEN - 1);
+  txq[slot][TXQ_LEN - 1] = '\0';
+  txqCount++;
+}
+
+void txqDrain() {
+  while (txqCount > 0 && mqtt.connected()) {
+    if (mqtt.publish(TOPIC_DATA, txq[txqHead], true)) {   // retained: latest wins
+      txqHead = (uint8_t)((txqHead + 1) % TXQ_SLOTS);
+      txqCount--;
+      txOk++;
+      lastPublishOk = millis();
+    } else {
+      txFail++;
+      return;                            // retry on a later loop
+    }
+  }
+}
+
+// ============ GPS sanity ============
+bool gpsFixUsable() {
+  if (!gps.location.isValid()) return false;
+  if (!gps.satellites.isValid() || gps.satellites.value() < GPS_MIN_SATS) return false;
+  if (gps.hdop.isValid() && gps.hdop.hdop() > GPS_MAX_HDOP) return false;
+  return true;
+}
+
 void publishData() {
-  const bool fix = gps.location.isValid();
+  // A position is only published when the fix is actually usable (enough
+  // satellites, sane HDOP); otherwise the fields stay null and the dashboard
+  // shows "NO FIX" instead of a wrong place on the map.
+  const bool fix = gpsFixUsable();
   char lat[16] = "null", lng[16] = "null", alt[16] = "null", spd[16] = "null";
   if (fix && GPS_DECIMALS >= 0) {
     snprintf(lat, sizeof lat, "%.*f", GPS_DECIMALS, gps.location.lat());
     snprintf(lng, sizeof lng, "%.*f", GPS_DECIMALS, gps.location.lng());
   }
-  if (gps.altitude.isValid()) snprintf(alt, sizeof alt, "%.0f", gps.altitude.meters());
-  if (gps.speed.isValid())    snprintf(spd, sizeof spd, "%.1f", gps.speed.kmph());
+  if (fix && gps.altitude.isValid()) snprintf(alt, sizeof alt, "%.0f", gps.altitude.meters());
+  if (fix && gps.speed.isValid() && gps.speed.kmph() <= GPS_MAX_KMH)
+    snprintf(spd, sizeof spd, "%.1f", gps.speed.kmph());
 
   char cog[16] = "null", hdop[16] = "null";
-  if (gps.course.isValid())   snprintf(cog, sizeof cog, "%.1f", gps.course.deg());
-  if (gps.hdop.isValid())     snprintf(hdop, sizeof hdop, "%.2f", gps.hdop.hdop());
+  if (fix && gps.course.isValid()) snprintf(cog, sizeof cog, "%.1f", gps.course.deg());
+  if (gps.hdop.isValid())          snprintf(hdop, sizeof hdop, "%.2f", gps.hdop.hdop());
 
   int utc_h = 0, utc_m = 0, utc_s = 0;
   int utc_y = 0, utc_mo = 0, utc_d = 0;
   if (gps.time.isValid())  { utc_h = gps.time.hour();  utc_m = gps.time.minute();  utc_s = gps.time.second(); }
   if (gps.date.isValid())  { utc_y = gps.date.year();  utc_mo = gps.date.month();  utc_d = gps.date.day(); }
 
+  // Wall-clock timestamp when the GPS knows the date, otherwise 0 so the
+  // dashboard falls back to arrival time. seq lets it detect gaps/duplicates.
+  uint32_t epoch = 0;
+  if (utc_y >= 2020) {
+    epoch = (uint32_t)((utc_y - 1970) * 31556952UL + (utc_mo - 1) * 2629746UL +
+                       (utc_d - 1) * 86400UL + utc_h * 3600UL + utc_m * 60UL + utc_s);
+  }
+
+  // Sensor plausibility clamps: never publish values the hardware cannot mean.
+  float tRoll  = constrain(roll,  -180.0f, 180.0f);
+  float tPitch = constrain(pitch, -180.0f, 180.0f);
+  float tYaw   = constrain(yaw,   -180.0f, 180.0f);
+  float tAmps  = constrain(amps,  -AMPS_MAX, AMPS_MAX);
+
+  txSeq++;
+
   char b[1200];
   int n = snprintf(b, sizeof b,
-    "{\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
+    "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
     "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"temp\":%.1f,\"lvl\":%d,"
     "\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,\"peakA\":%.2f,"
     "\"acs\":{\"ok\":%s,\"amps\":%.3f,\"v\":%.3f,\"zero\":%.3f},"
@@ -394,10 +562,11 @@ void publishData() {
     "\"sys\":{\"heap\":%u,\"rssi\":%d,"
     "\"wifi\":{\"ssid\":\"%.32s\",\"bssid\":\"%.17s\",\"channel\":%d,\"status\":\"%s\","
     "\"ip\":\"%.15s\",\"mac\":\"%.17s\"}}}",
-    (unsigned long)(millis() / 1000), mpuValid ? "true" : "false",
-    roll, pitch, yaw, tilt, lax, lay, laz, lt, level,
+    (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
+    mpuValid ? "true" : "false",
+    tRoll, tPitch, tYaw, tilt, lax, lay, laz, lt, level,
     (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt, peakAmps,
-    acsWiringOK() ? "true" : "false", amps, acsFiltV, acsOffsetV,
+    acsWiringOK() ? "true" : "false", tAmps, acsFiltV, acsOffsetV,
     (unsigned long)gps.charsProcessed(), (int)gps.satellites.value(),
     fix ? "true" : "false", lat, lng, alt, spd,
     cog, hdop, gpsDistTotalM,
@@ -406,9 +575,31 @@ void publishData() {
     WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.channel(), wifiStatusStr(),
     WiFi.localIP().toString().c_str(), WiFi.macAddress().c_str());
 
-  if (n > 0 && n < (int)sizeof b) {
-    mqtt.publish(TOPIC_DATA, b, true);   // retained: new viewers get the last reading at once
+  if (n < 0) {                       // snprintf failure
+    Serial.println("!! payload snprintf failed, reading dropped");
+    txFail++;
+    return;
   }
+  if (n >= (int)sizeof b) {          // would be truncated: send the slim form
+    Serial.printf("!! payload truncated (%d >= %d), publishing slim variant\n", n, (int)sizeof b);
+    n = snprintf(b, sizeof b,
+      "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
+      "\"lvl\":%d,\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,\"peakA\":%.2f,"
+      "\"acs\":{\"ok\":%s,\"amps\":%.3f,\"v\":%.3f,\"zero\":%.3f},"
+      "\"gps\":{\"chars\":%lu,\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
+      "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f},"
+      "\"sys\":{\"heap\":%u,\"rssi\":%d}}",
+      (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
+      mpuValid ? "true" : "false", tRoll, tPitch, tYaw, tilt, level,
+      (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt, peakAmps,
+      acsWiringOK() ? "true" : "false", tAmps, acsFiltV, acsOffsetV,
+      (unsigned long)gps.charsProcessed(), (int)gps.satellites.value(),
+      fix ? "true" : "false", lat, lng, alt, spd, cog, hdop, gpsDistTotalM,
+      (unsigned)ESP.getFreeHeap(), WiFi.RSSI());
+    if (n <= 0 || n >= (int)sizeof b) { txFail++; return; }
+  }
+
+  txqPush(b);
 }
 
 // Called every loop. Never blocks for long and never stops the sensors.
@@ -416,45 +607,79 @@ void networkService() {
 #if VIEWER_MODE == 0
   unsigned long now = millis();
 
+  wifiService(now);
+
   if (WiFi.status() != WL_CONNECTED) {
-    if (now - lastWifiTry > 15000) {          // give each attempt 15 s
-      lastWifiTry = now;
-      Serial.println("Wi-Fi: (re)connecting...");
-      WiFi.disconnect();
-      connectBestWifi();
-    }
+    // Remember which candidate actually works, so the next reconnect can skip
+    // the scan entirely and go straight back to it.
     return;
   }
 
   if (!mqtt.connected()) {
-    if (now - lastMqttTry > 5000) {
+    if (mqttWasConnected) {
+      mqttWasConnected = false;
+      Serial.printf("MQTT: link lost after %lu ok publishes\n", (unsigned long)txOk);
+    }
+    if (now - lastMqttTry >= mqttBackoff) {
       lastMqttTry = now;
-      connectMqtt();
+      if (!connectMqtt()) {
+        mqttBackoff = mqttBackoff * 2;
+        if (mqttBackoff > MQTT_BACKOFF_MAX_MS) mqttBackoff = MQTT_BACKOFF_MAX_MS;
+      }
     }
     return;
   }
 
+  // Half-open TCP guard: the socket can look connected while nothing is
+  // delivered. If no publish has succeeded for a while, force a clean session.
+  if (lastPublishOk != 0 && now - lastPublishOk > MQTT_WATCHDOG_MS) {
+    Serial.printf("MQTT: watchdog - nothing delivered for %lus, reconnecting\n",
+                  (unsigned long)((now - lastPublishOk) / 1000));
+    mqtt.disconnect();
+    lastMqttTry = 0;                     // reconnect immediately
+    mqttBackoff = MQTT_BACKOFF_MIN_MS;
+    return;
+  }
+
   mqtt.loop();
+
   if (now - lastPublish >= PUBLISH_INTERVAL_MS) {
     lastPublish = now;
-    publishData();
+    publishData();                       // queues the reading
   }
+
+  txqDrain();                            // send queue + backfill after outages
 #endif
 }
 
 // ============ SERIAL STATUS LINE ============
+// One aligned line for the monitor. Everything a human needs to decide whether
+// the device is healthy is on it: link state, GPS state, delivery counters.
 void printStatus() {
-  Serial.printf("[%lus] tilt=%.0f lvl=%d | %.2fA | sats=%d%s | wifi=%s mqtt=%s | heap=%uKB\n",
-                (unsigned long)(millis() / 1000),
-                tilt, level, amps,
-                (int)gps.satellites.value(),
-                gps.location.isValid() ? " FIX" : "",
-                WiFi.status() == WL_CONNECTED ? "ok" : "down",
-                mqtt.connected() ? "ok" : "down",
+  unsigned long up = (millis() - bootMillis) / 1000;
+  const char* wifi = (WiFi.status() == WL_CONNECTED) ? "OK  " : "DOWN";
+  const char* mq = mqtt.connected() ? "OK  " : "DOWN";
+  int sats = (int)gps.satellites.value();
+
+  char gpsTxt[40];
+  if (!gps.charsProcessed())            snprintf(gpsTxt, sizeof gpsTxt, "NO DATA");
+  else if (gpsFixUsable())              snprintf(gpsTxt, sizeof gpsTxt, "FIX   %2d sats", sats);
+  else                                  snprintf(gpsTxt, sizeof gpsTxt, "NO FIX %2d sats", sats);
+
+  char rssiTxt[12];
+  if (WiFi.status() == WL_CONNECTED) snprintf(rssiTxt, sizeof rssiTxt, "%ddBm", (int)WiFi.RSSI());
+  else                               snprintf(rssiTxt, sizeof rssiTxt, "  --");
+
+  Serial.printf("[%5lus] tilt=%5.1f %s | %6.2fA pk%5.2f | GPS %-12s | wifi %s %6s | mqtt %s | "
+                "seq=%lu ok=%lu fail=%lu drop=%lu q=%u | heap=%uK\n",
+                up, tilt, level == 2 ? "DANGER" : (level == 1 ? "WARN  " : "safe  "),
+                amps, peakAmps, gpsTxt, wifi, rssiTxt, mq,
+                (unsigned long)txSeq, (unsigned long)txOk, (unsigned long)txFail,
+                (unsigned long)txDrop, (unsigned)txqCount,
                 (unsigned)(ESP.getFreeHeap() / 1024));
-  if (!mpuValid)       Serial.println("  MPU6050 NOT READING - check VCC, GND, SDA, SCL");
-  if (!acsWiringOK())  Serial.println("  ACS712 out of range - check VCC 5V, GND, OUT, divider");
-  if (gps.charsProcessed() < 10) Serial.println("  GPS NO DATA - check GPS TX wire to GPIO25, VCC, GND");
+
+  if (!mpuValid)      Serial.println("  !! MPU6050 NOT READING - check VCC, GND, SDA, SCL");
+  if (!acsWiringOK()) Serial.println("  !! ACS712 out of range - check VCC 5V, GND, OUT, divider");
 }
 
 // ============ SETUP ============
@@ -481,25 +706,33 @@ void mqtt_simple_setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("ESP32 sensor dashboard (MQTT) starting...");
+  Serial.println("=== ESP32 dash | MQTT ===");
+  Serial.printf("topic  : %s\n", TOPIC_DATA);
+  Serial.printf("broker : %s:%d  keepalive=%ds\n", MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_S);
+  Serial.println("=========================");
 
 #if VIEWER_MODE == 0
-  // Start Wi-Fi in the background so calibration is not delayed
+  // Start Wi-Fi in the background so calibration is not delayed. At boot we do
+  // not know which candidate is around, so go straight to the async scan
+  // instead of burning 15 s on a guess.
   snprintf(clientId, sizeof clientId, "esp32-dash-%08lX", (unsigned long)ESP.getEfuseMac());
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  connectBestWifi();
+  Serial.println("Wi-Fi: scanning (async) for a known network...");
+  WiFi.scanNetworks(true /*async*/, false);
+  wifiPhase = WF_SCANNING;
+  wifiPhaseSince = millis();
   lastWifiTry = millis();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setBufferSize(1024);
-  mqtt.setSocketTimeout(3);
-  mqtt.setKeepAlive(15);
+  mqtt.setBufferSize(2048);                            // JSON + wifi block fits with room to spare
+  mqtt.setSocketTimeout(MQTT_SOCKET_TIMEOUT_S);
+  mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
 #endif
 
   int tries = 0;
   while (!(mpuFind() && mpuInit())) {
-    if (tries++ % 10 == 0) Serial.println("MPU6050 not found - check VCC, GND, SDA, SCL");
+    if (tries++ == 40) Serial.println("MPU6050 not found - check VCC, GND, SDA, SCL");
     ledsFault();
     delay(100);
   }
@@ -537,10 +770,8 @@ void mqtt_simple_setup() {
 
   Serial.printf("MPU6050 found at 0x%02X\n", MPU_ADDR);
   Serial.printf("ACS712 zero-current level: %.3f V (about 2.3 to 2.5 V is normal)\n", acsOffsetV);
-#if VIEWER_MODE == 0
-  Serial.println("Publishing to topic: " TOPIC_DATA);
-#endif
   Serial.println("Ready");
+  bootMillis = millis();
 }
 
 // ============ LOOP ============
@@ -591,3 +822,4 @@ void mqtt_simple_loop() {
   }
 #endif
 }
+// MARKER-1793934746

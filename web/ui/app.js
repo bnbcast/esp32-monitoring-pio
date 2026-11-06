@@ -118,6 +118,12 @@ let lastPush = 0;
 let linkState = "connecting";
 let deviceState = "unknown";
 
+// Delivery health (the firmware stamps every reading with seq + ts)
+let lastSeq = null;
+let seqGaps = 0;
+let seqDup = 0;
+let lastRxAt = 0;
+
 // View state: 'map2d'
 let lockNorth = false;
 let fusedHeading = 0;
@@ -240,18 +246,25 @@ function renderData(d) {
     gps.fix ? "ok" : (gps.chars < 10 ? "bad" : "wait"));
 
   // Telemetry readouts (LIVE tab + map HUD)
+  // Without a GPS fix the payload carries nulls for lat/lng/alt/speed. Printing
+  // "NO FIX" instead of "--" makes clear the data was received but has no fix.
+  const gv = (v, d) => (!gps.fix ? 'NO FIX' : (num(v) ? fmt(v, d) : '--'));
   const set = (id, val) => { const e = $(id); if (e) e.textContent = val; };
-  set('liveSpeed', fmt(gps.kmh));
-  set('liveSpeedMobile', fmt(gps.kmh));
-  set('liveAlt', num(gps.alt) ? fmt(gps.alt) : '--');
-  set('liveAltMobile', num(gps.alt) ? fmt(gps.alt) : '--');
-  set('liveFix', gps.fix ? 'VALID' : 'INVALID');
-  set('liveFixMobile', gps.fix ? 'VALID' : 'INVALID');
+  set('liveSpeed', gv(gps.kmh));
+  set('liveSpeedMobile', gv(gps.kmh));
+  set('liveAlt', gv(gps.alt));
+  set('liveAltMobile', gv(gps.alt));
+  set('liveFix', gps.fix ? 'VALID' : 'NO FIX');
+  set('liveFixMobile', gps.fix ? 'VALID' : 'NO FIX');
   set('liveTilt', fmt(d.tilt) + ' deg');
   set('liveTiltMobile', fmt(d.tilt));
   set('liveAmps', acs.ok ? fmt(acs.amps, 2) : 'ERR');
   set('liveAmpsMobile', acs.ok ? fmt(acs.amps, 2) : 'ERR');
-  set('hudSpeed', fmt(gps.kmh));
+  set('hudSpeed', gv(gps.kmh));
+  if (num(gps.dist_m)) {
+    set('liveDist', gps.dist_m.toFixed(1));
+    set('liveDistMobile', gps.dist_m.toFixed(1));
+  }
 
   // MPU6050 data
   set('mpuRoll', fmt(d.roll));
@@ -289,9 +302,10 @@ function renderData(d) {
   set('liveSatsMobile', num(gps.sats) ? gps.sats : '--');
   set('liveHdop', num(gps.hdop) ? gps.hdop.toFixed(2) : '--');
   set('liveHdopMobile', num(gps.hdop) ? gps.hdop.toFixed(2) : '--');
-  set('gLat', fmt(gps.lat, 6)); set('gLng', fmt(gps.lng, 6));
-  set('gAlt', num(gps.alt) ? fmt(gps.alt) + ' m' : '--');
-  set('gSpd', num(gps.kmh) ? fmt(gps.kmh) + ' km/h' : '--');
+  set('gLat', gps.fix ? fmt(gps.lat, 6) : 'NO FIX');
+  set('gLng', gps.fix ? fmt(gps.lng, 6) : 'NO FIX');
+  set('gAlt', gps.fix && num(gps.alt) ? fmt(gps.alt) + ' m' : (gps.fix ? '--' : 'NO FIX'));
+  set('gSpd', gps.fix && num(gps.kmh) ? fmt(gps.kmh) + ' km/h' : (gps.fix ? '--' : 'NO FIX'));
 
   // Map HUD - position
   set('hudLat', fmt(gps.lat, 6)); set('hudLng', fmt(gps.lng, 6));
@@ -343,6 +357,19 @@ function renderData(d) {
   set('mpuTiltMobile', fmt(d.tilt));
   set('mpuWarnMobile', d.warn);
   set('mpuDangerMobile', d.danger);
+
+  // Device clock / delivery health
+  set('liveSeq', num(d.seq) ? d.seq : '--');
+  set('liveSeqMobile', num(d.seq) ? d.seq : '--');
+  if (num(d.seq)) {
+    set('liveGap', seqGaps);
+    set('liveGapMobile', seqGaps);
+  }
+  if (num(d.ts) && d.ts > 0) {
+    set('liveTs', new Date(d.ts * 1000).toISOString().slice(11, 19));
+  } else {
+    set('liveTs', 'no clock');
+  }
 
   // Danger LEDs — solid blocks
   const lvl = d.lvl;
@@ -412,7 +439,10 @@ function renderBanner() {
     const lvl = last.lvl;
     strip.classList.add(lvl >= 2 ? 'danger' : (lvl >= 1 ? 'warn' : 'safe'));
     text.textContent = ["SAFE", "WARNING", "DANGER"][lvl];
-    sub.textContent = "tilt " + fmt(last.tilt, 0) + " deg  |  warn " + last.warn + "  danger " + last.danger;
+    const gpsNote = (last.gps && last.gps.fix)
+      ? ''
+      : '  |  GPS NO FIX (' + (num(last.gps && last.gps.sats) ? last.gps.sats : 0) + ' sats)';
+    sub.textContent = "tilt " + fmt(last.tilt, 0) + " deg  |  warn " + last.warn + "  danger " + last.danger + gpsNote;
   }
 
   setPill($('pLink'), linkState === "connected" ? "BROKER OK" : "BROKER ...", linkState === "connected" ? "ok" : "wait");
@@ -423,6 +453,9 @@ function renderBanner() {
   if ($('lState')) $('lState').textContent = linkState.toUpperCase();
   if ($('sState')) $('sState').textContent = live ? "LIVE" : "NOT LIVE";
   if ($('sAge')) $('sAge').textContent = lastLiveAt ? Math.round(age / 1000) + " s ago" : "--";
+  const ageTxt = lastRxAt ? (Math.round((Date.now() - lastRxAt) / 1000) + '') : '--';
+  if ($('liveAge')) $('liveAge').textContent = ageTxt;
+  if ($('liveAgeMobile')) $('liveAgeMobile').textContent = ageTxt;
   if ($('fTime')) $('fTime').textContent = new Date().toLocaleTimeString();
 
   // Heading readout
@@ -432,8 +465,10 @@ function renderBanner() {
     if ($('hudHeading')) $('hudHeading').textContent = Math.round(h.heading) + '\u00B0  [' + h.source + ' ' + conf + '%]';
     if ($('liveCog')) $('liveCog').textContent = Math.round(h.heading);
     if ($('liveCogMobile')) $('liveCogMobile').textContent = Math.round(h.heading);
-    if (GPS.lastPoint && $('hudSource')) {
-      $('hudSource').textContent = GPS.lastPoint.lat.toFixed(4) + ', ' + GPS.lastPoint.lng.toFixed(4);
+    if ($('hudSource')) {
+      $('hudSource').textContent = GPS.lastPoint
+        ? GPS.lastPoint.lat.toFixed(4) + ', ' + GPS.lastPoint.lng.toFixed(4)
+        : 'NO FIX';
     }
   }
 }
@@ -469,6 +504,17 @@ function onMessage(topic, payload, retained) {
   }
 
   ingestGPS(d.gps);
+
+  // Sequence bookkeeping: a jump means readings were lost, a repeat means the
+  // broker replayed a retained message.
+  if (typeof d.seq === 'number') {
+    if (lastSeq != null) {
+      if (d.seq > lastSeq + 1) seqGaps += d.seq - lastSeq - 1;
+      else if (d.seq === lastSeq) seqDup++;
+    }
+    lastSeq = d.seq;
+  }
+  lastRxAt = Date.now();
 
   // The firmware publishes every reading with retain=true, so the retained flag
   // does NOT mean "history": a retained message can arrive right after the

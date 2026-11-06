@@ -16,36 +16,92 @@ const MAP = (function () {
   }
 
   // ---- config -------------------------------------------------------------
-  // Use local tile proxy (dev server) when running on localhost, otherwise
-  // direct OSM tiles. The proxy adds a proper User-Agent so OSM doesn't block.
+  // Tile providers, best first, plus WHY this order:
+  //   * OSM's tile server answers HTTP 200 with a tiny 103-byte "access blocked"
+  //     image whenever the Referer is a third-party site (github.io included) —
+  //     that is the blank/blocked map users were seeing.
+  //   * CARTO's keyless basemaps answer every z/x/y with the SAME 2049-byte
+  //     placeholder in that situation, so they are not usable either.
+  //   * Esri's ArcGIS basemaps serve real, distinct tiles with a browser
+  //     Referer and need no key. They are primary; OSM stays as a last-ditch
+  //     fallback for networks where Esri is unreachable.
   const IS_LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  const TILE_BASE = IS_LOCAL ? location.origin + '/tiles' : 'https://{a,b,c}.tile.openstreetmap.org';
-  const TILE_URLS = IS_LOCAL
-    ? [location.origin + '/tiles/{z}/{x}/{y}.png']
-    : [
+
+  const TILE_PROVIDERS = [
+    {
+      id: 'esri-street',
+      label: 'Esri World Street',
+      maxzoom: 19,
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'
+      ],
+      attribution: 'Tiles \u00A9 Esri, HERE, Garmin, \u00A9 OpenStreetMap contributors'
+    },
+    {
+      id: 'esri-topo',
+      label: 'Esri World Topo',
+      maxzoom: 19,
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}'
+      ],
+      attribution: 'Tiles \u00A9 Esri, HERE, Garmin, \u00A9 OpenStreetMap contributors'
+    },
+    {
+      id: 'osm',
+      label: 'OpenStreetMap',
+      maxzoom: 19,
+      tiles: [
         'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
         'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
         'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
-      ];
+      ],
+      attribution: '\u00A9 OpenStreetMap contributors'
+    }
+  ];
 
-  const MAP_STYLE = {
-    version: 8,
-    sources: {
-      osm: {
-        type: "raster",
-        tiles: TILE_URLS,
-        tileSize: 256,
-        attribution: "\u00A9 OpenStreetMap contributors"
-      }
-    },
-    layers: [{
-      id: "osm-layer",
-      type: "raster",
-      source: "osm",
-      minzoom: 0,
-      maxzoom: 19
-    }]
-  };
+  // Local dev server proxies tiles (adds a proper User-Agent). Only used on
+  // localhost, where a proxy is actually reachable.
+  if (IS_LOCAL) {
+    TILE_PROVIDERS.unshift({
+      id: 'dev-proxy',
+      label: 'dev tile proxy',
+      maxzoom: 19,
+      tiles: [location.origin + '/tiles/{z}/{x}/{y}.png'],
+      attribution: '\u00A9 OpenStreetMap contributors'
+    });
+  }
+
+  let tileProviderIndex = 0;
+
+  function buildStyle(provider) {
+    return {
+      version: 8,
+      sources: {
+        base: {
+          type: 'raster',
+          tiles: provider.tiles,
+          tileSize: 256,
+          maxzoom: provider.maxzoom,
+          attribution: provider.attribution
+        }
+      },
+      layers: [{
+        id: 'base-layer',
+        type: 'raster',
+        source: 'base',
+        minzoom: 0,
+        maxzoom: provider.maxzoom
+      }]
+    };
+  }
+
+  const MAP_STYLE = buildStyle(TILE_PROVIDERS[0]);
+
+  // Where to look before the first GPS fix arrives. [0,0] is the Gulf of
+  // Guinea, which looks like a broken map; the board's last known area is a
+  // far more useful default and is replaced the moment a fix comes in.
+  const DEFAULT_CENTER = [107.502952, -6.909235];   // lng, lat
+  const DEFAULT_ZOOM = 12;
 
   const HEADING = {
     GPS_SPEED_THRESHOLD: 3,      // km/h — above this, GPS course is trusted
@@ -187,8 +243,8 @@ const MAP = (function () {
     map = new maplibregl.Map({
       container: id,
       style: MAP_STYLE,
-      center: [0, 0],
-      zoom: 13,
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
       pitch: 0,
       bearing: 0,
       interaction: true,
@@ -203,6 +259,33 @@ const MAP = (function () {
       initLayers();
       createMarker();
       resize();
+    });
+
+    // ---- tile failover ----------------------------------------------------
+    // A provider can fail two ways: hard errors (blocked / offline), or the
+    // silent 200-with-blank-tile trick OSM plays on foreign Referers. Hard
+    // errors are counted here and we hop to the next provider.
+    let tileErrors = 0;
+    let lastSwap = 0;
+    map.on('error', e => {
+      const src = e && e.sourceId;
+      if (src && src !== 'base') return;
+      tileErrors++;
+      const now = Date.now();
+      if (tileErrors >= 6 && now - lastSwap > 5000 && tileProviderIndex < TILE_PROVIDERS.length - 1) {
+        tileProviderIndex++;
+        lastSwap = now;
+        tileErrors = 0;
+        const p = TILE_PROVIDERS[tileProviderIndex];
+        console.warn('Map tiles: switching to ' + p.label);
+        try {
+          const source = map.getSource('base');
+          if (source && source.setTiles) source.setTiles(p.tiles);
+          else map.setStyle(buildStyle(p));
+        } catch (err) {
+          map.setStyle(buildStyle(p));
+        }
+      }
     });
 
     map.on("move", () => {
@@ -519,6 +602,7 @@ const MAP = (function () {
     setLockNorth,
     flyTo,
     getHeading,
-    setHeadingSource
+    setHeadingSource,
+    getTileProvider: () => TILE_PROVIDERS[tileProviderIndex]
   };
 })();
