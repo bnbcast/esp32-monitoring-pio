@@ -133,6 +133,7 @@ const MAP = (function () {
   let lastMoveTs = 0;
   let stopped = true;
   let parkedNow = false;        // position cloud says "not moving" (trustworthy)
+  let lastSampleOk = true;      // last fix passed the physics gate
   let frozenHeading = 0;
 
   // trail (speed-colored polyline) + its measured length
@@ -157,7 +158,7 @@ const MAP = (function () {
 
   function pushRecent(lat, lng, now) {
     recent.push({ lat, lng, ts: now });
-    while (recent.length && now - recent[0].ts > 6000) recent.shift();
+    while (recent.length && now - recent[0].ts > 10000) recent.shift();
     if (recent.length > 40) recent.shift();
   }
 
@@ -496,50 +497,52 @@ const MAP = (function () {
         // Position error scales with HDOP; ~5 m per HDOP unit is the usual rule
         // of thumb for a consumer receiver, so the deadband follows the sky.
         const acc = clamp((hdop && hdop > 0 ? hdop : 3) * 5, 5, 40);
-        pushRecent(lat, lng, now);
-        const parked = recentSpreadM() < Math.max(5, acc);
-        parkedNow = parked;
-        const moving = !parked;
-        const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2);
 
-        // Physics check: the jump between two consecutive readings must be
-        // compatible with the reported speed. A parked module happily reports a
-        // few km/h, and a 5 m jump in 0.5 s would imply 36 km/h -> noise.
+        // Physics gate, applied to EVERY sample before it can influence
+        // anything: the jump since the previous fix must be physically possible
+        // for the reported speed. A parked receiver's multipath jump of 20-60 m
+        // implies hundreds of km/h and is dropped here, so it can neither move
+        // the marker nor widen the "parked" window nor add trail distance.
         const dtS = Math.max(0.2, (now - (lastRaw.ts || now - 500)) / 1000);
         const stepDist = (lastRaw.lat != null) ? distM(lastRaw.lat, lastRaw.lng, lat, lng) : d;
         const impliedKmh = (stepDist / dtS) * 3.6;
-        const speedCap = Math.max(15, speed * 2.5 + 10);
-        // Only worth checking while parked: at speed the cloud is already
-        // spreading, and a dropped/retained message can legitimately imply a
-        // high speed over a short interval.
-        const plausible = moving || impliedKmh <= speedCap;
+        const speedCap = parkedNow
+          ? Math.max(20, speed * 2.5 + 10)
+          : Math.max(90, speed * 3 + 40);
+        lastRaw = { lat, lng, ts: now };
 
-        // A move must be confirmed by consecutive readings that keep going the
-        // same way: one sample is noise, two (moving) or three (parked) are a
-        // real displacement.
-        if (d >= step && plausible) {
-          if (pending.lat != null && d >= pendingD - 0.5) {
-            stillCount++;
+        lastSampleOk = impliedKmh <= speedCap;
+        if (lastSampleOk) {
+          pushRecent(lat, lng, now);
+          const parked = recentSpreadM() < Math.max(6, acc);
+          parkedNow = parked;
+          const moving = !parked;
+          const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2);
+
+          // A move must be confirmed by consecutive readings that keep going the
+          // same way: one sample is noise, two (moving) or three (parked) are a
+          // real displacement.
+          if (d >= step) {
+            if (pending.lat != null && d >= pendingD - 0.5) {
+              stillCount++;
+            } else {
+              pending = { lat, lng };
+              pendingD = d;
+              stillCount = 1;
+            }
+            if (stillCount >= (moving ? 2 : 3)) {
+              acceptPoint(lng, lat, speed, d, now);
+              stillCount = 0;
+              pending = { lat: null, lng: null };
+              pendingD = 0;
+            }
           } else {
-            pending = { lat, lng };
-            pendingD = d;
-            stillCount = 1;
-          }
-          if (stillCount >= (moving ? 2 : 3)) {
-            acceptPoint(lng, lat, speed, d, now);
             stillCount = 0;
             pending = { lat: null, lng: null };
             pendingD = 0;
           }
-        } else {
-          stillCount = 0;
-          pending = { lat: null, lng: null };
-          pendingD = 0;
         }
       }
-      // Remember every raw fix (accepted or not): the plausibility check below
-      // compares two consecutive readings, not the last accepted one.
-      lastRaw = { lat, lng, ts: now };
     }
 
     // Stopped for the map means "the position cloud is not moving", not "the
@@ -589,10 +592,17 @@ const MAP = (function () {
   // zoom and pitch change. A hand-positioned div (the old approach) stayed
   // glued to the last pixel position and slid away from the map as soon as the
   // user moved it, which is what made the position look wrong.
+  // Where the vehicle is drawn: the anchor while parked or while the newest
+  // fix is a rejected outlier, the live fix otherwise.
+  function viewPos() {
+    const useAnchor = anchor.lat != null && (stopped || !lastSampleOk);
+    return useAnchor ? anchor : { lng: vehicle.lng, lat: vehicle.lat };
+  }
+
   function updateMarker() {
     if (!mapReady || !marker || !markerInner) return;
-    const lat = (stopped && anchor.lat != null) ? anchor.lat : vehicle.lat;
-    const lng = (stopped && anchor.lng != null) ? anchor.lng : vehicle.lng;
+    const p = viewPos();
+    const lat = p.lat, lng = p.lng;
     if (lat == null || lng == null) return;
     marker.setLngLat([lng, lat]);
     // Freeze the rotation while parked: gyro drift would otherwise spin the
@@ -608,6 +618,8 @@ const MAP = (function () {
     if (!src) return;
     const hdop = vehicle.hdop || 5;
     const radius = clamp(hdop * 3, 3, 60); // meters
+    const pos = viewPos();
+    if (pos.lat == null) return;
     src.setData({
       type: "FeatureCollection",
       features: [{
@@ -615,14 +627,12 @@ const MAP = (function () {
         properties: {},
         geometry: {
           type: "Point",
-          coordinates: [vehicle.lng, vehicle.lat]
+          coordinates: [pos.lng, pos.lat]
         }
-      }],
-      // buffer via turf-like circle — simple approximation
-      _buffer: radius
+      }]
     });
     // MapLibre doesn't buffer natively; draw a circle via many points
-    const circle = circleCoords(vehicle.lng, vehicle.lat, radius, 32);
+    const circle = circleCoords(pos.lng, pos.lat, radius, 32);
     src.setData({
       type: "FeatureCollection",
       features: [{
@@ -665,21 +675,23 @@ const MAP = (function () {
       src.setData({ type: "FeatureCollection", features: [] });
       return;
     }
+    const pos = viewPos();
+    if (pos.lat == null) return;
     const r = 12 + 8 * conf; // meters
     const d = r / 111320;
     const h = deg2rad(fusedHeading);
     const w = deg2rad(35 * conf); // wedge width ~ confidence
-    const cLat = Math.cos(vehicle.lat * Math.PI / 180);
-    const pts = [[vehicle.lng, vehicle.lat]];
+    const cLat = Math.cos(pos.lat * Math.PI / 180);
+    const pts = [[pos.lng, pos.lat]];
     const steps = 8;
     for (let i = 0; i <= steps; i++) {
       const a = h - w / 2 + (w * i) / steps;
       pts.push([
-        vehicle.lng + (d * Math.cos(a)) / cLat,
-        vehicle.lat + d * Math.sin(a)
+        pos.lng + (d * Math.cos(a)) / cLat,
+        pos.lat + d * Math.sin(a)
       ]);
     }
-    pts.push([vehicle.lng, vehicle.lat]);
+    pts.push([pos.lng, pos.lat]);
     src.setData({
       type: "FeatureCollection",
       features: [{

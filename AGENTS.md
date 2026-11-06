@@ -166,8 +166,10 @@ DOM elements, asserts zero console errors. Chromium install:
 
 - **JARAK TEMPUH (HUD)** is measured from the drawn trail, client-side: every
   accepted point adds a haversine chord to `trailDistM` in [map.js](web/ui/map.js).
-  Points are accepted at **2.5 m** while moving and **5 m** while parked, so GPS
-  wobble cannot inflate the number. The drawn polyline is decimated (drop every
+  A fix only counts if the jump since the previous one is physically possible for
+  the reported speed (**physics gate**, e.g. 40 m in 0.5 s = 288 km/h is dropped),
+  then the point must clear **3 m** while moving or **10 m** (grows with HDOP)
+  while parked, confirmed by 2 resp. 3 consecutive readings. The drawn polyline is decimated (drop every
   other vertex at 1200 points) but the distance counter is *not*, so a long trip
   keeps 1-point resolution while the GeoJSON stays small.
 - **Odometer (LIVE tab)** is the firmware `dist_m` counter; **Trail** is the
