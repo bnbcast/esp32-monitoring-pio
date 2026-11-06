@@ -141,7 +141,7 @@ const MAP = (function () {
   let trailDistM = 0;
   const TRAIL_MAX = 1200;          // drawn vertices before decimation
   const TRAIL_STEP_MOVING = 3.0;   // metres between accepted points
-  const TRAIL_STEP_STOPPED = 10.0; // deadband while parked (grows with HDOP)
+  const TRAIL_STEP_STOPPED = 20.0; // deadband while parked (grows with HDOP)
   let trailRaf = 0;
 
   // Parked-receiver noise often arrives as a single 5-10 m jump. A move is only
@@ -516,10 +516,14 @@ const MAP = (function () {
         lastSampleOk = stepDist <= allowM;
         if (lastSampleOk) {
           pushRecent(lat, lng, now);
-          const parked = recentSpreadM() < Math.max(6, acc);
+          // Two independent hints say "parked": the module reports less than
+          // 4 km/h (it lies by 0-3 while standing still, but never reports 0
+          // while driving) or the position cloud is tight. Multipath drift of
+          // ~10 m creeps past any small deadband, so the parked step is 20 m+.
+          const parked = numOr0(speed) < 4.0 || recentSpreadM() < Math.max(6, acc);
           parkedNow = parked;
           const moving = !parked;
-          const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2);
+          const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2.5);
 
           // A move must be confirmed by consecutive readings that keep going the
           // same way: one sample is noise, two (moving) or three (parked) are a
