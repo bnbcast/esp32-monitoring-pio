@@ -1,0 +1,22 @@
+# worker/wrangler.toml - Cloudflare Worker + D1 (free plan).
+#
+#   npx wrangler@4 login
+#   npx wrangler@4 d1 create race-tracker     -> paste database_id below
+#   npx wrangler@4 d1 execute race-tracker --remote --file=schema.sql
+#   npx wrangler@4 secret put INGEST_KEY
+#   npx wrangler@4 deploy
+#
+# See docs/CLOUDFLARE.md for the walkthrough.
+
+name = "race-tracker-history"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "race-tracker"
+database_id = "PASTE_DATABASE_ID_HERE"
+
+# Retention: delete fixes older than 365 days, once a day.
+[triggers]
+crons = ["17 3 * * *"]

@@ -19,7 +19,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 |---|---|---|---|
 | W1 | **Stabilize** — parked drift, odometer creep, heading decay, 1 Hz, HDOP gate | **done on this branch** | `npm test`, `pio run`, diff below |
 | W2 | **Protect** — plausibility gate on every live frame | **done on this branch** | `test/guard.test.js` 14/14 |
-| W3 | **History** — Worker + D1 + device buffer | **blocked** | needs Cloudflare account, board measurement, partition decision |
+| W3 | **History** — Worker + D1 + device buffer | **Worker ready, account pending** | `worker/`, `docs/CLOUDFLARE.md`, `node --check` |
 | W4 | **Mobile + lock mode** — one DOM, spectator default | **done on this branch** | single panel, 5 viewports, lock probe |
 
 ## W1 — Stabilize (this branch)
@@ -34,6 +34,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 | Stale fix no longer feeds heading 0 | `app.js` | the compass decayed to north while parked |
 | Parked state needs 2 consecutive samples | `map.js` | single noisy sample flipped parked/moving |
 | English strings, detailed address line | `app.js`, `index.html` | owner-facing |
+| IMU probe retries 5 s, then boots without tilt/yaw | `mqtt_simple.cpp` | a missing MPU6050 used to block setup forever: no watchdog, no `ready`, no publishing |
 
 ## W2 — Protect (this branch)
 
@@ -50,11 +51,15 @@ time and heap. Until then the gate is plausibility only, and a determined
 attacker who knows the topic can still publish a plausible-looking fake. That
 is a known, documented limitation.
 
-## W3 — History (blocked)
+## W3 — History (Worker ready, account pending)
 
-Do not start until all three are true:
+The free Worker and D1 schema are in `worker/`; the owner walkthrough is
+`docs/CLOUDFLARE.md`. The Worker does verification, idempotent inserts,
+parked downsampling, `/history`, and 365-day retention.
 
-1. Cloudflare account exists (owner).
+Firmware work still waits for all three:
+
+1. Cloudflare account exists and the Worker is deployed (owner).
 2. `huge_app.csv` is flashed (frees 3 MB of app space — see `BASELINE.md`).
 3. Board reports TLS handshake heap and ECDSA timing.
 

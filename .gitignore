@@ -8,3 +8,5 @@ build/
 .idea/
 .vscode/
 .playwright-mcp/
+.wrangler/
+.dev.vars
