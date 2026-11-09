@@ -131,6 +131,12 @@
 // Divider ratio R2 / (R1 + R2): 10k/22k = 0.6875, 4.7k/10k = 0.6803
 #define ACS_DIVIDER 0.6875f
 #define ACS_DEADBAND 0.08f
+// The module rests at half its 5 V supply (~2.5 V at the sensor output). A
+// pin with nothing attached floats to an arbitrary voltage - 0.51 V on this
+// board - which the old 0.3-4.9 V window happily called "OK". Require the
+// calibrated zero to sit near mid-supply, so a missing sensor reads FAIL.
+#define ACS_ZERO_MIN 2.2f
+#define ACS_ZERO_MAX 2.8f
 
 // ============ GLOBALS ============
 TinyGPSPlus gps;
@@ -625,7 +631,13 @@ void updateCurrent() {
 }
 
 bool acsWiringOK() {
-  return (acsFiltV > 0.3f && acsFiltV < 4.9f);
+  // Two independent checks, because either one alone can lie:
+  //   * the calibrated zero must be near mid-supply (sensor really present);
+  //   * the live reading must stay inside the ADC range (not saturated).
+  // Do NOT bound the live reading to mid-supply: it moves with current by
+  // design, and +/-30 A would exceed that band.
+  return (acsOffsetV > ACS_ZERO_MIN && acsOffsetV < ACS_ZERO_MAX &&
+          acsFiltV > 0.05f && acsFiltV < 4.9f);
 }
 
 // ============ NETWORK ============
@@ -1249,10 +1261,10 @@ void mqtt_simple_setup() {
     logMsg(L_OK, "IMU", "MPU6050 at 0x%02X  gyro bias %.2f/%.2f/%.2f dps",
            MPU_ADDR, gyroBiasX, gyroBiasY, gyroBiasZ);
   }
-  if (acsOffsetV >= 2.3f && acsOffsetV <= 2.55f)
-    logMsg(L_OK, "PWR", "ACS712 zero %.3f V (expected 2.3-2.5 V)", acsOffsetV);
+  if (acsOffsetV >= ACS_ZERO_MIN && acsOffsetV <= ACS_ZERO_MAX)
+    logMsg(L_OK, "PWR", "ACS712 zero %.3f V (expected %.1f-%.1f V)", acsOffsetV, ACS_ZERO_MIN, ACS_ZERO_MAX);
   else
-    logMsg(L_WARN, "PWR", "ACS712 zero %.3f V - outside 2.3-2.5 V, check 5V/GND/OUT", acsOffsetV);
+    logMsg(L_WARN, "PWR", "ACS712 zero %.3f V - outside %.1f-%.1f V, check 5V/GND/OUT", acsOffsetV, ACS_ZERO_MIN, ACS_ZERO_MAX);
 
 #if HAVE_TASK_WDT
   // Armed here, not at the top of setup: hardware probing is allowed to wait
