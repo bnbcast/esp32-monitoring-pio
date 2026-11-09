@@ -6,14 +6,16 @@ Anything marked **(board)** still needs the physical device on COM4.
 ## Build (verified locally)
 
 ```
-pio run -e esp32-mqtt-simple      # after huge_app.csv was applied
-RAM:   16.0%  (52,368 / 327,680 bytes)
-Flash: 33.3%  (1,046,136 / 3,145,728 bytes)
+pio run -e esp32-mqtt-simple      # after huge_app.csv + the history module
+RAM:   16.3%  (53,280 / 327,680 bytes)
+Flash: 40.6%  (1,275,912 / 3,145,728 bytes)
 ```
 
-Before the partition change the same build used 79.8% of a 1.25 MiB slot.
-With `huge_app.csv` there are **2.0 MB free** for TLS, a LittleFS ring buffer
-and future code. The OTA slot is gone; USB flashing is the update path.
+Before the partition change the same tracker used 79.8% of a 1.25 MiB slot.
+With `huge_app.csv` there are **1.87 MB free** for TLS, the LittleFS ring
+buffer and future code. The OTA slot is gone; USB flashing is the update path.
+The history module costs ~230 KB of flash and ~1 KB of RAM at rest; the TLS
+client is allocated only during a batch.
 
 | Item | Value |
 |---|---|
@@ -138,9 +140,29 @@ watchdog armed (30 s)`, `ready`, Wi-Fi + MQTT up, 1 Hz on the new topic, and
 `heap_min` present in every frame. Over 7.5 minutes: `boot=1`, `seq=421`,
 `heap=216120`, `heap_min=206456` — no reboot and no downward heap trend.
 
+## History path on the board (measured)
+
+Self-test build (`pio run -e esp32-history-test`, which adds `-DHISTORY_SELFTEST`),
+continuous serial capture, `race-tracker-history.pages.dev`:
+
+| Step | Observed |
+|---|---|
+| Mount + task start | `history ready: ...pages.dev/ingest, 0 B buffered, offset 0` |
+| Enqueue | `self-test: 3 synthetic frames queued` |
+| RAM buffer → flash | `stored 1` after the first 10 s flush, `stored 3` after the next |
+| TLS + POST | `POST /ingest -> 200 in 3711 ms` |
+| Ack + delete | `3 frames acked, queue 0 B` |
+| Read back | `/history` returned all 3 points, `ts` ascending, `lat -6.9123` |
+
+The request body is 3 × 161 B = 483 B, i.e. one TLS handshake per 30 s costs
+~1.8 s of core time and ~43 KB of peak heap, matching the bench numbers. The
+test rows were deleted from D1 afterwards.
+
+The watchdog did not fire during the TLS handshake, confirming the history task
+and the loop task coexist without a stall.
+
 ## Still needs the board
 
-1. Behaviour under a watchdog while doing TLS + MQTT + GPS at the same time.
-2. Real parked wander radius (lat/lon spread over 10 minutes).
-3. One drive capture (route, speed, odometer).
-4. A multi-hour soak with `sys.heap_min` and `sys.boot` logged.
+1. Real parked wander radius (lat/lon spread over 10 minutes).
+2. One drive capture (route, speed, odometer).
+3. A multi-hour soak with `sys.heap_min` and `sys.boot` logged.

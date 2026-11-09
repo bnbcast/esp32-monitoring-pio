@@ -1,29 +1,52 @@
-# dev/pio_network_lib.py - add the bundled "Networking" library on Arduino-ESP32 3.3.x.
+# dev/pio_network_lib.py - add bundled framework libraries that PlatformIO's
+# dependency finder misses on Arduino-ESP32 3.3.x.
 #
-# WiFiGeneric.h does `#include "Network.h"`, but 3.3.x moved that header (and
-# the NetworkClient/Server/Udp sources) into libraries/Network, whose
-# library.properties is named "Networking". PlatformIO's dependency finder does
-# not select it, and bundled libraries are compiled with only their own src on
-# the include path, so a clean Linux checkout fails with:
+# Two separate symptoms, one cause: 3.3.x moved code into framework libraries
+# whose library.properties no longer declares its dependencies, and PlatformIO
+# compiles each bundled library with only its own src/ on the include path.
 #
-#   WiFiGeneric.h:44:10: fatal error: Network.h: No such file or directory
+#   1. WiFiGeneric.h does `#include "Network.h"`, but Network.h lives in
+#      libraries/Network, whose library.properties is named "Networking":
+#        WiFiGeneric.h:44:10: fatal error: Network.h: No such file or directory
 #
-# Older installs that still carry Network.h inside WiFi/src already build; this
-# script detects that layout and does nothing, avoiding duplicate definitions.
+#   2. LittleFS.h does `#include "FS.h"`, but FS.h lives in libraries/FS and
+#      LittleFS does not declare `depends=FS`:
+#        LittleFS.h:21:10: fatal error: FS.h: No such file or directory
 #
-# Tested by hiding WiFi/src/Network.h, which reproduces a clean checkout.
+# Older installs that still carry Network.h inside WiFi/src are detected and
+# skipped for the Network case, so no symbols are defined twice. FS is added
+# only when the header is not already reachable from the WiFi tree.
+#
+# Reproduced by a clean checkout; verified by `pio run` on Windows and Linux.
 
 Import("env")
 import os
 
 framework = env.PioPlatform().get_package_dir("framework-arduinoespressif32")
-network_src = os.path.join(framework, "libraries", "Network", "src")
-umbrella = os.path.join(framework, "libraries", "WiFi", "src", "Network.h")
 
-if os.path.isdir(network_src) and not os.path.isfile(umbrella):
-    env.Append(CPPPATH=[network_src])
+
+def add_bundled(name, subdir, skip_if):
+    src = os.path.join(framework, "libraries", subdir, "src")
+    if not os.path.isdir(src):
+        return
+    if skip_if and os.path.isfile(skip_if):
+        return
+    env.Append(CPPPATH=[src])
     env.BuildSources(
-        os.path.join("$BUILD_DIR", "network-lib"),
-        network_src,
+        os.path.join("$BUILD_DIR", name + "-lib"),
+        src,
         src_filter=["+<*.cpp>"],
     )
+
+
+add_bundled(
+    "network",
+    "Network",
+    os.path.join(framework, "libraries", "WiFi", "src", "Network.h"),
+)
+
+add_bundled(
+    "fs",
+    "FS",
+    os.path.join(framework, "libraries", "WiFi", "src", "FS.h"),
+)

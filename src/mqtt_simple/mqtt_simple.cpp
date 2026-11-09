@@ -16,6 +16,10 @@
 #include <esp_system.h>
 #include <stdarg.h>
 
+// History store-and-forward (LittleFS + HTTPS batch). Compiled to a no-op when
+// src/history_secret.h is absent, so a fresh clone still builds.
+#include "history.h"
+
 // The task watchdog is the difference between "the board is stuck" and "the
 // board rebooted itself and said so". Guarded so the sketch still builds on a
 // core that does not ship it.
@@ -253,6 +257,13 @@ static void logMsg(LogLvl lvl, const char* tag, const char* fmt, ...) {
                 msg);
 }
 
+// The history task logs through this shim so every line keeps the same
+// timestamp/tag format as the rest of the console.
+void histLog(int lvl, const char* msg) {
+  LogLvl l = (lvl >= 3) ? L_ERR : (lvl == 2) ? L_WARN : (lvl == 1) ? L_OK : L_INFO;
+  logMsg(l, "HIST", "%s", msg);
+}
+
 // ============ RAW NMEA TAP ============
 // TinyGPSPlus only exposes sanitised GGA/GSA/RMC fields, so on its own it cannot
 // tell "the antenna hears nothing" from "it hears satellites but will not lock".
@@ -439,6 +450,7 @@ void networkService();
 void wifiService(unsigned long now);
 int8_t pickBestNetwork(int found);
 bool gpsFixUsable();
+void histLog(int lvl, const char* msg);
 
 // ============ LEDs ============
 void ledsOff() {
@@ -820,6 +832,27 @@ void publishData() {
 
   txSeq++;
 
+#if GPS_DECIMALS >= 0
+  // History path: only real fixes with a real clock are worth storing. It is a
+  // separate queue, so a history or TLS problem can never delay the live map.
+  if (fix && epoch > 0) {
+    HistoryFix hf = {};
+    hf.seq  = txSeq;
+    hf.ts   = epoch;
+    hf.up   = (uint32_t)(millis() / 1000);
+    hf.boot = (uint16_t)bootCount;
+    hf.lat  = gps.location.lat();
+    hf.lng  = gps.location.lng();
+    hf.alt  = gps.altitude.isValid() ? gps.altitude.meters() : 0.0f;
+    hf.kmh  = (gps.speed.isValid() && gps.speed.kmph() <= GPS_MAX_KMH) ? gps.speed.kmph() : 0.0f;
+    hf.cog  = gps.course.isValid() ? gps.course.deg() : 0.0f;
+    hf.hdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.0f;
+    hf.sats = (uint8_t)gps.satellites.value();
+    hf.dist_m = gpsDistTotalM;
+    historyEnqueue(hf);
+  }
+#endif
+
   char b[1200];
   int n = snprintf(b, sizeof b,
     "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
@@ -1011,6 +1044,17 @@ static void printStatus() {
                 amps, peakAmps, acsOffsetV,
                 A(acsWiringOK() ? ANSI_GRN : ANSI_RED), acsWiringOK() ? "OK" : "FAIL", A(ANSI_RESET));
 
+  {
+    HistoryStats hs = historyStats();
+    const bool on = historyEnabled();
+    Serial.printf("%s|%s HIST  %s%-4s%s  queued %lu  stored %lu  sent %lu  fail %lu  drop %lu  buf %lu B\n",
+                  A(ANSI_DIM), A(ANSI_RESET),
+                  A(on ? ANSI_GRN : ANSI_YEL), on ? "ON" : "OFF", A(ANSI_RESET),
+                  (unsigned long)hs.queued, (unsigned long)hs.written,
+                  (unsigned long)hs.acked, (unsigned long)hs.failed,
+                  (unsigned long)hs.dropped, (unsigned long)hs.bytes);
+  }
+
   Serial.printf("%s+------------------------------------------------------------------------------%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
 
@@ -1197,6 +1241,10 @@ void mqtt_simple_setup() {
 
   bootMillis = millis();
 
+  // History store-and-forward. Starts its own task; must not block the loop.
+  historySetLogger(histLog);
+  historyBegin();
+
   if (imuPresent) {
     logMsg(L_OK, "IMU", "MPU6050 at 0x%02X  gyro bias %.2f/%.2f/%.2f dps",
            MPU_ADDR, gyroBiasX, gyroBiasY, gyroBiasZ);
@@ -1269,6 +1317,12 @@ static void handleKeys() {
         Serial.flush();
         delay(100);
         ESP.restart();
+        break;
+      case 't': case 'T':
+        if (historySelfTest())
+          logMsg(L_OK, "HIST", "self-test queued 3 synthetic frames - watch the HIST line");
+        else
+          logMsg(L_WARN, "HIST", "self-test needs a -DHISTORY_SELFTEST build and a secret header");
         break;
       case '?': case 'h': case 'H':
         printHelp();

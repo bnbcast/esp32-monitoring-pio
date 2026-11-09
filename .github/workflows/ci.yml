@@ -50,3 +50,18 @@ jobs:
           done
       - name: Unit tests
         run: node --test test/guard.test.js
+
+  worker:
+    name: History API checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check worker/src/index.js
+          node --check "worker/pages/functions/[[path]].js"
+      - name: Ingest and history rules
+        run: node --test worker/test/ingest.test.mjs

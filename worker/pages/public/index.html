@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>race-tracker-history</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 2rem; background:#0b0f14; color:#dbe4ee }
+  code { background:#141b24; padding:.15em .4em; border-radius:4px }
+  a { color:#5eb1ff }
+</style>
+<h1>race-tracker-history</h1>
+<p>JSON API for the ESP32 race tracker. No UI lives here; the dashboard is on GitHub Pages.</p>
+<ul>
+  <li><code>GET /health</code> — liveness</li>
+  <li><code>GET /history?from=&amp;to=&amp;limit=</code> — stored fixes</li>
+  <li><code>POST /ingest</code> — device batches, needs <code>X-Ingest-Key</code></li>
+</ul>
+<p><a href="/health">/health</a></p>
+</html>

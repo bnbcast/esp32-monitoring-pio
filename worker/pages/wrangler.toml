@@ -1,0 +1,15 @@
+# Cloudflare Pages project that serves worker/src/index.js as a Pages Function.
+#
+# Why not the Worker: *.workers.dev is DNS-hijacked by some venue-class ISPs
+# (see docs/CLOUDFLARE.md), while *.pages.dev resolves normally. The handler is
+# identical and uses the same D1 database.
+name = "race-tracker-history"
+compatibility_date = "2026-01-01"
+
+# Static output (a tiny landing page); the API is in ./functions.
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "race-tracker"
+database_id = "916e0115-1d0e-482b-8e08-14b75b56ecec"

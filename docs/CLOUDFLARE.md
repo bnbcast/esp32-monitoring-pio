@@ -1,162 +1,161 @@
-# Cloudflare Worker + D1 setup (W3 history)
+# Cloudflare history API (W3) — deployed setup
 
-One free Worker and one free D1 database. Nothing here touches the live path:
-the ESP32 keeps publishing to HiveMQ at 1 Hz over MQTT, and history arrives
-later as HTTPS batches. If the Worker is down, the live map is unaffected.
+The live path is unchanged: the ESP32 publishes to HiveMQ at 1 Hz over MQTT.
+History is a **separate** HTTPS batch path, so a history outage can never stop
+the live map:
 
-The code is already in `worker/`. Your part is the account, the database, and
-one secret.
+```
+ESP32 ── LittleFS ring buffer ──30 s batch──▶ Pages Function ──▶ D1
+   └─ MQTT 1 Hz ──────────────────────────────────────────────▶ HiveMQ
+```
 
-Time: about 10 minutes. Cost: 0. No card required for the free plan.
+Hosted as a **Pages Function**, not a Worker, because `*.workers.dev` is
+DNS-hijacked by some venue-class ISPs while `*.pages.dev` resolves normally.
+Both run the identical handler in `worker/src/index.js`.
+
+| Item | Value |
+|---|---|
+| API base | `https://race-tracker-history.pages.dev` |
+| Endpoints | `GET /health`, `GET /history`, `POST /ingest` |
+| D1 database | `race-tracker`, `916e0115-1d0e-482b-8e08-14b75b56ecec` (APAC) |
+| Account | `1eb96d94afa9eeab9fd7920b2ed4b251` |
+| Retention | daily cron `17 3 * * *` (365-day delete) |
+| Secret | `INGEST_KEY` on the Pages project |
+| Local key copy | `%USERPROFILE%\.esp32-race-tracker\ingest.key` |
 
 ---
 
-## 1. Create the account
-
-1. Open <https://dash.cloudflare.com/sign-up>.
-2. Use the owner's email, confirm the verification mail.
-3. Skip any domain/paid prompt. The free `workers.dev` subdomain is enough.
-
-## 2. Log the CLI in
-
-From the repo:
+## Redeploy after a code change
 
 ```powershell
-cd C:\Users\User\Documents\PlatformIO\Projects\esp32
-npx wrangler@4 login
+cd C:\Users\User\Documents\PlatformIO\Projects\esp32\worker\pages
+npx wrangler@4 pages deploy
 ```
 
-`npx` asks to install the package the first time; answer yes. A browser window
-opens; click **Allow**. The CLI prints `Successfully logged in`.
+`worker/pages/functions/[[path]].js` imports `../../src/index.js`, so the Pages
+Function and the Worker can never drift apart. The static output
+(`worker/pages/public/`) is only a landing page.
 
-## 3. Create the database
+The first deploy of a project needs the project to exist:
 
 ```powershell
-npx wrangler@4 d1 create race-tracker
+npx wrangler@4 pages project create race-tracker-history --production-branch=main
 ```
 
-Copy the printed `database_id` (a UUID). Open `worker/wrangler.toml` and replace
+## Rotate the ingest key
 
-```toml
-database_id = "PASTE_DATABASE_ID_HERE"
-```
-
-with that UUID. This file is safe to commit; the ID is not a secret.
-
-## 4. Create the tables
+Generate once, store outside the repo, push to the host, then rebuild firmware:
 
 ```powershell
-npx wrangler@4 d1 execute race-tracker --remote --file=worker/schema.sql
+$dir = Join-Path $env:USERPROFILE ".esp32-race-tracker"
+New-Item -ItemType Directory -Force $dir | Out-Null
+node -e "require('fs').writeFileSync(process.argv[1], require('crypto').randomBytes(32).toString('hex'))" "$dir\ingest.key"
+
+cd worker\pages
+Copy-Item "$dir\ingest.key" ingest.key
+cmd /c "npx.cmd wrangler@4 pages secret put INGEST_KEY --project-name race-tracker-history < ingest.key"
+Remove-Item ingest.key
+
+# the firmware compiles the same key from the safe copy
+cd ..\..
+node dev\gen-history-secret.mjs
+pio run -e esp32-mqtt-simple -t upload
 ```
 
-Expect `Executed 2 queries`. The second query is the index.
+**Gotcha, verified the hard way:** a Pages secret only reaches deployments
+created *after* it is set. After `secret put`, run `pages deploy` again or
+`/ingest` answers `{"ok":false,"error":"ingest-key-not-set"}` (503) while
+`/health` still works.
 
-## 5. Set the ingest key
-
-The device will send this key in `X-Ingest-Key`. Make a random one:
+## Smoke test
 
 ```powershell
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-Store it in your password manager, then:
-
-```powershell
-npx wrangler@4 secret put INGEST_KEY
-```
-
-Paste the 64-character hex string when prompted. Do **not** commit it and do
-not paste it into chat; I only need the Worker URL.
-
-## 6. Deploy
-
-```powershell
-npx wrangler@4 deploy
-```
-
-First deploy asks to register a `workers.dev` subdomain; accept the suggested
-name (for example `bnbcast`). It then prints:
-
-```
-https://race-tracker-history.<subdomain>.workers.dev
-```
-
-That URL is what the firmware and (later) the history panel use.
-
-## 7. Smoke test
-
-Replace `KEY` and `URL` below. This sends two frames: one valid fix, one with a
-bad latitude.
-
-```powershell
-$key = "PASTE_THE_INGEST_KEY"
-$url = "https://race-tracker-history.<subdomain>.workers.dev"
+$key = (Get-Content "$env:USERPROFILE\.esp32-race-tracker\ingest.key" -Raw).Trim()
+$h   = "race-tracker-history.pages.dev"
 $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 
-$body = @{
-  device = "esp32-01"
-  frames = @(
-    @{ seq = 1; ts = $now; up = 10; boot = 1; fix = $true;  lat = -6.9; lng = 107.6; kmh = 12.5; hdop = 0.9; sats = 9; dist_m = 0 },
-    @{ seq = 2; ts = $now; up = 11; boot = 1; fix = $true;  lat = 999;  lng = 107.6; kmh = 12.5; hdop = 0.9; sats = 9; dist_m = 0 }
-  )
-} | ConvertTo-Json -Depth 4
+$body = @{ device = "esp32-01"; frames = @(
+  @{ seq=1; ts=$now; up=10; boot=1; fix=$true; lat=-6.9; lng=107.6; kmh=12.5; hdop=0.9; sats=9; dist_m=0 },
+  @{ seq=2; ts=$now; up=11; boot=1; fix=$true; lat=999;  lng=107.6 }
+) } | ConvertTo-Json -Depth 5 -Compress
 
-Invoke-RestMethod -Method Post -Uri "$url/ingest" `
-  -Headers @{ "X-Ingest-Key" = $key } -ContentType "application/json" -Body $body
+curl.exe -sS -H "X-Ingest-Key: $key" -H "Content-Type: application/json" `
+  --data-binary $body "https://$h/ingest"
+curl.exe -sS "https://$h/history?from=$($now-60)&to=$($now+60)"
 ```
 
-Expected:
+Expected `{"ok":true,"received":2,"stored":1,"rejected":[{"seq":2,"reason":"range"}]}`
+and one point from `/history`. Measured on 2026-11-09:
 
-```json
-{ "ok": true, "received": 2, "stored": 1, "duplicates": 0,
-  "rejected": [ { "seq": 2, "reason": "range" } ] }
+```
+{"ok":true,"received":2,"stored":1,"duplicates":0,"rejected":[{"seq":2,"reason":"range"}]}
+{"ok":true,"device":"esp32-01","count":1,"points":[[1794206089,-6.9123,107.6098,12.5,null,0.9]]}
 ```
 
-Then read it back:
+## Test the rule set without the cloud
 
 ```powershell
-Invoke-RestMethod "$url/history?from=$($now-60)&to=$($now+60)"
+node --test worker/test/ingest.test.mjs     # 15 tests, in-memory D1
 ```
 
-You should see one point. A wrong key returns `401`, a missing key returns `401`.
+Covers: key required, bad key 401, unset key 503, moving stored, parked
+throttled to 10 s, no-fix skipped, duplicate vs stale seq, teleport and clock
+rejection, hdop/speed gates, empty and oversized batches, window queries, and
+365-day retention.
 
-## 8. Send me only this
+## Prove the device path (no GPS needed)
+
+```powershell
+node dev\gen-history-secret.mjs          # bakes a fresh epoch
+pio run -e esp32-history-test -t upload  # adds -DHISTORY_SELFTEST
+```
+
+Open the serial monitor; after ~15 s the board queues 3 synthetic frames, at
+~45 s it posts them. Console key `t` repeats it. Expected:
 
 ```
-https://race-tracker-history.<subdomain>.workers.dev
+HIST history ready: race-tracker-history.pages.dev/ingest, 0 B buffered, offset 0
+HIST self-test: 3 synthetic frames queued
+HIST POST /ingest -> 200 in 3711ms
+HIST 3 frames acked, queue 0 B
 ```
 
-I will wire the firmware batch upload and the dashboard history panel. Keep the
-`INGEST_KEY` out of chat; it goes into the device build, not the public repo.
+Then flash `esp32-mqtt-simple` again to remove the test key.
 
----
+## Known network issue: `workers.dev` is filtered
+
+Verified on 2026-11-09 on an XL Axiata hotspot:
+
+- `race-tracker-history.<subdomain>.workers.dev` resolves to
+  `blockpage.xlaxiata.id`, not Cloudflare.
+- Forcing 1.1.1.1 or 8.8.8.8 returns the same block page, so the interception
+  is transparent and changing DNS on the ESP32 cannot help.
+- The Worker itself is healthy: connecting to Cloudflare's real IP with
+  `--resolve ...:443:172.67.187.103` returns `{"ok":true,...}`.
+- `pages.dev` resolves normally on the same network — hence the Pages Function.
+
+The Worker deployment at
+`https://race-tracker-history.zakyazhari393.workers.dev` still exists and works
+where that hostname resolves. A custom domain would also fix it, but needs a
+domain the owner controls.
 
 ## Free-plan budget
 
 | Limit | Free plan | This project |
 |---|---|---|
-| Worker requests | 100,000/day | ~2,900/day at one batch per 30 s |
+| Requests | 100,000/day | ~2,900/day at one batch per 30 s |
 | D1 rows written | 100,000/day | ≤ 86,400 (only while moving) |
 | D1 rows read | 5,000,000/day | ~3,000 |
-| D1 storage | 5 GB | ~1-2 GB for 365 days |
+| D1 storage | 5 GB | ~1–2 GB for 365 days |
 | Cron triggers | included | 1/day for retention |
 
 Storage policy is in `worker/src/index.js`: every frame while moving, one frame
 every 10 s while parked, no GPS fix = not stored. That keeps a full year well
 inside 5 GB.
 
-## Later: rotating the key
-
-```powershell
-npx wrangler@4 secret put INGEST_KEY   # paste the new value
-```
-
-Then rebuild and reflash the firmware with the same value. The dashboard does
-not need it: `/history` is read-only and public.
-
 ## What is public
 
-- The `workers.dev` URL and `/history` are public, like the map. A precise
-  public track is a frozen product decision.
+- The `pages.dev` URL and `/history` are public, like the map. A precise public
+  track is a frozen product decision.
 - `/ingest` requires the key. Without it, writes are refused.
 - No accounts, no cookies, no PII stored.

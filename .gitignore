@@ -10,3 +10,5 @@ build/
 .playwright-mcp/
 .wrangler/
 .dev.vars
+src/history_secret.h
+worker/pages/.wrangler/
