@@ -17,7 +17,20 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
       - name: Build
-        run: pio run -e esp32-mqtt-simple
+        run: |
+          set -o pipefail
+          pio run -e esp32-mqtt-simple 2>&1 | tee build.log
+      # The job log needs authentication to read; a check annotation is public.
+      # This makes a red pipeline diagnosable from an API call.
+      - name: Expose build failure
+        if: failure()
+        run: |
+          python - <<'PY'
+          data = open('build.log', encoding='utf-8', errors='replace').read()
+          tail = data[-4000:]
+          esc = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error::' + esc)
+          PY
       - name: Report flash usage
         run: |
           size "$(find .pio/build/esp32-mqtt-simple -name firmware.elf | head -1)" || true
