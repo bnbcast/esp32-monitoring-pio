@@ -161,8 +161,49 @@ test rows were deleted from D1 afterwards.
 The watchdog did not fire during the TLS handshake, confirming the history task
 and the loop task coexist without a stall.
 
+## Dashboard history view (measured)
+
+`dev/check-history.mjs` drives a real Chromium against the local static server,
+opens the HIST tab and asks for the last hour. Three synthetic fixes were
+inserted through `POST /ingest` first and deleted from D1 afterwards.
+
+| Check | Result |
+|---|---|
+| Points shown | `3` |
+| Distance | `0.02 km` (two 60 s steps) |
+| Max gap | `60 s` |
+| Window | `07:02 - 07:04 UTC` |
+| Status | `drawn as 1 line(s)` |
+| GeoJSON features | `1` polyline |
+| Page / CSP errors | none |
+| Phone viewport 390x844 | same result |
+| Live GitHub Pages `?v=25` | `check-live` PASS (map ready, broker OK, no errors/CSP); `check-history` points 3, drawn as 1 line |
+
+The probe found a real bug before release: the 1 h / 6 h / 24 h buttons used
+`.mini-btn`, which is absolutely positioned for the odometer reset, so all
+three landed on the same spot and the 24 h button swallowed the click. They now
+have their own `.hist-btn` segmented style.
+
+## Long-uptime soak (measured)
+
+A serial capture writes every panel line, so `up`, `heap`, `rssi` and the HIST
+counters can be read back with `dev/`-style parsing (ANSI stripped first).
+
+| Session | Continuous run | Boots | Heap | Watchdog | Fatal |
+|---|---|---|---|---|---|
+| interrupted by host restart | 8 min 59 s (539 s) | 1, power-on | 184-192 KB, 187 KB at the end | armed, never fired | none |
+| 60 min soak | running | | | | |
+
+Heap over the 9-minute session: 192, 187, 187, 187, 186, ... 187 KB. There is
+no downward trend, `boot` stayed at 1 and no `Guru Meditation` / `panic` line
+appeared. HIST counters stayed `queued 0 stored 0 sent 0 fail 0 drop 0`, which
+is expected indoors: the GPS had no NMEA, so no fix was ever enqueued.
+
+The 60-minute run is the one that backs the "long uptime" claim; this table is
+updated with its numbers when it finishes.
+
 ## Still needs the board
 
 1. Real parked wander radius (lat/lon spread over 10 minutes).
 2. One drive capture (route, speed, odometer).
-3. A multi-hour soak with `sys.heap_min` and `sys.boot` logged.
+3. The 60-minute soak result (in flight).

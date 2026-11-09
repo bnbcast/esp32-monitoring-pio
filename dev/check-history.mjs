@@ -8,19 +8,22 @@
  * Usage:
  *   node dev/check-history.mjs                                  # http://localhost:5010/
  *   node dev/check-history.mjs https://bnbcast.github.io/esp32-monitoring-pio/ race-tracker 20
+ *   node dev/check-history.mjs http://localhost:5010/ race-tracker 3 390 844   # phone
  *
- * Args: [baseUrl] [topicKey] [expectedPoints]
+ * Args: [baseUrl] [topicKey] [expectedPoints] [width] [height]
  */
 import { chromium } from 'playwright';
 
 const BASE = process.argv[2] || 'http://localhost:5010/';
 const KEY = process.argv[3] || 'race-tracker';
 const EXPECT = Number(process.argv[4] || 3);
+const WIDTH = Number(process.argv[5] || 1280);
+const HEIGHT = Number(process.argv[6] || 900);
 const url = BASE.includes('#') ? BASE : BASE + '#t=' + KEY;
 
 const errors = [];
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } });
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('console', m => {
   if (m.type() !== 'error') return;
