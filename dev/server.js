@@ -383,7 +383,7 @@ function startSimulator() {
         lvl: 0, warn: 30, danger: 50, maxTilt: 8, peakA: 1.5,
         acs: { ok: true, amps: 2.5, v: 2.9, zero: 2.5 },
         gps,
-        sys: { heap: 200000, rssi: -50 },
+        sys: { heap: 200000, heap_min: 180000, boot: 1, rssi: -50 },
       });
 
       publish(TOPIC_DATA, msg, true);

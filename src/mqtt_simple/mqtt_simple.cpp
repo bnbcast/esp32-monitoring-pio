@@ -16,6 +16,17 @@
 #include <esp_system.h>
 #include <stdarg.h>
 
+// The task watchdog is the difference between "the board is stuck" and "the
+// board rebooted itself and said so". Guarded so the sketch still builds on a
+// core that does not ship it.
+#if __has_include(<esp_task_wdt.h>)
+#include <esp_task_wdt.h>
+#include <esp_idf_version.h>
+#define HAVE_TASK_WDT 1
+#else
+#define HAVE_TASK_WDT 0
+#endif
+
 // ============ NETWORK (EDIT THESE) ============
 // Candidate Wi-Fi networks, tried in order against what the ESP32 can see.
 // The first one that is actually visible wins, so the board comes up on
@@ -182,6 +193,16 @@ float gpsPrevLat = 0, gpsPrevLng = 0;
 // long before the board actually runs out.
 RTC_DATA_ATTR uint32_t bootCount = 0;
 uint32_t minFreeHeap = 0xFFFFFFFFu;
+
+// A hang in Wi-Fi/MQTT used to be silent: the board stayed powered, published
+// nothing and looked offline until somebody power-cycled it. 30 s is
+// deliberately generous so a slow broker retry cannot trip it; the watchdog is
+// there to catch a genuine deadlock, not to police jitter.
+#define WDT_TIMEOUT_S   30
+// Below this the next allocation is likely to fail. Logged once per boot so a
+// long uptime run produces one clear warning instead of a flood.
+#define HEAP_WARN_BYTES 40000UL
+static bool heapWarned = false;
 
 // ============ SERIAL CONSOLE ============
 // Every event is one greppable line: "<up-time> <level> [TAG] message".
@@ -1087,6 +1108,7 @@ void mqtt_simple_setup() {
   bootCount++;
   minFreeHeap = ESP.getFreeHeap();
 
+
   pinMode(LED_BLUE_PIN, OUTPUT);
   pinMode(LED_WHITE_PIN, OUTPUT);
   pinMode(LED_RED_PIN, OUTPUT);
@@ -1178,6 +1200,32 @@ void mqtt_simple_setup() {
     logMsg(L_OK, "PWR", "ACS712 zero %.3f V (expected 2.3-2.5 V)", acsOffsetV);
   else
     logMsg(L_WARN, "PWR", "ACS712 zero %.3f V - outside 2.3-2.5 V, check 5V/GND/OUT", acsOffsetV);
+
+#if HAVE_TASK_WDT
+  // Armed here, not at the top of setup: hardware probing is allowed to wait
+  // as long as it needs, and a missing MPU6050 must not turn into a boot loop.
+  // From this point the loop must keep calling esp_task_wdt_reset() or the chip
+  // resets itself and the next payload carries an incremented `sys.boot`.
+  esp_err_t wdtErr;
+#if defined(ESP_IDF_VERSION_MAJOR) && ESP_IDF_VERSION_MAJOR >= 5
+  esp_task_wdt_config_t wdtCfg = {};
+  wdtCfg.timeout_ms = WDT_TIMEOUT_S * 1000UL;
+  wdtCfg.idle_core_mask = 0;
+  wdtCfg.trigger_panic = true;
+  wdtErr = esp_task_wdt_init(&wdtCfg);
+  if (wdtErr == ESP_ERR_INVALID_STATE) wdtErr = esp_task_wdt_reconfigure(&wdtCfg);
+#else
+  wdtErr = esp_task_wdt_init(WDT_TIMEOUT_S, true);
+  if (wdtErr == ESP_ERR_INVALID_STATE) wdtErr = ESP_OK;  // already initialised
+#endif
+  if (wdtErr == ESP_OK) {
+    esp_task_wdt_add(NULL);
+    logMsg(L_INFO, "SYS", "task watchdog armed (%d s)", WDT_TIMEOUT_S);
+  } else {
+    logMsg(L_WARN, "SYS", "task watchdog unavailable (err %d)", (int)wdtErr);
+  }
+#endif
+
   logMsg(L_OK, "SYS", "ready - %s %s", FW_NAME, FW_VERSION);
 }
 
@@ -1279,9 +1327,19 @@ static void gpsWatch() {
 
 // ============ LOOP ============
 void mqtt_simple_loop() {
+#if HAVE_TASK_WDT
+  // Proves the loop is still making progress. If it stops, the chip resets.
+  esp_task_wdt_reset();
+#endif
+
   {
     const uint32_t heapNow = ESP.getFreeHeap();
     if (heapNow < minFreeHeap) minFreeHeap = heapNow;
+    if (!heapWarned && heapNow < HEAP_WARN_BYTES) {
+      heapWarned = true;
+      logMsg(L_WARN, "SYS", "low heap: %lu B free (boot %lu) - check for a leak",
+             (unsigned long)heapNow, (unsigned long)bootCount);
+    }
   }
 
   // Every byte feeds TinyGPSPlus (parsed fields) and the tap (raw sentence

@@ -20,7 +20,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 | W1 | **Stabilize** — parked drift, odometer creep, heading decay, 1 Hz, HDOP gate | **done on this branch** | `npm test`, `pio run`, diff below |
 | W2 | **Protect** — plausibility gate on every live frame | **done on this branch** | `test/guard.test.js` 14/14 |
 | W3 | **History** — Worker + D1 + device buffer | **blocked** | needs Cloudflare account, board measurement, partition decision |
-| W4 | **Mobile + lock mode** — one DOM, spectator default | **lock mode done; DOM consolidation pending** | browser probe below |
+| W4 | **Mobile + lock mode** — one DOM, spectator default | **done on this branch** | single panel, 5 viewports, lock probe |
 
 ## W1 — Stabilize (this branch)
 
@@ -69,25 +69,37 @@ reveals them, a single click hides them again, and two idle minutes relock.
 Verified in Chromium: hidden on load, visible after a real 1.4 s hold, hidden
 after one click, and a short tap does not unlock.
 
-Still to do: consolidate the duplicated desktop/mobile DOM
-(`index.html:97-170` vs `:197-300+`, four `@media (max-width: 900px)` blocks in
-`layout.css`). Measured today at 360×800, 390×844, 430×932 and 844×390: no
-horizontal scroll and both the map and the sheet are visible, so the duplicate
-DOM is debt rather than an active breakage.
+The DOM is consolidated: there is exactly one `.side-panel`, one row of tabs and
+one copy of every HUD field. On a phone that same element becomes the bottom
+sheet, so a value is rendered once instead of twice and cannot drift.
+`index.html` now has 84 ids and zero duplicates. Measured at 1440×900, 360×800,
+390×844, 430×932 and 844×390: no horizontal scroll, one panel, map and sheet
+both visible, tab switching works, zero page errors. Short landscape gets a
+one-row HUD so it cannot spill over the sheet.
 
 ## Long-uptime measures
 
 Already present: Wi-Fi reconnect with backoff and network scan, publish queue,
 retained status with last-will, free heap and RSSI in every payload.
 
-Added here: 1 Hz cadence, tighter fix gate, flood cap.
+Added here:
 
-Still to add, in order of value:
+1. **Task watchdog** — `esp_task_wdt` armed with a 30 s timeout at the end of
+   `mqtt_simple_setup()`. A deadlock reboots the chip instead of freezing it.
+   Armed *after* hardware probing so a missing MPU6050 cannot become a boot
+   loop. Compiles on IDF 5 (config struct) and IDF 4 (two-arg init).
+2. **Heap low-water counter** — `minFreeHeap` is sampled every loop and
+   published as `sys.heap_min`; a single warning is logged per boot below
+   40,000 bytes.
+3. **Boot counter** — `RTC_DATA_ATTR bootCount`, published as `sys.boot`, so a
+   reboot loop is visible from the dashboard without any storage.
 
-1. **Heap low-water counter** in `sys` so a slow leak is visible before it bites.
-2. **Task watchdog** on the main loop, so a hang reboots instead of freezing.
-3. **Boot counter** in RTC memory, so reboot loops are detectable from the
-   dashboard without new storage.
+The dashboard shows `sys.heap`; binding `heap_min` and `boot` to visible rows is
+the next diagnostic step, but the data is already on the wire.
+
+**Not yet proven on hardware.** The watchdog and the heap warning compile but
+have not run on the board (it still has the old build). That is called out
+rather than claimed.
 
 ## Blocked on the owner
 

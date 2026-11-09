@@ -7,12 +7,12 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23ffe600' stroke='%23000' stroke-width='5'/%3E%3Ccircle cx='21' cy='25' r='6.5' fill='%23000'/%3E%3Ccircle cx='43' cy='25' r='6.5' fill='%23000'/%3E%3Cpath d='M17 41q15 13 30 0' fill='none' stroke='%23000' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/tokens.css?v=21">
-<link rel="stylesheet" href="css/base.css?v=21">
-<link rel="stylesheet" href="css/components.css?v=21">
-<link rel="stylesheet" href="css/layout.css?v=21">
-<link rel="stylesheet" href="css/map.css?v=21">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=21">
+<link rel="stylesheet" href="css/tokens.css?v=23">
+<link rel="stylesheet" href="css/base.css?v=23">
+<link rel="stylesheet" href="css/components.css?v=23">
+<link rel="stylesheet" href="css/layout.css?v=23">
+<link rel="stylesheet" href="css/map.css?v=23">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=23">
 <title>ESP32 // LIVE SENSORS</title>
 </head>
 <body class="locked">
@@ -87,6 +87,7 @@
     </div>
 
     <div class="side-panel">
+      <div class="sheet-handle"></div>
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="live">LIVE</button>
         <button class="tab-btn" data-tab="wifi">WIFI</button>
@@ -149,6 +150,8 @@
             <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="wifiUp">--</div><div class="lbl"></div></div>
             <div class="hud-item"><div class="lbl">WiFi RSSI</div><div class="val" id="wifiRssi">--</div><div class="lbl">dBm</div></div>
             <div class="hud-item"><div class="lbl">Free Heap</div><div class="val" id="wifiHeap">--</div><div class="lbl">KB</div></div>
+            <div class="hud-item"><div class="lbl">Min Heap</div><div class="val" id="wifiHeapMin">--</div><div class="lbl">KB</div></div>
+            <div class="hud-item"><div class="lbl">Boots</div><div class="val" id="wifiBoot">--</div><div class="lbl"></div></div>
             <div class="hud-item"><div class="lbl">Last Update</div><div class="val" id="wifiLast">--</div><div class="lbl"></div></div>
           </div>
         </div>
@@ -195,94 +198,6 @@
   </div>
   </div>
   <!-- /desktop-layout -->
-
-  <!-- Mobile bottom sheet (CSS shows this below 900px, hidden on desktop) -->
-  <div class="side-panel mobile-sheet">
-    <div class="sheet-handle"></div>
-    <div class="tab-bar">
-      <button class="tab-btn active" data-tab="live">LIVE</button>
-      <button class="tab-btn" data-tab="wifi">WIFI</button>
-      <button class="tab-btn" data-tab="mpu">MPU</button>
-      <button class="tab-btn" data-tab="acs">ACS</button>
-    </div>
-    <div class="tab-panels-wrapper">
-
-      <!-- Mobile LIVE tab -->
-      <div class="tab-panel active" id="tab-live-mobile">
-        <div class="hud-card">
-          <h3>Telemetry</h3>
-          <div class="hud-grid">
-            <div class="hud-item"><div class="lbl">Speed</div><div class="val" id="liveSpeedMobile">--</div><div class="lbl">km/h</div></div>
-            <div class="hud-item"><div class="lbl">Altitude</div><div class="val" id="liveAltMobile">--</div><div class="lbl">m</div></div>
-            <div class="hud-item"><div class="lbl">Sats</div><div class="val" id="liveSatsMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">HDOP</div><div class="val" id="liveHdopMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">Fix</div><div class="val" id="liveFixMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">Heading</div><div class="val" id="liveCogMobile">--</div><div class="lbl">deg</div></div>
-            <div class="hud-item"><div class="lbl">Tilt</div><div class="val" id="liveTiltMobile">--</div><div class="lbl">deg</div></div>
-            <div class="hud-item"><div class="lbl">Amps</div><div class="val" id="liveAmpsMobile">--</div><div class="lbl">A</div></div>
-            <div class="hud-item"><div class="lbl">Odometer<button class="mini-btn operator-only" id="btnResetOdoMobile" title="Reset odometer">&#8635;</button></div><div class="val" id="liveDistMobile">--</div><div class="lbl">m</div></div>
-            <div class="hud-item"><div class="lbl">Trail</div><div class="val" id="liveTrailDistMobile">--</div><div class="lbl">km</div></div>
-            <div class="hud-item wide"><div class="lbl">Address</div><div class="val small" id="liveAddrMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">Max Speed</div><div class="val" id="liveMaxSpdMobile">--</div><div class="lbl">km/h</div></div>
-            <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="sUpMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">RSSI</div><div class="val" id="sRssiMobile">--</div><div class="lbl">dBm</div></div>
-            <div class="hud-item"><div class="lbl">Seq</div><div class="val" id="liveSeqMobile">--</div><div class="lbl">msgs</div></div>
-            <div class="hud-item"><div class="lbl">Gaps</div><div class="val" id="liveGapMobile">0</div><div class="lbl">lost</div></div>
-            <div class="hud-item"><div class="lbl">Age</div><div class="val" id="liveAgeMobile">--</div><div class="lbl">s</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Mobile WIFI tab -->
-      <div class="tab-panel" id="tab-wifi-mobile">
-        <div class="hud-card">
-          <h3>Device Status</h3>
-          <div class="hud-grid">
-            <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="wifiUpMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">WiFi RSSI</div><div class="val" id="wifiRssiMobile">--</div><div class="lbl">dBm</div></div>
-            <div class="hud-item"><div class="lbl">Free Heap</div><div class="val" id="wifiHeapMobile">--</div><div class="lbl">KB</div></div>
-            <div class="hud-item"><div class="lbl">Last Update</div><div class="val" id="wifiLastMobile">--</div><div class="lbl"></div></div>
-          </div>
-        </div>
-        <div class="hud-card">
-          <h3>WiFi Connection</h3>
-          <div class="hud-grid">
-            <div class="hud-item"><div class="lbl">SSID</div><div class="val" id="wifiSsidMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">BSSID</div><div class="val" id="wifiBssidMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">Channel</div><div class="val" id="wifiChanMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">Status</div><div class="val" id="wifiStatusMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">IP Address</div><div class="val" id="wifiIpMobile">--</div><div class="lbl"></div></div>
-            <div class="hud-item"><div class="lbl">MAC</div><div class="val" id="wifiMacMobile">--</div><div class="lbl"></div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Mobile ACS712 tab -->
-      <div class="tab-panel" id="tab-acs-mobile"></div>
-
-      <!-- Mobile MPU6050 tab -->
-      <div class="tab-panel" id="tab-mpu-mobile">
-        <div class="hud-card">
-          <h3>MPU6050</h3>
-          <div class="hud-grid">
-            <div class="hud-item"><div class="lbl">Temp</div><div class="val" id="tTempMobile">--</div><div class="lbl">C</div></div>
-            <div class="hud-item"><div class="lbl">Roll</div><div class="val" id="mpuRollMobile">--</div><div class="lbl">deg</div></div>
-            <div class="hud-item"><div class="lbl">Pitch</div><div class="val" id="mpuPitchMobile">--</div><div class="lbl">deg</div></div>
-            <div class="hud-item"><div class="lbl">Yaw</div><div class="val" id="mpuYawMobile">--</div><div class="lbl">deg</div></div>
-            <div class="hud-item"><div class="lbl">Max Tilt</div><div class="val" id="mpuMaxTiltMobile">--</div><div class="lbl">deg</div></div>
-            <div class="hud-item"><div class="lbl">Accel X</div><div class="val" id="mpuAxMobile">--</div><div class="lbl">g</div></div>
-            <div class="hud-item"><div class="lbl">Accel Y</div><div class="val" id="mpuAyMobile">--</div><div class="lbl">g</div></div>
-            <div class="hud-item"><div class="lbl">Accel Z</div><div class="val" id="mpuAzMobile">--</div><div class="lbl">g</div></div>
-            <div class="hud-item"><div class="lbl">Tilt</div><div class="val" id="mpuTiltMobile">--</div><div class="lbl">deg</div></div>
-            <div class="hud-item"><div class="lbl">Warn at</div><div class="val" id="mpuWarnMobile">--</div><div class="lbl">deg</div></div>
-            <div class="hud-item"><div class="lbl">Danger at</div><div class="val" id="mpuDangerMobile">--</div><div class="lbl">deg</div></div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
 
 <template id="tpl-acs">
   <div class="hud-card">
@@ -344,10 +259,10 @@
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=21"></script>
-<script src="ui/guard.js?v=21"></script>
-<script src="ui/map.js?v=21"></script>
-<script src="ui/mqtt-mini.js?v=21"></script>
-<script src="ui/app.js?v=21"></script>
+<script src="vendor/maplibre-gl-csp.js?v=23"></script>
+<script src="ui/guard.js?v=23"></script>
+<script src="ui/map.js?v=23"></script>
+<script src="ui/mqtt-mini.js?v=23"></script>
+<script src="ui/app.js?v=23"></script>
 </body>
 </html>

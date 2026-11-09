@@ -8,10 +8,10 @@ Anything marked **(board)** still needs the physical device on COM4.
 ```
 pio run -e esp32-mqtt-simple
 RAM:   16.0%  (52,368 / 327,680 bytes)
-Flash: 79.6%  (1,043,980 / 1,310,720 bytes)
+Flash: 79.8%  (1,046,044 / 1,310,720 bytes)
 ```
 
-Only **266 KB** of the application slot is free. This is the single most
+Only **264 KB** of the application slot is free. This is the single most
 important constraint in the project: a TLS client plus ECDSA signing plus a
 filesystem will not fit in the current layout.
 
@@ -102,6 +102,22 @@ HDOP ≤ the configured gate. The gate moved from 20 to 8 on this branch.
 
 Rotation is **not** done yet. It changes the public topic, so firmware and
 dashboard must ship together.
+
+## Long-uptime diagnostics (published in `sys`)
+
+| Field | Source | Use |
+|---|---|---|
+| `sys.heap` | `ESP.getFreeHeap()` at publish time | current headroom |
+| `sys.heap_min` | lowest free heap seen since boot | catches a slow leak before it bites |
+| `sys.boot` | `RTC_DATA_ATTR bootCount` | a rising value across sessions is a reboot loop |
+
+The task watchdog is armed at the end of `mqtt_simple_setup()` with a 30 s
+timeout, and `esp_task_wdt_reset()` runs at the top of `mqtt_simple_loop()`.
+A hang therefore reboots the chip, and the next payload's `sys.boot` proves it.
+The heap warning is logged once per boot below 40,000 bytes.
+
+Both are **compiled, not yet run on the board** (the device still has the
+previous build).
 
 ## Still needs the board
 

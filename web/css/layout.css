@@ -32,7 +32,7 @@ html, body { height: 100%; }
 }
 
 /* Map area — fills its grid cell */
-.map-area { grid-area: map; position: relative; display: flex; flex-direction: column; min-height: 0; }
+.map-area { grid-area: map; position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
 #map-container {
   width: 100%;
@@ -78,90 +78,56 @@ html, body { height: 100%; }
 }
 .tab-panel.active { display: block; }
 
-/* Mobile bottom sheet — hidden on desktop */
-.mobile-sheet { display: none; }
-
-/* ---- Mobile ---- */
+/* ---- Mobile: one column, same DOM as desktop ------------------------------
+   There is exactly one side panel in the page. On a phone it becomes the
+   bottom sheet; on a desktop it stays in the right column. A second copy of
+   the tabs and every HUD field used to live in the HTML and had to be updated
+   twice, which is how values drift apart. */
 @media (max-width: 900px) {
-  .app-shell { padding: 8px; gap: 8px; height: auto; min-height: 100dvh; overflow: visible; }
+  html, body { height: 100%; overflow: hidden; }
+  .app-shell { height: 100dvh; min-height: 0; padding: 6px; gap: 6px; overflow: hidden; }
 
-  .desktop-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr auto;
-    grid-template-areas:
-      "topbar"
-      "map"
-      "side";
-    flex: 1;
-    min-height: 0;
-  }
+  .desktop-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 6px; }
 
-  /* Hide desktop side panel on mobile */
-  .side-panel { display: none; }
+  .map-area { flex: 1; min-height: 0; }
+  #map-container { flex: 1; height: auto; max-height: none; min-height: 160px; }
 
-  /* Mobile bottom sheet — show on mobile only */
-  .mobile-sheet {
+  .top-bar { flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; flex-wrap: nowrap; }
+  .top-bar h1 { font-size: 1.05rem; line-height: 1.05; }
+  .top-bar .label-tag { font-size: 0.55rem; padding: 1px 4px; }
+  .pills { flex: 1; justify-content: flex-end; gap: 4px; flex-wrap: wrap; overflow-x: auto; scrollbar-width: none; }
+  .pills::-webkit-scrollbar { display: none; }
+  .pill { font-size: 0.58rem; padding: 2px 5px; border-width: 2px; white-space: nowrap; }
+
+  .status-strip { font-size: 0.68rem; padding: 4px 8px; gap: 6px; border-width: 2px; }
+  .status-strip small { font-size: 0.6rem; }
+
+  /* Same element as the desktop panel, restyled as the bottom sheet. */
+  .side-panel {
     display: flex;
     flex-direction: column;
-    position: fixed;
-    inset: auto 0 0 0;
     width: 100%;
-    max-height: 50vh;
-    background: var(--paper);
-    border-top: var(--border-w-thick) solid var(--ink);
-    box-shadow: -6px -6px 0 var(--ink);
-    z-index: 100;
-    padding: 10px;
-    min-height: 0;
-  }
-  .mobile-sheet .tab-bar {
+    height: 38dvh;
+    min-height: 180px;
     flex-shrink: 0;
-    z-index: 20;
-    background: var(--paper);
-    position: relative;
-  }
-  .mobile-sheet .tab-panels-wrapper {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-    z-index: 10;
-  }
-  .mobile-sheet .tab-panel {
-    display: none;
-  }
-  .mobile-sheet .tab-panel.active { display: block; }
-  /* Drag handle on sheet */
-  .sheet-handle {
-    width: 40px;
-    height: 8px;
-    background: var(--ink);
-    border: 2px solid var(--ink);
-    margin: 0 auto 8px;
-  }
-
-  /* Map takes good portion of screen on mobile but not overwhelming */
-  .map-area { grid-area: map; }
-  #map-container {
-    width: 100%;
-    height: 45vh;
-    max-height: 45vh;
+    padding: 6px 8px 8px;
     border: var(--border-w-thick) solid var(--ink);
-    box-shadow: var(--shadow);
+    gap: 0;
+    overflow: hidden;
   }
-
-  .top-bar-area { padding: 8px 10px; }
-  .top-bar { flex-direction: column; align-items: stretch; gap: 8px; }
-  .top-bar .pills { justify-content: center; }
+  .sheet-handle { display: none; }
+  .side-panel .tab-bar { margin-bottom: 6px; }
+  .side-panel .hud-card { padding: 8px; margin-bottom: 6px; }
+  .side-panel .hud-grid { gap: 6px; }
+  .side-panel .hud-item .val { font-size: 1rem; }
 
   .tab-btn { font-size: 0.65rem; padding: 6px 2px; }
-  .map-btn { width: 48px; height: 48px; font-size: 0.9rem; }
+  .map-btn { width: 44px; height: 44px; font-size: 0.85rem; border-width: 3px; }
+  .map-btns { bottom: 40px; right: 8px; gap: 6px; }
+  footer { display: none; }
 
-  .hud-card { padding: 10px; margin-bottom: 8px; }
-  .hud-card h3 { font-size: 0.8rem; margin-bottom: 6px; }
-  .hud-grid { gap: 6px; }
-  .hud-item { padding: 6px; }
-  .hud-item .lbl { font-size: 0.6rem; }
-  .hud-item .val { font-size: 1.2rem; }
+  /* Small but readable map credit. */
+  .maplibregl-ctrl-attrib { font-size: 0.5rem !important; padding: 2px 6px !important; line-height: 1.15; max-width: calc(100% - 70px); }
 }
 
 /* MPU chart canvas — fixed height so it can't stretch the panel */
@@ -284,56 +250,14 @@ html, body { height: 100%; }
 .mini-btn:active { transform: translate(1px, 1px); box-shadow: none; }
 
 /* ---------------------------------------------------------------------------
-   Mobile shell: a single column that never scrolls, so the map is never
-   hidden behind the bottom sheet and nothing overlaps.
+   Short landscape phones: hand as much height as possible back to the map.
+   The rest of the mobile layout is the single block at the top of this file.
 --------------------------------------------------------------------------- */
-@media (max-width: 900px) {
-  html, body { height: 100%; overflow: hidden; }
-  .app-shell { height: 100dvh; min-height: 0; padding: 6px; gap: 6px; overflow: hidden; }
-  footer { display: none; }
-
-  .top-bar { flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; flex-wrap: nowrap; }
-  .top-bar h1 { font-size: 1.05rem; line-height: 1.05; }
-  .top-bar .label-tag { font-size: 0.55rem; padding: 1px 4px; }
-  .pills { flex: 1; justify-content: flex-end; gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .pills::-webkit-scrollbar { display: none; }
-  .pill { font-size: 0.58rem; padding: 2px 5px; border-width: 2px; white-space: nowrap; }
-
-  .status-strip { font-size: 0.68rem; padding: 4px 8px; gap: 6px; border-width: 2px; }
-  .status-strip small { font-size: 0.6rem; }
-
-  .desktop-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 6px; }
-  .map-area { flex: 1; min-height: 0; }
-  #map-container { flex: 1; height: auto; max-height: none; min-height: 160px; }
-
-  .mobile-sheet {
-    display: flex;
-    flex-direction: column;
-    position: static;
-    inset: auto;
-    width: 100%;
-    height: 38dvh;
-    min-height: 180px;
-    max-height: none;
-    padding: 6px 8px 8px;
-    border-top: var(--border-w-thick) solid var(--ink);
-    box-shadow: none;
-    flex-shrink: 0;
-  }
-  .sheet-handle { display: none; }
-  .mobile-sheet .tab-bar { margin-bottom: 6px; }
-  .mobile-sheet .hud-card { padding: 8px; margin-bottom: 6px; }
-  .mobile-sheet .hud-grid { gap: 6px; }
-  .mobile-sheet .hud-item .val { font-size: 1rem; }
-}
-
-/* Short landscape phones: hand as much height as possible back to the map */
 @media (max-width: 900px) and (max-height: 520px) {
   .top-bar h1 { display: none; }
-  .mobile-sheet { height: 34dvh; min-height: 150px; }
+  .side-panel { height: 34dvh; min-height: 150px; }
   #map-container { min-height: 120px; }
 }
-
 
 /* Odometer reset sits in the cell corner instead of squeezing the label */
 .hud-item { position: relative; }
@@ -346,22 +270,5 @@ html, body { height: 100%; }
   height: 17px;
   font-size: 0.7rem;
   margin: 0;
-}
-
-@media (max-width: 900px) {
-  .pills { flex-wrap: wrap; justify-content: flex-start; overflow: visible; }
-  .pill { font-size: 0.54rem; padding: 2px 4px; }
-  .top-bar h1 { font-size: 0.95rem; }
-  /* compact attribution leaves the bottom of a short map readable */
-  .maplibregl-ctrl-attrib.maplibregl-compact { min-height: 24px; }
-  .maplibregl-ctrl-attrib { font-size: 0.6rem !important; }
-}
-
-
-@media (max-width: 900px) {
-  /* Keep the credit line readable but small, and lift the map buttons above it */
-  .maplibregl-ctrl-attrib { font-size: 0.5rem !important; padding: 2px 6px !important; line-height: 1.15; max-width: calc(100% - 70px); }
-  .map-btns { bottom: 40px; right: 8px; gap: 6px; }
-  .map-btn { width: 44px; height: 44px; font-size: 0.85rem; border-width: 3px; }
 }
 

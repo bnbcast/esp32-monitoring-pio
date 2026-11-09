@@ -95,7 +95,7 @@ function geoCache() {
 function setAddress(text, loading) {
   if (GEO.text === text && !loading) return;
   GEO.text = text;
-  const ids = ['hudAddress', 'liveAddr', 'liveAddrMobile'];
+  const ids = ['hudAddress', 'liveAddr'];
   for (const id of ids) {
     const el = $(id);
     if (!el) continue;
@@ -437,9 +437,9 @@ function acsSync() {
 function acsMount() {
   const tpl = $('tpl-acs');
   if (!tpl) return;
-  for (const id of ['tab-acs', 'tab-acs-mobile']) {
-    const host = $(id);
-    if (!host || host.dataset.acsMounted) continue;
+  const host = $('tab-acs');
+  if (!host || host.dataset.acsMounted) return;
+  {
     host.dataset.acsMounted = '1';
     host.appendChild(tpl.content.cloneNode(true));
     const q = s => host.querySelector(s);
@@ -536,15 +536,12 @@ function updateStatsDOM() {
   const trailM = trailMetres();
   if (el('hudDist')) el('hudDist').textContent = fmtKm(trailM);
   if (el('liveTrailDist')) el('liveTrailDist').textContent = fmtKm(trailM);
-  if (el('liveTrailDistMobile')) el('liveTrailDistMobile').textContent = fmtKm(trailM);
   const odo = odometerM(GPS.totalDist);
   if (el('vDist')) el('vDist').textContent = odo == null ? '--' : odo.toFixed(1);
   if (el('liveDist')) el('liveDist').textContent = odo == null ? '--' : odo.toFixed(1);
-  if (el('liveDistMobile')) el('liveDistMobile').textContent = odo == null ? '--' : odo.toFixed(1);
   if (el('vAvgSpd')) el('vAvgSpd').textContent = avgSpd.toFixed(1);
   if (el('vMaxSpd')) el('vMaxSpd').textContent = GPS.maxSpeed.toFixed(1);
   if (el('liveMaxSpd')) el('liveMaxSpd').textContent = GPS.maxSpeed.toFixed(1);
-  if (el('liveMaxSpdMobile')) el('liveMaxSpdMobile').textContent = GPS.maxSpeed.toFixed(1);
   if (el('vMoveT')) el('vMoveT').textContent = Math.round(GPS.movingTime);
   if (el('vElevGain')) el('vElevGain').textContent = Math.round(GPS.elevGain);
   if (el('vElevLoss')) el('vElevLoss').textContent = Math.round(GPS.elevLoss);
@@ -570,13 +567,10 @@ function updateSignalDOM() {
   if (!last) return;
   if ($('vHdop')) $('vHdop').textContent = last.hdop != null ? last.hdop.toFixed(2) : '--';
   if ($('liveHdop')) $('liveHdop').textContent = last.hdop != null ? last.hdop.toFixed(2) : '--';
-  if ($('liveHdopMobile')) $('liveHdopMobile').textContent = last.hdop != null ? last.hdop.toFixed(2) : '--';
   if ($('vSats')) $('vSats').textContent = last.sats != null ? last.sats : '--';
   if ($('liveSats')) $('liveSats').textContent = last.sats != null ? last.sats : '--';
-  if ($('liveSatsMobile')) $('liveSatsMobile').textContent = last.sats != null ? last.sats : '--';
   if ($('vFix')) $('vFix').textContent = last.fix ? 'VALID' : 'INVALID';
   if ($('liveFix')) $('liveFix').textContent = last.fix ? 'VALID' : 'INVALID';
-  if ($('liveFixMobile')) $('liveFixMobile').textContent = last.fix ? 'VALID' : 'INVALID';
   if ($('vChars')) $('vChars').textContent = GPS.lastChars != null ? GPS.lastChars + '/s' : '--';
 }
 
@@ -606,22 +600,16 @@ function renderData(d) {
   const parkedNow = (typeof MAP !== 'undefined' && MAP.isParked) ? MAP.isParked() : false;
   const spdTxt = !gps.fix ? 'NO FIX' : (parkedNow ? '0.0' : gv(gps.kmh));
   set('liveSpeed', spdTxt);
-  set('liveSpeedMobile', spdTxt);
   set('liveAlt', gv(gps.alt));
-  set('liveAltMobile', gv(gps.alt));
   set('liveFix', gps.fix ? 'VALID' : 'NO FIX');
-  set('liveFixMobile', gps.fix ? 'VALID' : 'NO FIX');
   set('liveTilt', fmt(d.tilt) + ' deg');
-  set('liveTiltMobile', fmt(d.tilt));
   set('liveAmps', ampsTxt);
-  set('liveAmpsMobile', ampsTxt);
   set('hudSpeed', spdTxt);
   set('gSpd', gps.fix ? (parkedNow ? '0.0 km/h' : (num(gps.kmh) ? fmt(gps.kmh) + ' km/h' : '--')) : 'NO FIX');
   if (num(gps.dist_m)) {
     const odo = odometerM(gps.dist_m);
     if (odo != null) {
       set('liveDist', odo.toFixed(1));
-      set('liveDistMobile', odo.toFixed(1));
     }
   }
 
@@ -658,9 +646,7 @@ function renderData(d) {
   // GPS values
   set('gSat', num(gps.sats) ? gps.sats : '--');
   set('liveSats', num(gps.sats) ? gps.sats : '--');
-  set('liveSatsMobile', num(gps.sats) ? gps.sats : '--');
   set('liveHdop', num(gps.hdop) ? gps.hdop.toFixed(2) : '--');
-  set('liveHdopMobile', num(gps.hdop) ? gps.hdop.toFixed(2) : '--');
   set('gLat', gps.fix ? fmt(gps.lat, 6) : 'NO FIX');
   set('gLng', gps.fix ? fmt(gps.lng, 6) : 'NO FIX');
   set('gAlt', gps.fix && num(gps.alt) ? fmt(gps.alt) + ' m' : (gps.fix ? '--' : 'NO FIX'));
@@ -672,15 +658,15 @@ function renderData(d) {
 
   // Device values
   set('sUp', num(d.up) ? uptime(d.up) : '--');
-  set('sUpMobile', num(d.up) ? uptime(d.up) : '--');
   set('sRssi', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
-  set('sRssiMobile', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
   set('sHeap', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
 
   // WiFi tab values (desktop)
   set('wifiUp', num(d.up) ? uptime(d.up) : '--');
   set('wifiRssi', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
   set('wifiHeap', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
+  set('wifiHeapMin', num(sys.heap_min) ? Math.round(sys.heap_min / 1024) + ' KB' : '--');
+  set('wifiBoot', num(sys.boot) ? sys.boot : '--');
   set('wifiLast', new Date().toLocaleTimeString());
 
   // WiFi connection info - sys object should have wifi data
@@ -692,37 +678,10 @@ function renderData(d) {
   set('wifiIp', wifi.ip || '--');
   set('wifiMac', wifi.mac || '--');
 
-  // WiFi tab values (mobile)
-  set('wifiUpMobile', num(d.up) ? uptime(d.up) : '--');
-  set('wifiRssiMobile', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
-  set('wifiHeapMobile', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
-  set('wifiLastMobile', new Date().toLocaleTimeString());
-  set('wifiSsidMobile', wifi.ssid || '--');
-  set('wifiBssidMobile', wifi.bssid || '--');
-  set('wifiChanMobile', wifi.channel || '--');
-  set('wifiStatusMobile', wifi.status || (num(sys.rssi) ? 'Connected' : 'Disconnected'));
-  set('wifiIpMobile', wifi.ip || '--');
-  set('wifiMacMobile', wifi.mac || '--');
-
-  // MPU6050 tab values (mobile)
-  set('tTempMobile', num(d.temp) ? fmt(d.temp) + ' C' : '--');
-  set('mpuRollMobile', fmt(d.roll));
-  set('mpuPitchMobile', fmt(d.pitch));
-  set('mpuYawMobile', fmt(d.yaw));
-  set('mpuMaxTiltMobile', fmt(d.maxTilt));
-  set('mpuAxMobile', fmt(d.ax, 2));
-  set('mpuAyMobile', fmt(d.ay, 2));
-  set('mpuAzMobile', fmt(d.az, 2));
-  set('mpuTiltMobile', fmt(d.tilt));
-  set('mpuWarnMobile', d.warn);
-  set('mpuDangerMobile', d.danger);
-
   // Device clock / delivery health
   set('liveSeq', num(d.seq) ? d.seq : '--');
-  set('liveSeqMobile', num(d.seq) ? d.seq : '--');
   if (num(d.seq)) {
     set('liveGap', seqGaps);
-    set('liveGapMobile', seqGaps);
   }
   if (num(d.ts) && d.ts > 0) {
     set('liveTs', new Date(d.ts * 1000).toISOString().slice(11, 19));
@@ -809,7 +768,6 @@ function renderBanner() {
   if ($('sAge')) $('sAge').textContent = lastLiveAt ? Math.round(age / 1000) + " s ago" : "--";
   const ageTxt = lastRxAt ? (Math.round((Date.now() - lastRxAt) / 1000) + '') : '--';
   if ($('liveAge')) $('liveAge').textContent = ageTxt;
-  if ($('liveAgeMobile')) $('liveAgeMobile').textContent = ageTxt;
   if ($('fTime')) $('fTime').textContent = new Date().toLocaleTimeString();
 
   // Heading readout
@@ -817,7 +775,6 @@ function renderBanner() {
     const h = MAP.getHeading();
     if ($('hudHeading')) $('hudHeading').textContent = Math.round(h.heading) + '\u00B0';
     if ($('liveCog')) $('liveCog').textContent = Math.round(h.heading);
-    if ($('liveCogMobile')) $('liveCogMobile').textContent = Math.round(h.heading);
     if ($('hudSource')) {
       $('hudSource').textContent = GPS.lastPoint
         ? GPS.lastPoint.lat.toFixed(4) + ', ' + GPS.lastPoint.lng.toFixed(4)
@@ -1039,11 +996,8 @@ if (!KEY) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
-      // Find target panel within the same container (desktop or mobile)
-      const container = btn.closest('.side-panel, .mobile-sheet');
-      let target = container ? container.querySelector('#tab-' + btn.dataset.tab) : null;
-      if (!target) target = $('tab-' + btn.dataset.tab + '-mobile');
-      if (!target) target = $('tab-' + btn.dataset.tab);
+      // One panel per tab now; there is no desktop/mobile duplicate to find.
+      const target = $('tab-' + btn.dataset.tab);
       if (target) target.classList.add('active');
     });
   });
@@ -1096,8 +1050,6 @@ if (!KEY) {
   if (btnResetTrip) btnResetTrip.addEventListener('click', () => resetTrip());
   const btnResetOdo = $('btnResetOdo');
   if (btnResetOdo) btnResetOdo.addEventListener('click', (e) => { e.stopPropagation(); resetOdometer(); });
-  const btnResetOdoM = $('btnResetOdoMobile');
-  if (btnResetOdoM) btnResetOdoM.addEventListener('click', (e) => { e.stopPropagation(); resetOdometer(); });
   if (typeof MAP !== 'undefined' && MAP.onMeasure) MAP.onMeasure(renderMeasure);
 
   // ---- Keyboard shortcuts -------------------------------------------------
