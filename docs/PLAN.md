@@ -138,13 +138,14 @@ Added here:
 3. **Boot counter** — `RTC_DATA_ATTR bootCount`, published as `sys.boot`, so a
    reboot loop is visible from the dashboard without any storage.
 
-The dashboard shows `sys.heap`; binding `heap_min` and `boot` to visible rows is
-the next diagnostic step, but the data is already on the wire.
+`sys.heap_min` and `sys.boot` are bound to rows in the WIFI tab
+(`wifiHeapMin`, `wifiBoot`), next to the live heap and uptime.
 
 **Verified on the board.** Watchdog armed, IMU-less boot, `boot=1` across
 minutes, `heap_min` present in every frame, and the history task running
-alongside MQTT without a reboot. A multi-hour soak is still running; see
-`BASELINE.md` for the measured window.
+alongside MQTT without a reboot. The soak is restarted after each firmware
+change so the measured window always describes the final binary; see
+`BASELINE.md`.
 
 A fourth measure came out of W3: the history task skips uploads below 90 KB
 free heap. A TLS handshake costs ~43 KB, so this keeps a transient spike from
@@ -155,7 +156,8 @@ as random disconnects under load.
 
 | Item | Why it is open |
 |---|---|
+| Flash + ACS verification | fix built and pushed (`0dd61cd`), but the board is off USB; needs `acs FAIL` with `zero 0.510 V` on COM4 |
+| 60-minute soak | restarted after the ACS change so the window describes the final binary |
 | Parked + drive captures | needs the vehicle outdoors; the Worker rules are covered by 15 tests, but real wander radius is unmeasured |
-| Multi-hour soak | in progress on the bench board |
 | ECDSA batch signing | measured as viable (174 ms per batch) but not implemented; the gate is plausibility only |
 | Custom domain | optional; `pages.dev` already works on the venue-class ISP |

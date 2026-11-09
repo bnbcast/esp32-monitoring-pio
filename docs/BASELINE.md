@@ -202,8 +202,33 @@ is expected indoors: the GPS had no NMEA, so no fix was ever enqueued.
 The 60-minute run is the one that backs the "long uptime" claim; this table is
 updated with its numbers when it finishes.
 
+## ACS712 presence: the false "OK" (found by the owner)
+
+With nothing wired to GPIO34 the dashboard showed `ACS OK`. Two independent
+checks were both wrong in the same way:
+
+| Layer | Old check | Why it passed with no sensor |
+|---|---|---|
+| Firmware `acsWiringOK()` | `acsFiltV` in 0.3-4.9 V | the floating pin sits at 0.51 V and calibration adopts it as the zero |
+| Dashboard `acsUpdate()` | raw `vTrue` in 0.3-4.9 V | same window, and it overrode the firmware bit |
+
+Both now require the **calibrated zero** to be near mid-supply, 2.2-2.8 V
+(the ACS712 rests at half its 5 V supply; 0.51 V means "nothing attached").
+The live reading stays bounded only by the ADC range, because it moves with
+current by design: +/-30 A would leave any mid-supply band.
+
+Evidence:
+
+| Check | Result |
+|---|---|
+| Firmware build | green, RAM 16.3% (53,288 B), flash 40.6% (1,276,000 B) |
+| Dashboard unit probe (Chromium) | `ok=false, v=0.51` -> `inRange=false`; `ok=true, v=2.50` -> `inRange=true` |
+| Live `?v=26` | deployed, `check-live` PASS, no page/CSP errors |
+| Serial `acs FAIL` after flash | pending: the board is off USB (no COM ports at the time of writing) |
+
 ## Still needs the board
 
-1. Real parked wander radius (lat/lon spread over 10 minutes).
-2. One drive capture (route, speed, odometer).
-3. The 60-minute soak result (in flight).
+1. Flash `0dd61cd` and confirm `acs FAIL` with `zero 0.510 V` (board unplugged).
+2. The 60-minute soak, restarted on that binary.
+3. Real parked wander radius (lat/lon spread over 10 minutes).
+4. One drive capture (route, speed, odometer).
