@@ -1,5 +1,5 @@
 /*
- * dev/check-live.mjs — Playwright gate for the deployed dashboard.
+ * dev/check-live.mjs â€” Playwright gate for the deployed dashboard.
  *
  * Verifies that the page loads, the MQTT link to the broker comes up, the map
  * renders, and that no asset 404s / CSP violations / JS errors occur.
@@ -9,7 +9,7 @@
  * Usage:
  *   node dev/check-live.mjs                                     # live Pages site
  *   node dev/check-live.mjs http://localhost:5003/?dev&t=dev-test-1234
- *   node dev/check-live.mjs https://bnbcast.github.io/esp32-monitoring-pio/ ea77aca95507194b8e46 20000
+ *   node dev/check-live.mjs https://bnbcast.github.io/esp32-monitoring-pio/ race-tracker 20000
  *
  * Args: [baseUrl] [topicKey] [waitMs]
  * Exit code 0 = pass, 1 = a hard error (JS error, 4xx asset, CSP violation,
@@ -18,7 +18,7 @@
 import { chromium } from 'playwright';
 
 const BASE = process.argv[2] || 'https://bnbcast.github.io/esp32-monitoring-pio/';
-const KEY = process.argv[3] || 'ea77aca95507194b8e46';
+const KEY = process.argv[3] || 'race-tracker';
 const WAIT = Number(process.argv[4] || 15000);
 const url = BASE.includes('?') ? BASE : BASE + '#t=' + KEY;
 

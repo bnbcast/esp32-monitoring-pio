@@ -28,23 +28,18 @@
 #endif
 
 // ============ NETWORK (EDIT THESE) ============
-// Candidate Wi-Fi networks, tried in order against what the ESP32 can see.
-// The first one that is actually visible wins, so the board comes up on
-// whatever hotspot is around without a reflash. Exact SSID match first, then
-// prefix match (e.g. "ESP32_AP2" matches "ESP32"). Empty password = open AP.
-struct WifiCandidate { const char* ssid; const char* pass; };
-static const WifiCandidate WIFI_NETS[] = {
-  { "Gi Joe",  "arduino1234" },
-  { "ESP32",   "" },
-};
-static const size_t WIFI_NET_COUNT = sizeof(WIFI_NETS) / sizeof(WIFI_NETS[0]);
+// Shared with src/bench so the measurement build joins the same APs.
+#include "../wifi_config.h"
 
 #define MQTT_HOST     "broker.hivemq.com"
 #define MQTT_PORT     1883
 
 // Random key that makes your topic unguessable. Anyone who knows it can watch.
 // Generate a new one if you ever want to "rotate the lock".
-#define TOPIC_KEY     "ea77aca95507194b8e46"
+// One readable default, shared with web/ui/app.js. The old random hex key was
+// never secret (it ships in public JS), and it forced every user to edit two
+// files. Open the dashboard with #t=<slug> to run a second tracker.
+#define TOPIC_KEY     "race-tracker"
 #define TOPIC_DATA    "esp32-dash/" TOPIC_KEY "/data"
 #define TOPIC_STATUS  "esp32-dash/" TOPIC_KEY "/status"
 

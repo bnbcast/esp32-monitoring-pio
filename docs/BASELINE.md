@@ -6,14 +6,14 @@ Anything marked **(board)** still needs the physical device on COM4.
 ## Build (verified locally)
 
 ```
-pio run -e esp32-mqtt-simple
+pio run -e esp32-mqtt-simple      # after huge_app.csv was applied
 RAM:   16.0%  (52,368 / 327,680 bytes)
-Flash: 79.8%  (1,046,044 / 1,310,720 bytes)
+Flash: 33.3%  (1,046,136 / 3,145,728 bytes)
 ```
 
-Only **264 KB** of the application slot is free. This is the single most
-important constraint in the project: a TLS client plus ECDSA signing plus a
-filesystem will not fit in the current layout.
+Before the partition change the same build used 79.8% of a 1.25 MiB slot.
+With `huge_app.csv` there are **2.0 MB free** for TLS, a LittleFS ring buffer
+and future code. The OTA slot is gone; USB flashing is the update path.
 
 | Item | Value |
 |---|---|
@@ -25,28 +25,42 @@ filesystem will not fit in the current layout.
 
 ## Partition layout (from the Arduino core package)
 
-`default.csv`, currently active:
+`huge_app.csv`, **applied and flashed** (`board_build.partitions` in
+`platformio.ini`):
 
 | Partition | Size | Note |
 |---|---|---|
-| nvs | 20 KB | unused today |
+| nvs | 20 KB | boot counter |
 | otadata | 8 KB | |
-| app0 | 1,310,720 B (1.25 MiB) | the build limit above |
-| app1 | 1,310,720 B | OTA slot, **unused** (no OTA code exists) |
-| spiffs | 1,441,792 B | unused today |
+| app0 | 3,145,728 B (3 MiB) | 33.3% used |
+| spiffs | 917,504 B (896 KB) | LittleFS ring buffer target |
 | coredump | 64 KB | |
 
-`huge_app.csv` (not applied):
+**Decision:** approved by the owner. It triples application space and keeps
+896 KB for the batch buffer, at the cost of the OTA slot that nothing uses.
+Flashing the new table requires one USB reflash; done on 2026-11-09.
 
-| Partition | Size |
+## TLS and ECDSA on the board (measured)
+
+One-shot bench build (`pio run -e esp32-bench`), ESP32-D0WD-V3, RSSI -40,
+`cloudflare.com:443` (the future Worker's front end):
+
+| Measurement | Result |
 |---|---|
-| app0 | 3,145,728 B (3 MiB) |
-| spiffs | 917,504 B (896 KB) |
+| TLS connect, `setInsecure()` | 800 ms, 43.4 KB heap |
+| TLS connect, built-in CA bundle | 1,731–1,981 ms, 42.6 KB heap |
+| Peak transient | ~98 KB below the pre-connect free heap |
+| Low-water free heap | 132,072 B (bench had 230 KB before) |
+| ECDSA P-256 keygen | 163 ms |
+| ECDSA P-256 sign | **174 ms** avg (20 runs), 72 B signature |
+| ECDSA key heap | ~1 KB |
 
-**Recommendation:** switch to `huge_app.csv` before any TLS/storage work. It
-triples the application space and keeps ~900 KB for a ring buffer, at the cost
-of the OTA slot that nothing uses. It requires a USB reflash to take effect, so
-it is left as a decision rather than applied silently.
+Consequences for W3:
+
+- A 30 s batch fits comfortably: one handshake per batch, not per frame.
+- Verification is affordable, so `setInsecure()` is not needed.
+- **Never sign per frame.** 174 ms at 1 Hz is 17% of one core; one signature
+  per 30 s batch is ~0.6% duty and still proves the whole batch.
 
 ## Transport
 
@@ -96,12 +110,15 @@ HDOP ≤ the configured gate. The gate moved from 20 to 8 on this branch.
 
 | Secret | Location | Status |
 |---|---|---|
-| Wi-Fi password | `mqtt_simple.cpp:26` | in source and git history — burned |
-| `TOPIC_KEY` | `mqtt_simple.cpp:36` | in source and git history — burned |
+| Wi-Fi password | `src/wifi_config.h` | in source and git history — burned |
+| `TOPIC_KEY` | `mqtt_simple.cpp`, `web/ui/app.js` | **not a secret**; fixed slug `race-tracker` |
 | `.env` | repo root | gitignored, AI provider keys |
 
-Rotation is **not** done yet. It changes the public topic, so firmware and
-dashboard must ship together.
+`TOPIC_KEY` is now a readable default shared by firmware and dashboard, so a
+fork works with no edits. It was never secret (it shipped in public JS); the
+20-hex value only created a two-file edit. A second tracker changes that one
+firmware line and opens the dashboard with `#t=<slug>`. The plausibility gate,
+not the topic name, is the protection.
 
 ## Long-uptime diagnostics (published in `sys`)
 
@@ -116,13 +133,14 @@ timeout, and `esp_task_wdt_reset()` runs at the top of `mqtt_simple_loop()`.
 A hang therefore reboots the chip, and the next payload's `sys.boot` proves it.
 The heap warning is logged once per boot below 40,000 bytes.
 
-Both are **compiled, not yet run on the board** (the device still has the
-previous build).
+**Verified on the board** (flash 2026-11-09): boot without an IMU, `task
+watchdog armed (30 s)`, `ready`, Wi-Fi + MQTT up, 1 Hz on the new topic, and
+`heap_min` present in every frame. Over 7.5 minutes: `boot=1`, `seq=421`,
+`heap=216120`, `heap_min=206456` — no reboot and no downward heap trend.
 
 ## Still needs the board
 
-1. Free heap with MQTT connected.
-2. Free heap during one TLS handshake.
-3. ECDSA P-256 sign time at 240 MHz.
-4. Behaviour under a watchdog while doing TLS + MQTT + GPS.
-5. Real parked wander radius (lat/lon spread over 10 minutes).
+1. Behaviour under a watchdog while doing TLS + MQTT + GPS at the same time.
+2. Real parked wander radius (lat/lon spread over 10 minutes).
+3. One drive capture (route, speed, odometer).
+4. A multi-hour soak with `sys.heap_min` and `sys.boot` logged.

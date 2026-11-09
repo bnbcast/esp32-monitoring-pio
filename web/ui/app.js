@@ -12,8 +12,9 @@ const BROKER_URL = DEV_MODE ? 'ws://localhost:5003/mqtt' : 'wss://broker.hivemq.
 const TOPIC_ROOT = "esp32-dash/";
 // Must match TOPIC_KEY in src/mqtt_simple/mqtt_simple.cpp. Used only when the
 // page is opened without a #t=<key> fragment, so the deployed dashboard shows
-// live data straight away instead of the setup form.
-const DEFAULT_KEY = 'ea77aca95507194b8e46';
+// live data straight away instead of the setup form. A second tracker changes
+// that one firmware line and opens the dashboard with #t=<slug>.
+const DEFAULT_KEY = 'race-tracker';
 const STALE_AFTER_MS = 6000;
 const N = 120;
 

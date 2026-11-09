@@ -24,7 +24,7 @@ function arg(name, fallback) {
 }
 
 const OUT = arg('out', '');
-const KEY = arg('key', process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'ea77aca95507194b8e46');
+const KEY = arg('key', process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'race-tracker');
 const DUR = Number(arg('dur', process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : 60000));
 
 const topics = [`esp32-dash/${KEY}/data`, `esp32-dash/${KEY}/status`];

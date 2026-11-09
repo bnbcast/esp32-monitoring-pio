@@ -19,7 +19,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 |---|---|---|---|
 | W1 | **Stabilize** — parked drift, odometer creep, heading decay, 1 Hz, HDOP gate | **done on this branch** | `npm test`, `pio run`, diff below |
 | W2 | **Protect** — plausibility gate on every live frame | **done on this branch** | `test/guard.test.js` 14/14 |
-| W3 | **History** — Worker + D1 + device buffer | **Worker ready, account pending** | `worker/`, `docs/CLOUDFLARE.md`, `node --check` |
+| W3 | **History** — Worker + D1 + device buffer | **Worker ready, device path next** | `worker/`, `docs/CLOUDFLARE.md`, TLS/ECDSA measured |
 | W4 | **Mobile + lock mode** — one DOM, spectator default | **done on this branch** | single panel, 5 viewports, lock probe |
 
 ## W1 — Stabilize (this branch)
@@ -46,10 +46,10 @@ explain, and absurd timestamps.
 Reboots are detected by `up` going backwards, so rejecting a seq restart is
 safe.
 
-**Not done:** ECDSA signing. It cannot be designed until the board reports sign
-time and heap. Until then the gate is plausibility only, and a determined
-attacker who knows the topic can still publish a plausible-looking fake. That
-is a known, documented limitation.
+**Not done:** ECDSA signing. Measured: 174 ms per P-256 signature, so signing
+every frame is not viable; one signature per 30 s batch is. Until that exists
+the gate is plausibility only, and a determined attacker who knows the topic
+can still publish a plausible-looking fake. Known, documented limitation.
 
 ## W3 — History (Worker ready, account pending)
 
@@ -57,14 +57,19 @@ The free Worker and D1 schema are in `worker/`; the owner walkthrough is
 `docs/CLOUDFLARE.md`. The Worker does verification, idempotent inserts,
 parked downsampling, `/history`, and 365-day retention.
 
-Firmware work still waits for all three:
+Gates:
 
-1. Cloudflare account exists and the Worker is deployed (owner).
-2. `huge_app.csv` is flashed (frees 3 MB of app space — see `BASELINE.md`).
-3. Board reports TLS handshake heap and ECDSA timing.
+1. Cloudflare account exists and the Worker is deployed (owner) — **pending**.
+2. `huge_app.csv` is flashed — **done**, app slot 3 MiB, 33.3% used.
+3. TLS handshake heap and ECDSA timing — **done** (see `BASELINE.md`):
+   verified handshake 1.7–2.0 s / 42.6 KB, low-water 132 KB;
+   ECDSA P-256 sign 174 ms, so **no per-frame signing**.
 
 Design, unchanged: LittleFS ring buffer, 30 s HTTPS batch, Worker verifies and
 inserts into D1, ack deletes the batch, weekly GitHub export.
+
+Decision recorded: the topic is now the fixed slug `race-tracker` (firmware and
+dashboard), removing the burned random key. A second tracker uses `#t=<slug>`.
 
 ## W4 — Mobile + lock mode
 
