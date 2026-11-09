@@ -510,7 +510,11 @@ function acsUpdate(acs, peakA) {
   const vTrue = acs.v * scale;
   const zeroTrue = (ACS.zero != null) ? ACS.zero : (num(acs.zero) ? acs.zero * scale : 0);
   const amps = (vTrue - zeroTrue) / (ACS.sens || 0.185);
-  const inRange = vTrue > 0.3 && vTrue < 4.9;
+  // Presence is the firmware's call: it owns the calibrated zero and (since
+  // 1.3.1) requires that zero to sit near mid-supply. A second 0.3-4.9 V
+  // "presence" test here is what made the pill read ACS OK on a floating
+  // pin. The raw range is only used for the numeric readout.
+  const inRange = !!acs.ok && vTrue > 0.05 && vTrue < 4.9;
   ACS.last = { vTrue, zeroTrue, amps, inRange, raw: acs };
   ACS.hist.push(inRange ? amps : 0);
   if (ACS.hist.length > ACS.maxHist) ACS.hist.shift();
