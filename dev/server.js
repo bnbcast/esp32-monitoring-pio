@@ -266,6 +266,11 @@ function startSimulator() {
   let angle = 0;
   let totalDistM = 0;
   let lastLat = 0, lastLng = 0;
+  // The dashboard's plausibility gate keys off seq/up/ts, so the simulator has
+  // to publish them exactly like the firmware does (monotonic seq, uptime in
+  // seconds, GPS epoch when a fix exists).
+  let simSeq = 0;
+  const simStart = Date.now();
   let originSet = false;
 
   // Circular route: 100m radius, completes one lap every ~2 minutes
@@ -366,7 +371,9 @@ function startSimulator() {
       };
 
       const msg = JSON.stringify({
-        up: Math.floor(Date.now() / 1000),
+        seq: ++simSeq,
+        ts: fix ? Math.floor(Date.now() / 1000) : 0,
+        up: Math.floor((Date.now() - simStart) / 1000),
         mpu: true,
         roll: 5 * Math.sin(angle),
         pitch: 3 * Math.cos(angle),

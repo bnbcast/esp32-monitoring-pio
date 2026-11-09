@@ -31,7 +31,13 @@ page.on('console', m => {
   if (/Content Security Policy|Refused to/i.test(m.text())) csp.push(m.text());
 });
 page.on('pageerror', e => pageErrors.push(String((e && e.stack) || e)));
-page.on('requestfailed', r => failed.push(`${r.url()} :: ${(r.failure() || {}).errorText}`));
+page.on('requestfailed', r => {
+  const err = (r.failure() || {}).errorText || '';
+  // Tiles still in flight when the page closes abort with ERR_ABORTED. That is
+  // teardown noise, not a broken asset, and counting it made this gate cry wolf.
+  if (err === 'net::ERR_ABORTED') return;
+  failed.push(`${r.url()} :: ${err}`);
+});
 page.on('response', r => { if (r.status() >= 400) failed.push(`HTTP ${r.status()} ${r.url()}`); });
 
 await page.goto(url, { waitUntil: 'domcontentloaded' });

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, 'phase-*' ]
+  pull_request:
+
+jobs:
+  firmware:
+    name: Firmware build (esp32-mqtt-simple)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Build
+        run: pio run -e esp32-mqtt-simple
+      - name: Report flash usage
+        run: |
+          size "$(find .pio/build/esp32-mqtt-simple -name firmware.elf | head -1)" || true
+
+  dashboard:
+    name: Dashboard checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          for f in web/ui/*.js dev/*.mjs; do
+            node --check "$f"
+          done
+      - name: Unit tests
+        run: node --test test/guard.test.js

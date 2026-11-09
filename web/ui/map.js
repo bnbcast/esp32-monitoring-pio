@@ -148,6 +148,8 @@ const MAP = (function () {
   // Parked-receiver noise often arrives as a single 5-10 m jump. A move is only
   // believed after this many consecutive readings agree on it.
   let stillCount = 0;
+  let movingConfirm = 0;        // consecutive samples that say "moving"
+  let parkedConfirm = 0;        // consecutive samples that say "parked"
   let pending = { lat: null, lng: null };
   let pendingD = 0;             // distance of that pending point from the anchor
   let lastAcceptTs = 0;         // wall clock of the last accepted point
@@ -541,8 +543,15 @@ const MAP = (function () {
           const tight = recentSpreadM() < Math.max(6, acc);
           const walking = recentDisplacementM(lat, lng) > 20;   // sustained, not wander
           const moving = !tight && (numOr0(speed) >= 6.0 || walking);
-          const parked = !moving;
-          parkedNow = parked;
+
+          // Hysteresis: a single noisy sample must not flip the state. Two
+          // consecutive samples are needed in either direction, so the marker
+          // cannot oscillate between "parked" and "moving" at the boundary.
+          if (moving) { movingConfirm++; parkedConfirm = 0; }
+          else { parkedConfirm++; movingConfirm = 0; }
+          if (movingConfirm >= 2) parkedNow = false;
+          else if (parkedConfirm >= 2) parkedNow = true;
+
           const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2.5);
 
           // A move must be confirmed by consecutive readings that keep going the

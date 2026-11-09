@@ -107,9 +107,11 @@ function setAddress(text, loading) {
 function formatAddress(j) {
   const a = (j && j.address) || {};
   const road = a.road || a.pedestrian || a.footway || a.cycleway || a.path || a.residential;
+  const roadLine = [a.house_number, road].filter(Boolean).join(' ');
   const area = a.suburb || a.village || a.neighbourhood || a.hamlet || a.city_district;
-  const city = a.city || a.town || a.municipality || a.county || a.state;
-  const parts = [road, area, city].filter(Boolean);
+  const cityLine = [a.city || a.town || a.municipality || a.county || a.state, a.postcode]
+    .filter(Boolean).join(' ');
+  const parts = [roadLine, area, cityLine].filter(Boolean);
   if (parts.length) return parts.slice(0, 3).join(', ');
   const d = (j && j.display_name) || '';
   return d.split(',').slice(0, 2).join(',').trim();
@@ -148,10 +150,10 @@ async function fetchAddress(lat, lng) {
       try { localStorage.setItem('geoCache', JSON.stringify(cache)); } catch (e) { /* quota */ }
       setAddress(text, false);
     } else {
-      setAddress('alamat tidak ditemukan', false);
+      setAddress('address not found', false);
     }
   } catch (e) {
-    setAddress(GEO.blockedUntil > Date.now() ? 'alamat tidak tersedia' : 'alamat tidak tersedia', false);
+    setAddress('address unavailable', false);
   } finally {
     if (timer) clearTimeout(timer);
     GEO.pending = false;
@@ -204,6 +206,7 @@ let warn = 30, danger = 50;
 let last = null;
 let lastFixPos = null;
 let lastFixTs = 0;
+let staleAnnounced = false;
 let lastLiveAt = 0;
 let lastPush = 0;
 let linkState = "connecting";
@@ -240,7 +243,28 @@ function bearingDeg(lat1, lng1, lat2, lng2) {
 // ---- GPS ingestion (unchanged data path) ---------------------------------
 function ingestGPS(g) {
   if (window.isReplaying || !window.isRecording) return;
-  if (!g || !g.fix || typeof g.lat !== 'number' || typeof g.lng !== 'number') return;
+  if (!g) return;
+
+  // Health first. This used to sit below the "no fix" early return, so chars/s
+  // was never updated while the receiver had no lock - exactly the case the
+  // "NO SKY / SEARCHING" states need to distinguish.
+  if (typeof g.chars === 'number') {
+    const nowC = Date.now();
+    const dtC = (nowC - GPS.lastCharsTs) / 1000 || 1;
+    const delta = g.chars - GPS.lastCharsVal;
+    // A reboot resets the counter; treat a negative delta as a new baseline
+    // instead of publishing a nonsense rate.
+    GPS.lastChars = (GPS.lastCharsTs && delta >= 0)
+      ? Math.round(delta / dtC)
+      : 0;
+    GPS.lastCharsVal = g.chars;
+    GPS.lastCharsTs = nowC;
+    // Render immediately: the health panel must stay live even when the
+    // position block below returns early for a missing fix.
+    if ($('vChars')) $('vChars').textContent = GPS.lastChars + '/s';
+  }
+
+  if (!g.fix || typeof g.lat !== 'number' || typeof g.lng !== 'number') return;
 
   const now = Date.now();
   // Simple local projection from first fix
@@ -283,12 +307,6 @@ function ingestGPS(g) {
   GPS.trace.push(pt);
   if (GPS.trace.length > GPS.maxPoints) GPS.trace.shift();
 
-  if (typeof g.chars === 'number') {
-    const dtC = (now - GPS.lastCharsTs) / 1000 || 1;
-    GPS.lastChars = Math.round((g.chars - (GPS.lastCharsTs ? GPS.lastCharsVal : g.chars)) / dtC);
-    GPS.lastCharsVal = g.chars;
-    GPS.lastCharsTs = now;
-  }
   if (pt.kmh > GPS.maxSpeed) GPS.maxSpeed = pt.kmh;
 
   updateStatsDOM();
@@ -539,11 +557,11 @@ function renderMeasure({ a, b, distM }) {
   box.hidden = false;
   const val = $('measureValue');
   const hint = $('measureHint');
-  if (!a) { if (val) val.textContent = '--'; if (hint) hint.textContent = 'klik titik A di peta'; }
-  else if (!b) { if (val) val.textContent = '--'; if (hint) hint.textContent = 'klik titik B di peta'; }
+  if (!a) { if (val) val.textContent = '--'; if (hint) hint.textContent = 'tap point A on the map'; }
+  else if (!b) { if (val) val.textContent = '--'; if (hint) hint.textContent = 'tap point B on the map'; }
   else {
     if (val) val.textContent = fmtDist(distM);
-    if (hint) hint.textContent = 'klik lagi untuk ukur ulang';
+    if (hint) hint.textContent = 'tap again to measure';
   }
 }
 
@@ -738,11 +756,17 @@ function renderBanner() {
   const age = Date.now() - lastLiveAt;
   const live = lastLiveAt > 0 && age < STALE_AFTER_MS;
 
-  // Stale / no-fix handling for map marker
+  // A stale fix must not move or rotate the marker. Announce the loss once and
+  // keep the last known heading: feeding heading 0 here (as the old code did on
+  // every tick) decayed the compass towards north while the vehicle sat still.
   if (typeof MAP !== 'undefined' && MAP.isReady()) {
     const staleFix = lastFixPos && lastFixTs > 0 && (Date.now() - lastFixTs) > 2000;
-    if (staleFix && lastFixPos) {
-      MAP.setVehicle(lastFixPos.lng, lastFixPos.lat, 0, 0, null, false, Date.now());
+    if (staleFix && !staleAnnounced) {
+      MAP.setVehicle(lastFixPos.lng, lastFixPos.lat, MAP.getHeading().heading,
+        0, null, false, Date.now());
+      staleAnnounced = true;
+    } else if (!staleFix) {
+      staleAnnounced = false;
     }
   }
 
@@ -815,6 +839,17 @@ function onMessage(topic, payload, retained) {
   try { d = JSON.parse(payload); } catch (e) { return; }
   if (!validData(d)) return;
 
+  // One gate for every live frame. A public broker means anyone can publish
+  // here, so a frame has to survive plausibility checks before it can touch the
+  // map, the trip meter or the charts.
+  if (typeof GUARD !== 'undefined') {
+    const verdict = GUARD.accept(d);
+    if (!verdict.ok) {
+      if (verdict.reason !== 'flood') console.warn('[guard] dropped frame:', verdict.reason, 'seq', d.seq);
+      return;
+    }
+  }
+
   last = d;
 
   // Ask for the street name even when the vehicle is parked and sends no new
@@ -881,6 +916,80 @@ if (simBadge) simBadge.style.display = DEV_MODE ? '' : 'none';
 
 const TOPIC_DATA = KEY ? TOPIC_ROOT + KEY + "/data" : "";
 const TOPIC_STATUS = KEY ? TOPIC_ROOT + KEY + "/status" : "";
+
+// ---- Lock mode -----------------------------------------------------------
+// Spectator by default. Controls that reset or change local state are hidden
+// until the operator holds the lock button for 1.2 s, and hide again after two
+// idle minutes. This is accident protection, not authentication: nothing here
+// reaches the device.
+const LOCK = (function () {
+  const IDLE_MS = 120000;
+  const HOLD_MS = 1200;
+  let locked = true;
+  let idleTimer = 0;
+  let holdTimer = 0;
+  let suppressClick = false;
+
+  function paint() {
+    document.body.classList.toggle('locked', locked);
+    const b = $('btnLock');
+    if (!b) return;
+    b.textContent = locked ? 'LOCKED' : 'OPERATOR';
+    b.classList.toggle('on', !locked);
+    b.setAttribute('aria-pressed', String(!locked));
+  }
+
+  function lock() {
+    locked = true;
+    suppressClick = false;
+    if (idleTimer) clearTimeout(idleTimer);
+    if (holdTimer) clearTimeout(holdTimer);
+    idleTimer = holdTimer = 0;
+    paint();
+  }
+
+  function arm() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(lock, IDLE_MS);
+  }
+
+  function unlock() {
+    locked = false;
+    paint();
+    arm();
+  }
+
+  const btn = $('btnLock');
+  if (btn) {
+    btn.addEventListener('pointerdown', (e) => {
+      if (!locked) return;
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => { suppressClick = true; unlock(); }, HOLD_MS);
+    });
+    const cancel = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; } };
+    btn.addEventListener('pointerup', cancel);
+    btn.addEventListener('pointerleave', cancel);
+    btn.addEventListener('pointercancel', cancel);
+    // The click that follows a successful hold must not immediately relock.
+    btn.addEventListener('click', () => {
+      if (suppressClick) { suppressClick = false; return; }
+      if (!locked) lock();
+    });
+    btn.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      if (locked) unlock(); else lock();
+    });
+  }
+
+  // Any interaction while unlocked postpones the relock.
+  document.addEventListener('pointerdown', () => { if (!locked) arm(); }, true);
+  document.addEventListener('keydown', () => { if (!locked) arm(); }, true);
+
+  paint();
+  return { lock, unlock, arm, isLocked: () => locked };
+})();
+window.LOCK = LOCK;
 
 if (!KEY) {
   $('setup').style.display = 'block';
@@ -997,8 +1106,8 @@ if (!KEY) {
     const k = e.key.toLowerCase();
     if (k === 'c' && typeof MAP !== 'undefined') { e.preventDefault(); MAP.recenterNow(); }
 
-    else if (k === 'm') { e.preventDefault(); toggleMeasure(); }
-    else if (k === 'r') { e.preventDefault(); resetTrip(); }
+    else if (k === 'm') { if (LOCK.isLocked()) return; e.preventDefault(); toggleMeasure(); }
+    else if (k === 'r') { if (LOCK.isLocked()) return; e.preventDefault(); resetTrip(); }
     else if (k === 'escape') { e.preventDefault(); toggleMeasure(false); }
   });
 

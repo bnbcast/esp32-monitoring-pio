@@ -286,3 +286,24 @@ footer {
 .cfg select { width: 100%; }
 
 .mini-chart { height: 64px; }
+
+/* ---- Lock mode ----------------------------------------------------------
+   Spectator is the default. Destructive and tool controls are removed from the
+   layout, not merely disabled, so a pocket tap cannot reset the trip or start
+   the measure tool. This is accident protection, not authentication. */
+body.locked .operator-only { display: none !important; }
+
+.lock-btn {
+  font: inherit;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+  border: 2px solid var(--ink, #000);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  min-height: 32px;
+}
+.lock-btn.on { background: var(--ink, #000); color: #fff; }
+.lock-btn { -webkit-user-select: none; user-select: none; }

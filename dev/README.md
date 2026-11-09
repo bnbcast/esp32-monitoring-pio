@@ -1,118 +1,55 @@
-# Dev Server — ESP32 Dashboard Testing
+# Dev tooling
 
-Local environment to test the web dashboard without ESP32 hardware.
+Everything here runs on the workstation, not on the ESP32.
 
-## Quick Start
+## Local simulator
 
-```bash
-cd dev
-npm install      # one time
-npm start        # starts server at http://localhost:5002
+```powershell
+npm run dev
 ```
 
-Then open: **http://localhost:5003/?dev&t=dev-test-1234**
+- Serves the dashboard from `web/` at **http://localhost:5003/?dev&t=dev-test-1234**
+- Runs a WebSocket MQTT broker at `ws://localhost:5003/mqtt`
+- Publishes simulated GPS/MPU/ACS frames at 1 Hz
 
-## What It Does
+The topic key in dev mode is `dev-test-1234`, not the production key.
 
-- Serves `web/` static files
-- WebSocket MQTT broker at `ws://localhost:5003/mqtt`
-- GPS simulator publishes circular-route telemetry every 200ms:
-  - Lat/lng on a 100m radius circle (San Francisco center)
-  - Altitude varying ±15m sinusoidally
-  - Speed 5–25 km/h
-  - Course-over-ground tangent to the circle
-  - HDOP 0.8–3.0 (color-codes the 3D trace)
-  - Satellite count 8–12
-  - Occasional fix dropouts (~2%)
-  - Cumulative odometer (device-side `dist_m`)
+## Live traffic
 
-## Features You Can Test
-
-| Panel | What to look for |
-|---|---|
-| [07] 3D GPS Trace | Rotating 3D line, red→green HDOP color, position cone |
-| [08] Elevation Profile | Sinusoidal altitude vs. distance curve |
-| [09] Trip Computer | Distance climbing, avg/max speed, elev gain/loss |
-| [10] Signal Quality | HDOP, sats, fix status flickering |
-| [11] Compass | Heading needle rotating with COG |
-| Controls | Record/Pause, Replay, Clear, speed slider |
-
-## Features You Can Test
-
-| Panel | What to look for |
-|---|---|
-| Status strip (top) | SAFE / WARNING / DANGER / NO SIGNAL + tilt, warn, danger |
-| Status pills | Broker, Device, MPU, ACS, GPS state |
-| Live tab (side panel) | Speed, altitude, sats, HDOP, fix, heading, tilt, amps, distance, max speed |
-| Controls | Record/Pause, Replay, Clear, speed slider, units |
-| LEDs | Blue (safe), White (warn), Red (danger) |
-| Map HUD | Speed, heading, source, danger overlaid on the map |
-| View toggle | 2D MAP ↔ 3D STREET (top bar + map buttons) |
-| Theme toggle | Light ↔ Dark |
-
-### Map / Heading (free, key-less MapLibre + CartoDB)
-Two views switchable from the top bar:
-
-**2D MAP**: full-screen CartoDB raster map (Dark Matter default / Positron light),
-vehicle marker, speed-colored trail, accuracy circle, translucent heading wedge
-(view cone ~ confidence). Map HUD shows speed / heading / source / danger.
-
-**3D STREET**: Three.js street-view canvas with asphalt ground, road markings,
-building blocks, and a dead-reckoned F1 car driven by GPS speed + fused heading.
-Camera modes: Chase (behind), Driver (cockpit), Orbit (above). Keys: 1/2/3.
-
-- **Heading sources (Auto default)**: GPS course when moving >3 km/h with good HDOP;
-  otherwise MPU6050 gyro integrated from last GPS (drift pulled back to GPS).
-  Optional phone compass or `mag_heading` if present. Source label + confidence
-  shown in the HUD and heading badge.
-- **My-location button** (bottom-right on map): cycles Recenter → Follow → Compass →
-  North-up. Panning/rotating drops to Free and shows Recenter (auto-resumes after 3 s).
-- **Compass button** (bottom-right on map): tap resets North; long-press locks North.
-- **Style** (top-right on map): CartoDB DARK (spectacle — neon roads on dark) / LIGHT.
-  Fast raster tiles, no API key.
-- Keyboard: **C** = recenter, **N** = reset north, **H** = cycle heading source,
-  **V** = toggle 2D/3D view, **1/2/3** = chase/driver/orbit street cam.
-- **3D car** (Stage 3): F1-style Three.js car in the street-view canvas, oriented by
-  fused heading + MPU roll/pitch, color-coded by danger level (green/yellow/red).
-- **Basemap**: CartoDB Dark Matter (default) or Positron — free, key-less raster tiles.
-  No terrain/DEM layer (removed; was 404ing and slow).
-
-### Simulator heading scenarios (dev/server.js)
-Set `SIM_SCENARIO` before starting the server to exercise the heading logic:
-| Scenario | What it tests |
-|---|---|
-| (unset) `normal` | normal circular route, GPS course reliable |
-| `drift` | car stopped (speed 0), MPU yaw keeps rotating → gyro drift hold |
-| `dropout` | periodic GPS fix loss → stale / no-fix handling |
-| `wrap` | heading sweeps across the 0/360 boundary → no 359→1 spin |
-
-```bash
-cd dev
-SIM_SCENARIO=drift npm start     # gyro-drift scenario
-SIM_SCENARIO=wrap  npm start     # 0/360 boundary scenario
+```powershell
+node dev/mqtt-watch.mjs                          # 60 s, prints payloads
+node dev/mqtt-watch.mjs <key> <milliseconds>
+node dev/mqtt-watch.mjs --out test/fixtures/parked.jsonl --dur 600000
 ```
 
-### Simulator heading scenarios (dev/server.js)
-Set `SIM_SCENARIO` before starting the server to exercise the heading logic:
-| Scenario | What it tests |
-|---|---|
-| (unset) `normal` | normal circular route, GPS course reliable |
-| `drift` | car stopped (speed 0), MPU yaw keeps rotating → gyro drift hold |
-| `dropout` | periodic GPS fix loss → stale / no-fix handling |
-| `wrap` | heading sweeps across the 0/360 boundary → no 359→1 spin |
+`--out` writes JSON Lines, one object per message:
+`{"t":...,"topic":...,"retained":false,"payload":{...}}`.
+These files are the evidence used to test the parked-drift fixes.
 
-```bash
-cd dev
-SIM_SCENARIO=drift npm start     # gyro-drift scenario
-SIM_SCENARIO=wrap  npm start     # 0/360 boundary scenario
+## Serial capture
+
+```powershell
+python dev/serial-read.py
 ```
 
-## Files
+Reads COM4 at 115200 baud without asserting DTR/RTS, so it does not reset the
+board. The firmware log panel is human-readable and monotonic.
 
-- `server.js` — HTTP + WebSocket MQTT broker + GPS simulator
-- `package.json` — Node dependencies (`ws`)
+## Browser checks
 
-## Notes
+```powershell
+node dev/check-live.mjs        # requires the dev server or the live site
+```
 
-- Do **not** commit `node_modules/` or `package-lock.json`.
-- This is a development-only tool; not part of the firmware build.
+Checks that the broker connects, the map renders and the console stays clean.
+
+`dev/debug-browser.js` is stale (it still looks for removed 3D/compass
+elements). Do not rely on it until it is rewritten.
+
+## Ports
+
+| Port | Used by |
+|---|---|
+| 5003 | dev server (HTTP + WebSocket MQTT) |
+| 8884 | public HiveMQ WSS (production) |
+| 1883 | public HiveMQ plain TCP (firmware) |

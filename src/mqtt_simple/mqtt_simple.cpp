@@ -37,7 +37,9 @@ static const size_t WIFI_NET_COUNT = sizeof(WIFI_NETS) / sizeof(WIFI_NETS[0]);
 #define TOPIC_DATA    "esp32-dash/" TOPIC_KEY "/data"
 #define TOPIC_STATUS  "esp32-dash/" TOPIC_KEY "/status"
 
-#define PUBLISH_INTERVAL_MS 500
+// 1 Hz is enough for a race tracker and halves broker traffic, log volume and
+// the power draw compared with the old 500 ms cadence.
+#define PUBLISH_INTERVAL_MS 1000
 
 // ============ IDENTITY ============
 #define FW_NAME     "esp32-dash"
@@ -71,8 +73,17 @@ static const size_t WIFI_NET_COUNT = sizeof(WIFI_NETS) / sizeof(WIFI_NETS[0]);
 
 // GPS sanity gates (a "fix" below these is not worth publishing as a position)
 #define GPS_MIN_SATS  4
-#define GPS_MAX_HDOP  20.0
+// HDOP 20 is roughly a 100 m error circle. Accepting that made the marker and
+// the odometer wander while the vehicle was parked, so the gate is now tight
+// enough to reject multipath garbage but loose enough for a normal race track
+// (the healthy log showed HDOP 0.7-0.8).
+#define GPS_MAX_HDOP  8.0
 #define GPS_MAX_KMH   200.0          // anything faster is a bad frame, not a vehicle
+
+// Odometer gates: distance is only counted while the module itself reports
+// motion, and a single fix may not imply more than the frame limit allows.
+#define GPS_ODO_MIN_KMH   3.0f
+#define GPS_ODO_MAX_STEP_M 60.0f
 
 // Physical plausibility clamps
 #define GYRO_MAX_DPS  500.0f         // MPU6050 configured range is +-500 dps
@@ -165,6 +176,12 @@ float peakAmps = 0;
 float gpsDistTotalM = 0;
 bool gpsHasPrev = false;
 float gpsPrevLat = 0, gpsPrevLng = 0;
+
+// Uptime diagnostics. bootCount survives a software reset (RTC memory), so a
+// reboot loop is visible from the dashboard. minFreeHeap catches a slow leak
+// long before the board actually runs out.
+RTC_DATA_ATTR uint32_t bootCount = 0;
+uint32_t minFreeHeap = 0xFFFFFFFFu;
 
 // ============ SERIAL CONSOLE ============
 // Every event is one greppable line: "<up-time> <level> [TAG] message".
@@ -762,10 +779,21 @@ void publishData() {
 
   // Wall-clock timestamp when the GPS knows the date, otherwise 0 so the
   // dashboard falls back to arrival time. seq lets it detect gaps/duplicates.
+  //
+  // Date -> epoch must be exact: the old code multiplied elapsed years by an
+  // average year length, which drifted by tens of minutes and made every
+  // timestamp wrong. This is the standard civil-date algorithm.
   uint32_t epoch = 0;
   if (utc_y >= 2020) {
-    epoch = (uint32_t)((utc_y - 1970) * 31556952UL + (utc_mo - 1) * 2629746UL +
-                       (utc_d - 1) * 86400UL + utc_h * 3600UL + utc_m * 60UL + utc_s);
+    int y = utc_y;
+    unsigned m = (unsigned)utc_mo, d = (unsigned)utc_d;
+    y -= (m <= 2);
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = (unsigned)(y - era * 400);
+    const unsigned doy = (153u * (m + (m > 2 ? -3u : 9u)) + 2u) / 5u + d - 1u;
+    const unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;
+    const int32_t days = era * 146097 + (int32_t)doe - 719468;
+    epoch = (uint32_t)(days * 86400L + utc_h * 3600L + utc_m * 60L + utc_s);
   }
 
   // Sensor plausibility clamps: never publish values the hardware cannot mean.
@@ -786,7 +814,7 @@ void publishData() {
     "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
     "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,"
     "\"utc_h\":%d,\"utc_m\":%d,\"utc_s\":%d,\"utc_y\":%d,\"utc_mo\":%d,\"utc_d\":%d},"
-    "\"sys\":{\"heap\":%u,\"rssi\":%d,"
+    "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"rssi\":%d,"
     "\"wifi\":{\"ssid\":\"%.32s\",\"bssid\":\"%.17s\",\"channel\":%d,\"status\":\"%s\","
     "\"ip\":\"%.15s\",\"mac\":\"%.17s\"}}}",
     (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
@@ -799,7 +827,8 @@ void publishData() {
     fix ? "true" : "false", lat, lng, alt, spd,
     cog, hdop, gpsDistTotalM,
     utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d,
-    (unsigned)ESP.getFreeHeap(), WiFi.RSSI(),
+    (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
+    WiFi.RSSI(),
     WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), wifiStatusStr(),
     WiFi.localIP().toString().c_str(), WiFi.macAddress().c_str());
 
@@ -817,7 +846,7 @@ void publishData() {
       "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
       "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
       "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f},"
-      "\"sys\":{\"heap\":%u,\"rssi\":%d}}",
+      "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"rssi\":%d}}",
       (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
       mpuValid ? "true" : "false", tRoll, tPitch, tYaw, tilt, level,
       (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt, peakAmps,
@@ -825,7 +854,8 @@ void publishData() {
       (unsigned long)gps.charsProcessed(), gm.cGSV ? gm.view : -1, gm.snr, gm.fixQ, (unsigned long)gm.bad,
       (int)gps.satellites.value(),
       fix ? "true" : "false", lat, lng, alt, spd, cog, hdop, gpsDistTotalM,
-      (unsigned)ESP.getFreeHeap(), WiFi.RSSI());
+      (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
+      WiFi.RSSI());
     if (n <= 0 || n >= (int)sizeof b) { txFail++; return; }
   }
 
@@ -1054,6 +1084,9 @@ void printHelp() {
 void mqtt_simple_setup() {
   Serial.begin(115200);
 
+  bootCount++;
+  minFreeHeap = ESP.getFreeHeap();
+
   pinMode(LED_BLUE_PIN, OUTPUT);
   pinMode(LED_WHITE_PIN, OUTPUT);
   pinMode(LED_RED_PIN, OUTPUT);
@@ -1246,6 +1279,11 @@ static void gpsWatch() {
 
 // ============ LOOP ============
 void mqtt_simple_loop() {
+  {
+    const uint32_t heapNow = ESP.getFreeHeap();
+    if (heapNow < minFreeHeap) minFreeHeap = heapNow;
+  }
+
   // Every byte feeds TinyGPSPlus (parsed fields) and the tap (raw sentence
   // stream: counters, GSV view/SNR, checksum failures).
   while (gpsSerial.available()) {
@@ -1257,13 +1295,17 @@ void mqtt_simple_loop() {
   handleKeys();
   gpsWatch();
 
-  // GPS odometer: accumulate distance on valid location updates
+  // GPS odometer: accumulate distance only while the module reports real
+  // motion. A parked receiver wanders 2-10 m per fix; counting that made the
+  // odometer creep upward for hours with the vehicle standing still.
   if (gps.location.isUpdated() && gps.location.isValid()) {
     float newLat = gps.location.lat();
     float newLng = gps.location.lng();
     if (gpsHasPrev) {
       float d = haversineM(gpsPrevLat, gpsPrevLng, newLat, newLng);
-      if (d > 2.0f) {          // jitter filter: ignore sub-2 m drift
+      const bool rolling = gps.speed.isValid() && gps.speed.kmph() >= GPS_ODO_MIN_KMH;
+      const bool sane = d <= GPS_ODO_MAX_STEP_M;
+      if (rolling && sane && d > 2.0f) {
         gpsDistTotalM += d;
       }
     }
