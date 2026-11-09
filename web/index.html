@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23ffe600' stroke='%23000' stroke-width='5'/%3E%3Ccircle cx='21' cy='25' r='6.5' fill='%23000'/%3E%3Ccircle cx='43' cy='25' r='6.5' fill='%23000'/%3E%3Cpath d='M17 41q15 13 30 0' fill='none' stroke='%23000' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/tokens.css?v=24">
-<link rel="stylesheet" href="css/base.css?v=24">
-<link rel="stylesheet" href="css/components.css?v=24">
-<link rel="stylesheet" href="css/layout.css?v=24">
-<link rel="stylesheet" href="css/map.css?v=24">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=24">
+<link rel="stylesheet" href="css/tokens.css?v=25">
+<link rel="stylesheet" href="css/base.css?v=25">
+<link rel="stylesheet" href="css/components.css?v=25">
+<link rel="stylesheet" href="css/layout.css?v=25">
+<link rel="stylesheet" href="css/map.css?v=25">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=25">
 <title>ESP32 // LIVE SENSORS</title>
 </head>
 <body class="locked">
@@ -93,6 +93,7 @@
         <button class="tab-btn" data-tab="wifi">WIFI</button>
         <button class="tab-btn" data-tab="mpu">MPU</button>
         <button class="tab-btn" data-tab="acs">ACS</button>
+        <button class="tab-btn" data-tab="history">HIST</button>
       </div>
 
       <div class="tab-panels-wrapper">
@@ -194,6 +195,25 @@
           </div>
         </div>
       </div>
+
+      <!-- HISTORY tab: read-only view of what the Cloudflare API stored -->
+      <div class="tab-panel" id="tab-history">
+        <div class="hud-card">
+          <h3>Stored history</h3>
+          <div class="hist-row">
+            <button class="hist-btn" data-min="60">1 h</button>
+            <button class="hist-btn" data-min="360">6 h</button>
+            <button class="hist-btn active" data-min="1440">24 h</button>
+          </div>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">Points</div><div class="val" id="histPoints">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">Distance</div><div class="val" id="histDist">--</div><div class="lbl">km</div></div>
+            <div class="hud-item"><div class="lbl">Max gap</div><div class="val" id="histGap">--</div><div class="lbl">s</div></div>
+            <div class="hud-item wide"><div class="lbl">Window</div><div class="val small" id="histWindow">--</div><div class="lbl"></div></div>
+            <div class="hud-item wide"><div class="lbl">Status</div><div class="val small" id="histStatus">tap HIST to load</div><div class="lbl"></div></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
   </div>
@@ -259,10 +279,10 @@
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=24"></script>
-<script src="ui/guard.js?v=24"></script>
-<script src="ui/map.js?v=24"></script>
-<script src="ui/mqtt-mini.js?v=24"></script>
-<script src="ui/app.js?v=24"></script>
+<script src="vendor/maplibre-gl-csp.js?v=25"></script>
+<script src="ui/guard.js?v=25"></script>
+<script src="ui/map.js?v=25"></script>
+<script src="ui/mqtt-mini.js?v=25"></script>
+<script src="ui/app.js?v=25"></script>
 </body>
 </html>

@@ -15,6 +15,11 @@ const TOPIC_ROOT = "esp32-dash/";
 // live data straight away instead of the setup form. A second tracker changes
 // that one firmware line and opens the dashboard with #t=<slug>.
 const DEFAULT_KEY = 'race-tracker';
+
+// Read-only history API (Cloudflare Pages Function, see docs/CLOUDFLARE.md).
+// Public like the map: no key, no account. Loaded only when the HIST tab is
+// opened, so a normal page view never depends on this host being reachable.
+const HISTORY_API = 'https://race-tracker-history.pages.dev';
 const STALE_AFTER_MS = 6000;
 const N = 120;
 
@@ -976,6 +981,82 @@ if (!KEY) {
   });
   client.start();
 
+  // ---- stored history (HIST tab) ------------------------------------------
+  // On demand only. A failure here leaves the live map completely untouched:
+  // no console error, no rejected promise, just a status line in the panel.
+  let histMinutes = 1440;
+
+  function kmBetween(a, b) {
+    const R = 6371, rad = Math.PI / 180;
+    const dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
+    const s = Math.sin(dLat / 2) ** 2 +
+      Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  }
+
+  function setHistFields(points, km, gap, windowText, statusText) {
+    if ($('histPoints')) $('histPoints').textContent = points;
+    if ($('histDist')) $('histDist').textContent = km;
+    if ($('histGap')) $('histGap').textContent = gap;
+    if ($('histWindow')) $('histWindow').textContent = windowText;
+    if ($('histStatus')) $('histStatus').textContent = statusText;
+  }
+
+  async function loadHistory(minutes) {
+    histMinutes = minutes;
+    document.querySelectorAll('.hist-btn').forEach(b => {
+      const on = Number(b.dataset.min) === minutes;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    if ($('histStatus')) $('histStatus').textContent = 'loading...';
+
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - minutes * 60;
+    let body;
+    try {
+      const res = await fetch(`${HISTORY_API}/history?from=${from}&to=${now + 60}&limit=5000`,
+        { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      body = await res.json();
+    } catch (err) {
+      // Offline, blocked or the host is down: the panel says so and the live
+      // data keeps rendering. Deliberately not console.error().
+      if (typeof MAP !== 'undefined' && MAP.clearHistory) MAP.clearHistory();
+      setHistFields('--', '--', '--', '--', 'history host unreachable (' + err.message + ')');
+      return;
+    }
+
+    const pts = Array.isArray(body && body.points) ? body.points : [];
+    let km = 0, maxGap = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      if (!a || !b) continue;
+      km += kmBetween([a[1], a[2]], [b[1], b[2]]);
+      const gap = b[0] - a[0];
+      if (gap > maxGap) maxGap = gap;
+    }
+
+    let windowText = '--';
+    if (pts.length) {
+      const t0 = new Date(pts[0][0] * 1000).toISOString().slice(11, 16);
+      const t1 = new Date(pts[pts.length - 1][0] * 1000).toISOString().slice(11, 16);
+      windowText = `${t0} - ${t1} UTC`;
+    }
+
+    const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
+    const status = pts.length
+      ? `drawn as ${drawn} line(s)${body.truncated ? ', truncated at 5000' : ''}`
+      : 'nothing stored in this window';
+    setHistFields(
+      String(body.count != null ? body.count : pts.length),
+      km.toFixed(2),
+      pts.length > 1 ? String(maxGap) : '--',
+      windowText,
+      status
+    );
+  }
+
   // ---- Init map -----------------------------------------------------------
   if (typeof MAP !== 'undefined') {
     MAP.create('map-container');
@@ -1000,7 +1081,13 @@ if (!KEY) {
       // One panel per tab now; there is no desktop/mobile duplicate to find.
       const target = $('tab-' + btn.dataset.tab);
       if (target) target.classList.add('active');
+      // History is fetched on demand: opening the tab is the request.
+      if (btn.dataset.tab === 'history') loadHistory(histMinutes);
     });
+  });
+
+  document.querySelectorAll('.hist-btn').forEach(btn => {
+    btn.addEventListener('click', () => loadHistory(Number(btn.dataset.min) || 1440));
   });
 
   // ---- My-location / compass ---------------------------------------------

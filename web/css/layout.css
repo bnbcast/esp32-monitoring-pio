@@ -272,3 +272,30 @@ html, body { height: 100%; }
   margin: 0;
 }
 
+/* ---------------------------------------------------------------------------
+   Segmented picker (HIST window buttons). Deliberately NOT .mini-btn: that
+   class is absolutely positioned for the odometer reset, which made every
+   button in a row land on the same spot.
+--------------------------------------------------------------------------- */
+.hist-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.hist-btn {
+  flex: 1;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+}
+.hist-btn:hover { background: var(--yellow); }
+.hist-btn.active { background: var(--yellow); box-shadow: var(--shadow-ac); }
+.hist-btn:active { transform: translate(1px, 1px); box-shadow: none; }
+

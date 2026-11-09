@@ -1,5 +1,5 @@
 /*
- * dev/check-live.mjs â€” Playwright gate for the deployed dashboard.
+ * dev/check-live.mjs - Playwright gate for the deployed dashboard.
  *
  * Verifies that the page loads, the MQTT link to the broker comes up, the map
  * renders, and that no asset 404s / CSP violations / JS errors occur.

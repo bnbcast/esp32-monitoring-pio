@@ -402,6 +402,29 @@ const MAP = (function () {
     if (map.getSource("trail")) return;
     if (!map.getStyle()) return;
 
+    // ---- Stored history (dashed, drawn under the live trail) ----
+    // Fed by /history on demand. Keeping it a separate source means a failed
+    // fetch or a cleared history can never disturb the live trail.
+    map.addSource("history", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] }
+    });
+    map.addLayer({
+      id: "history",
+      type: "line",
+      source: "history",
+      layout: {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      paint: {
+        "line-color": "#9fb2cc",
+        "line-width": 2,
+        "line-opacity": 0.5,
+        "line-dasharray": [3, 2]
+      }
+    });
+
     // ---- Trail source (geojson) ----
     map.addSource("trail", {
       type: "geojson",
@@ -916,6 +939,49 @@ const MAP = (function () {
     }
   }
 
+  // ---- stored history overlay ----------------------------------------------
+  // points: [[ts, lat, lng, kmh, cog, hdop], ...] exactly as /history returns.
+  // Breaks the line on a long time gap or an implausible jump, so an outage or
+  // a teleport-looking artifact is not drawn as a straight line across the map.
+  function setHistory(points) {
+    if (!map || !mapReady) return 0;
+    const src = map.getSource("history");
+    if (!src) return 0;
+
+    const feats = [];
+    let run = [];
+    let prev = null;
+    const flush = () => {
+      if (run.length > 1) feats.push({
+        type: "Feature",
+        properties: {},
+        geometry: { type: "LineString", coordinates: run }
+      });
+      run = [];
+    };
+
+    for (const p of points) {
+      if (!Array.isArray(p) || p.length < 3) continue;
+      const ts = Number(p[0]), lat = Number(p[1]), lng = Number(p[2]);
+      if (!isFinite(ts) || !isFinite(lat) || !isFinite(lng)) continue;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+      if (prev && (ts - prev[0] > 600 ||
+                   Math.abs(lat - prev[1]) > 0.02 ||
+                   Math.abs(lng - prev[2]) > 0.02)) flush();
+      run.push([lng, lat]);
+      prev = [ts, lat, lng];
+    }
+    flush();
+    src.setData({ type: "FeatureCollection", features: feats });
+    return feats.length;
+  }
+
+  function clearHistory() {
+    if (!map || !mapReady) return;
+    const src = map.getSource("history");
+    if (src) src.setData({ type: "FeatureCollection", features: [] });
+  }
+
   // ---- public API ---------------------------------------------------------
   return {
     create,
@@ -930,6 +996,8 @@ const MAP = (function () {
     resize,
     setVehicle,
     clearTrail,
+    setHistory,
+    clearHistory,
     getTrailDistance: () => trailDistM,
     getTrailPoints: () => trailCoords.length,
     isStopped: () => stopped,
