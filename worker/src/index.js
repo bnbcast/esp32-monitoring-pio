@@ -92,13 +92,14 @@ async function ingest(request, env) {
     if (reason === 'duplicate') { duplicates++; continue; }
     if (reason) { rejected.push({ seq: f && f.seq, reason }); continue; }
 
-    if (f.fix) {
-      const stored = shouldStore(f, lastStoredTs);
+    const g = gpsOf(f);
+    if (g.fix) {
+      const stored = shouldStore(g, f.ts, lastStoredTs);
       if (stored) {
         rows.push(f);
         lastStoredTs = f.ts;
       }
-      prev = { boot: bootOf(f), seq: f.seq, ts: f.ts, lat: f.lat, lon: f.lng };
+      prev = { boot: bootOf(f), seq: f.seq, ts: f.ts, lat: g.lat, lon: g.lng };
     }
   }
 
@@ -108,11 +109,14 @@ async function ingest(request, env) {
        (device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, received)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    await env.DB.batch(rows.map(f => stmt.bind(
-      device, bootOf(f), f.seq, f.ts, f.up, f.lat, f.lng,
-      numOrNull(f.alt), numOrNull(f.kmh), numOrNull(f.cog),
-      numOrNull(f.hdop), intOrNull(f.sats), numOrNull(f.dist_m), nowS
-    )));
+    await env.DB.batch(rows.map(f => {
+      const g = gpsOf(f);
+      return stmt.bind(
+        device, bootOf(f), f.seq, f.ts, f.up, g.lat, g.lng,
+        numOrNull(g.alt), numOrNull(g.kmh), numOrNull(g.cog),
+        numOrNull(g.hdop), intOrNull(g.sats), numOrNull(g.dist_m), nowS
+      );
+    }));
   }
 
   return json({
@@ -165,26 +169,35 @@ function checkFrame(f, prev, nowS) {
     }
   }
 
-  if (!f.fix) return null;                       // no-fix frames are valid, not stored
+  // The device publishes {"seq":..,"gps":{"fix":..,"lat":..},...}. Accept the
+  // flat form too, so a hand-written smoke test is easy to send.
+  const g = gpsOf(f);
+  if (!g.fix) return null;                       // no-fix frames are valid, not stored
 
-  if (!isNum(f.lat) || !isNum(f.lng)) return 'shape';
-  if (f.lat < -90 || f.lat > 90 || f.lng < -180 || f.lng > 180) return 'range';
-  if (isNum(f.kmh) && (f.kmh < 0 || f.kmh > MAX_KMH)) return 'speed';
-  if (isNum(f.hdop) && f.hdop > MAX_HDOP) return 'hdop';
+  if (!isNum(g.lat) || !isNum(g.lng)) return 'shape';
+  if (g.lat < -90 || g.lat > 90 || g.lng < -180 || g.lng > 180) return 'range';
+  if (isNum(g.kmh) && (g.kmh < 0 || g.kmh > MAX_KMH)) return 'speed';
+  if (isNum(g.hdop) && g.hdop > MAX_HDOP) return 'hdop';
 
   if (prev && isNum(prev.lat) && isNum(prev.lon)) {
     let dt = f.ts - prev.ts;
     if (!isNum(dt) || dt < 0.5) dt = 0.5;        // buffered frames can be close
     const allow = (MAX_KMH / 3.6) * dt * TELEPORT_FACTOR + TELEPORT_SLACK_M;
-    if (haversineM(prev.lat, prev.lon, f.lat, f.lng) > allow) return 'teleport';
+    if (haversineM(prev.lat, prev.lon, g.lat, g.lng) > allow) return 'teleport';
   }
 
   return null;
 }
 
-function shouldStore(f, lastTs) {
-  if (isNum(f.kmh) && f.kmh >= 3) return true;   // moving
-  return !isNum(lastTs) || f.ts - lastTs >= PARKED_STORE_S;
+function shouldStore(g, ts, lastTs) {
+  if (isNum(g.kmh) && g.kmh >= 3) return true;   // moving
+  return !isNum(lastTs) || ts - lastTs >= PARKED_STORE_S;
+}
+
+// GPS fields live under "gps" in the real payload; the flat fallback keeps
+// curl smoke tests short.
+function gpsOf(f) {
+  return f.gps && typeof f.gps === 'object' ? f.gps : f;
 }
 
 function bootOf(f) {
