@@ -1154,48 +1154,58 @@ void mqtt_simple_setup() {
 #endif
 
   logMsg(L_INFO, "IMU", "probing MPU6050 on SDA=%d SCL=%d", I2C_SDA_PIN, I2C_SCL_PIN);
+  // A missing IMU must not brick the tracker: retry for ~5 s, then carry on
+  // with tilt/yaw disabled. The GPS and MQTT link do not need the MPU, and an
+  // endless probe loop would also stop the watchdog from ever being armed.
   int tries = 0;
-  while (!(mpuFind() && mpuInit())) {
-    if (tries++ == 40) logMsg(L_ERR, "IMU", "MPU6050 not found - check VCC, GND, SDA, SCL");
+  bool imuPresent = false;
+  while (tries++ < 50) {
+    if (mpuFind() && mpuInit()) { imuPresent = true; break; }
     ledsFault();
     delay(100);
   }
 
-  logMsg(L_INFO, "CAL", "keep the board still, no current in the ACS712 (about 3 s)");
-  digitalWrite(LED_WHITE_PIN, HIGH);
-  const int N = 500;
-  int good = 0;
-  float sx = 0, sy = 0, sz = 0;
-  float ax, ay, az, t, gx, gy, gz;
-  for (int i = 0; i < N; i++) {
-    if (mpuRead(ax, ay, az, t, gx, gy, gz)) {
-      sx += gx; sy += gy; sz += gz;
-      good++;
+  float ax = 0, ay = 0, az = 0, t = 0, gx = 0, gy = 0, gz = 0;
+  if (imuPresent) {
+    logMsg(L_INFO, "CAL", "keep the board still, no current in the ACS712 (about 3 s)");
+    digitalWrite(LED_WHITE_PIN, HIGH);
+    const int N = 500;
+    int good = 0;
+    float sx = 0, sy = 0, sz = 0;
+    for (int i = 0; i < N; i++) {
+      if (mpuRead(ax, ay, az, t, gx, gy, gz)) {
+        sx += gx; sy += gy; sz += gz;
+        good++;
+      }
+      delay(4);
     }
-    delay(4);
-  }
-  if (good > 0) {
-    gyroBiasX = sx / good;
-    gyroBiasY = sy / good;
-    gyroBiasZ = sz / good;
+    if (good > 0) {
+      gyroBiasX = sx / good;
+      gyroBiasY = sy / good;
+      gyroBiasZ = sz / good;
+    }
+  } else {
+    logMsg(L_WARN, "IMU", "MPU6050 absent after 5 s - tilt/yaw disabled, tracker continues");
   }
 
   delay(1000);
   acsCalibrate();
 
-  if (mpuRead(ax, ay, az, t, gx, gy, gz)) {
+  if (imuPresent && mpuRead(ax, ay, az, t, gx, gy, gz)) {
     roll  = atan2(ay, az) * RAD_TO_DEG;
     pitch = atan2(-ax, sqrt(ay * ay + az * az)) * RAD_TO_DEG;
   }
   yaw = 0;
-  mpuValid = true;
+  mpuValid = imuPresent;
   ledsOff();
   lastMicros = micros();
 
   bootMillis = millis();
 
-  logMsg(L_OK, "IMU", "MPU6050 at 0x%02X  gyro bias %.2f/%.2f/%.2f dps",
-         MPU_ADDR, gyroBiasX, gyroBiasY, gyroBiasZ);
+  if (imuPresent) {
+    logMsg(L_OK, "IMU", "MPU6050 at 0x%02X  gyro bias %.2f/%.2f/%.2f dps",
+           MPU_ADDR, gyroBiasX, gyroBiasY, gyroBiasZ);
+  }
   if (acsOffsetV >= 2.3f && acsOffsetV <= 2.55f)
     logMsg(L_OK, "PWR", "ACS712 zero %.3f V (expected 2.3-2.5 V)", acsOffsetV);
   else
