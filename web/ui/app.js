@@ -1126,8 +1126,6 @@ if (!KEY) {
   // ---- My-location / compass ---------------------------------------------
   const btnMyLocation = $('btnMyLocation');
   if (btnMyLocation && typeof MAP !== 'undefined') {
-    btnMyLocation.innerHTML = '🧭';
-    btnMyLocation.className = 'map-btn';
     btnMyLocation.title = 'Re-center on vehicle';
     btnMyLocation.addEventListener('click', (e) => {
       e.preventDefault();
