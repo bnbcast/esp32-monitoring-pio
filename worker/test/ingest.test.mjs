@@ -27,9 +27,17 @@ function fakeD1() {
       const make = (args) => ({
         bind(...a) { return make(a); },
         async first() {
-          if (sql.includes('SELECT COUNT(*) AS n FROM fixes')) {
+          if (sql.includes('MAX(dt) AS max_gap')) {
             const [device, from, to] = args;
-            return { n: rows.filter(r => r.device === device && r.ts >= from && r.ts <= to).length };
+            const mine = rows
+              .filter(r => r.device === device && r.ts >= from && r.ts <= to)
+              .sort((a, b) => a.ts - b.ts);
+            let maxGap = null;
+            for (let i = 1; i < mine.length; i++) {
+              const d = mine[i].ts - mine[i - 1].ts;
+              if (maxGap === null || d > maxGap) maxGap = d;
+            }
+            return { n: mine.length, max_gap: maxGap };
           }
           if (!sql.includes('SELECT boot, seq, ts, lat, lon FROM fixes')) throw new Error('first: ' + sql);
           const device = args[0];
@@ -226,6 +234,7 @@ test('history returns only the requested window, oldest first', async () => {
   const body = await r.json();
   assert.equal(r.status, 200);
   assert.equal(body.count, 2);
+  assert.equal(body.maxGap, 40, 'raw gap between the two kept fixes');
   assert.deepEqual(body.points.map(p => p[0]), [t - 50, t - 10], 'ts ascending');
   assert.equal(body.points[0][3], 11);
 });
@@ -258,6 +267,7 @@ test('wide windows are sampled so the whole span survives the row cap', async ()
   assert.equal(body.sampled, true);
   assert.equal(body.truncated, false, 'sampling covers the window, so it is not truncated');
   assert.equal(body.count, 100);
+  assert.equal(body.maxGap, 1, 'raw 1 s spacing, not the 10 s sample interval');
   assert.equal(body.points[0][0], t - 1000, 'keeps the oldest point');
   assert.ok(body.points[body.points.length - 1][0] >= t - 20, 'still reaches the end of the window');
 });

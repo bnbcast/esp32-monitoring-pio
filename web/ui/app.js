@@ -1040,6 +1040,9 @@ if (!KEY) {
       const gap = b[0] - a[0];
       if (gap > maxGap) maxGap = gap;
     }
+    // The API measures the gap over raw rows, so a sampled window does not
+    // report its own sample interval as an outage.
+    if (typeof body.maxGap === 'number') maxGap = body.maxGap;
 
     let windowText = '--';
     if (pts.length) {

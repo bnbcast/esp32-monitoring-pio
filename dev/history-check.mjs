@@ -42,6 +42,7 @@ for (let i = 1; i < pts.length; i++) {
   const gap = pts[i][0] - pts[i - 1][0];
   if (gap > maxGap) { maxGap = gap; maxGapAt = pts[i][0]; }
 }
+if (typeof body.maxGap === 'number') maxGap = body.maxGap;
 const speeds = pts.map(p => p[3]).filter(v => typeof v === 'number');
 
 console.log(`url        ${url}`);

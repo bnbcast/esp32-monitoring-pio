@@ -188,11 +188,17 @@ async function history(url, env) {
 
   // A day at 1 Hz is ~86k rows, far past the row cap. Counting first lets us
   // pick a step that covers the whole window instead of returning the first
-  // 5000 points and pretending that is "24 hours".
-  const counted = await env.DB.prepare(
-    'SELECT COUNT(*) AS n FROM fixes WHERE device = ? AND ts >= ? AND ts <= ?'
+  // 5000 points and pretending that is "24 hours". The same scan yields the
+  // real largest gap, so a sampled view does not report the sample interval
+  // as an outage.
+  const stats = await env.DB.prepare(
+    `SELECT COUNT(*) AS n, MAX(dt) AS max_gap FROM (
+       SELECT ts - LAG(ts) OVER (ORDER BY ts) AS dt
+       FROM fixes WHERE device = ? AND ts >= ? AND ts <= ?
+     )`
   ).bind(device, from, to).first();
-  const total = counted && isNum(counted.n) ? counted.n : 0;
+  const total = stats && isNum(stats.n) ? stats.n : 0;
+  const maxGap = stats && isNum(stats.max_gap) ? stats.max_gap : null;
   const step = total > limit ? Math.ceil(total / limit) : 1;
 
   let results;
@@ -222,6 +228,7 @@ async function history(url, env) {
     total,
     step,
     sampled: step > 1,
+    maxGap,
     truncated: step === 1 && results.length === limit,
     points: results.map(r => [r.ts, r.lat, r.lon, r.kmh, r.cog, r.hdop])
   });

@@ -237,6 +237,7 @@ average of coordinates) with `total`, `step` and `sampled` in the body.
 |---|---|
 | Unit tests | 17/17 (new: 1000 rows, limit 100 -> `step 10`, spans the window) |
 | Real D1 | 600 seeded rows -> `count 100`, `total 600`, `step 6`, first at `t0`, last at `t0+594` |
+| Gap semantics | `maxGap` comes from the raw rows (LAG), so a sampled window still reports real outages, not the sample interval |
 | Probe cleanup | 600 rows deleted, `/history` back to 0 |
 
 ## Retention in production (fixed, verified)

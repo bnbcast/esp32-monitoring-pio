@@ -124,9 +124,11 @@ rejection, hdop/speed gates, empty and oversized batches, window queries,
 365-day retention, the once-a-day marker that stops ingest from purging on
 every batch, and wide-window sampling.
 
-`/history` returns `count`, `total`, `step` and `sampled`. When a window has
-more rows than `limit`, the server returns every `step`-th real fix (oldest
-kept) so a 24 h request covers 24 h instead of the first ~83 minutes.
+`/history` returns `count`, `total`, `step`, `maxGap` and `sampled`. When a
+window has more rows than `limit`, the server returns every `step`-th real fix
+(oldest kept) so a 24 h request covers 24 h instead of the first ~83 minutes.
+`maxGap` is measured over the raw rows, so a sampled view never reports its own
+sample interval as an outage.
 
 ## Prove the device path (no GPS needed)
 
