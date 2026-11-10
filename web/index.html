@@ -7,12 +7,12 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23ffe600' stroke='%23000' stroke-width='5'/%3E%3Ccircle cx='21' cy='25' r='6.5' fill='%23000'/%3E%3Ccircle cx='43' cy='25' r='6.5' fill='%23000'/%3E%3Cpath d='M17 41q15 13 30 0' fill='none' stroke='%23000' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/tokens.css?v=28">
-<link rel="stylesheet" href="css/base.css?v=28">
-<link rel="stylesheet" href="css/components.css?v=28">
-<link rel="stylesheet" href="css/layout.css?v=28">
-<link rel="stylesheet" href="css/map.css?v=28">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=28">
+<link rel="stylesheet" href="css/tokens.css?v=29">
+<link rel="stylesheet" href="css/base.css?v=29">
+<link rel="stylesheet" href="css/components.css?v=29">
+<link rel="stylesheet" href="css/layout.css?v=29">
+<link rel="stylesheet" href="css/map.css?v=29">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=29">
 <title>ESP32 // LIVE SENSORS</title>
 </head>
 <body class="locked">
@@ -94,6 +94,7 @@
         <button class="tab-btn" data-tab="mpu">MPU</button>
         <button class="tab-btn" data-tab="acs">ACS</button>
         <button class="tab-btn" data-tab="history">HIST</button>
+        <button class="tab-btn" data-tab="info">INFO</button>
       </div>
 
       <div class="tab-panels-wrapper">
@@ -214,6 +215,306 @@
           </div>
         </div>
       </div>
+
+      <!-- INFO tab: every value on screen in plain language. Static text, so it
+           never drifts out of sync with the payload; no JS needed. -->
+      <div class="tab-panel" id="tab-info">
+        <div class="hud-card">
+          <h3>Read this first</h3>
+          <p class="info-lead">The ESP32 publishes one frame per second to the public
+          MQTT broker; this page only displays what arrives. Separately, the board
+          stores GPS fixes in Cloudflare, and HIST reads those back. Pills are
+          green when healthy, yellow when waiting, red when something is wrong.
+          There is no login: anyone with the link sees the same screen.</p>
+        </div>
+
+        <div class="hud-card">
+          <h3>Status pills</h3>
+          <dl class="info-list">
+            <dt>BROKER</dt>
+            <dd><b>BROKER OK</b> = this page's WebSocket to the broker is open.
+            <b>BROKER ...</b> = still connecting, or reconnecting after a drop.</dd>
+            <dt>DEVICE</dt>
+            <dd><b>DEVICE LIVE</b> = a frame arrived in the last 6 seconds.
+            <b>NO SIGNAL</b> = the link is fine but the board went quiet.
+            <b>DEVICE OFFLINE</b> = the board announced it is going away (shutdown,
+            Wi-Fi loss, power cut).</dd>
+            <dt>ACS</dt>
+            <dd><b>ACS OK</b> = the firmware found the current sensor: its zero sits
+            near half supply (~2.5 V) and the amps are plausible.
+            <b>ACS CHECK</b> = floating pin, wrong wiring, or impossible readings,
+            so current is not trustworthy.</dd>
+            <dt>MPU6050</dt>
+            <dd><b>MPU OK</b> = the tilt sensor answered and its numbers passed the
+            range check. <b>MPU FAIL</b> = missing or unreadable, so tilt and the
+            danger lights are unknown.</dd>
+            <dt>GPS</dt>
+            <dd><b>GPS FIX</b> = the receiver has a valid position.
+            <b>GPS WAIT</b> = serial data is arriving but there is no fix yet
+            (indoors, or a cold start: can take minutes).
+            <b>GPS NO DATA</b> = nothing on the serial line (wiring or baud rate).</dd>
+          </dl>
+        </div>
+
+        <div class="hud-card">
+          <h3>Map corner</h3>
+          <dl class="info-list">
+            <dt>SPEED (map)</dt>
+            <dd>Ground speed of the last fix, km/h. Shows <b>0.0</b> while the page
+            agrees the vehicle is parked (receivers report 1&ndash;2 km/h of noise) and
+            <b>NO FIX</b> when there is no position.</dd>
+            <dt>TRIP</dt>
+            <dd>Length of the trail this page has drawn since it was opened.
+            It is not stored anywhere and returns to 0 on reload.</dd>
+            <dt>HEADING (map)</dt>
+            <dd>Direction of travel in degrees: 0 = north, 90 = east, 180 = south.
+            Taken from GPS when moving with a good HDOP, otherwise from the
+            MPU6050, so it can be a couple of degrees off.</dd>
+            <dt>Position</dt>
+            <dd>Latitude and longitude of the last valid fix, plus the nearest
+            street address (OpenStreetMap). <b>locating address...</b> means it is
+            still resolving; the numbers above it are already current.</dd>
+            <dt>MEASURE A&rarr;B</dt>
+            <dd>Operator tool: tap two points on the map to get the distance
+            between them. Nothing is uploaded.</dd>
+          </dl>
+        </div>
+
+        <div class="hud-card">
+          <h3>LIVE tab</h3>
+          <dl class="info-list">
+            <dt>Speed</dt>
+            <dd>Same value as the map corner: last GPS ground speed in km/h.</dd>
+            <dt>Altitude</dt>
+            <dd>GPS altitude in metres. Noisy by &plusmn;5&ndash;10 m and not barometric,
+            so treat small changes as noise.</dd>
+            <dt>Sats</dt>
+            <dd>Satellites used in the current fix. 6 or more works, 9&ndash;12 is
+            good, under 4 means no fix.</dd>
+            <dt>HDOP</dt>
+            <dd>Horizontal dilution of precision: a geometry score, <b>lower is
+            better</b>. Under 2 is excellent, 2&ndash;5 is good, over 8 is poor. Above 8
+            the firmware stops publishing a position even though it still has a
+            fix, which is why you can see satellites but <b>NO FIX</b>.</dd>
+            <dt>Fix</dt>
+            <dd><b>VALID</b> = the receiver says the position is usable.
+            <b>NO FIX</b> = it does not, so coordinates are sent as empty.</dd>
+            <dt>Heading</dt>
+            <dd>Course in degrees, from GPS or MPU6050 (see map corner).</dd>
+            <dt>Tilt</dt>
+            <dd>How far the vehicle is leaning, from the MPU6050, in degrees.
+            This is the number the danger lights use.</dd>
+            <dt>Amps</dt>
+            <dd>Current in amperes from the ACS712. <b>ERR</b> means the sensor is
+            not present or not calibrated, so the number would be fiction.</dd>
+            <dt>Odometer</dt>
+            <dd>Distance in metres the <b>firmware</b> has counted since it booted,
+            minus any reset you did in this browser. It drops to 0 when the board
+            reboots; the &#8635; button (unlocked) zeroes it just for this browser.</dd>
+            <dt>Trail</dt>
+            <dd>Distance in km of the breadcrumb line on the map. Browser-side only:
+            reload clears it.</dd>
+            <dt>Address</dt>
+            <dd>Nearest street to the last fix, as resolved above. It lags the
+            coordinates slightly because the lookup is rate-limited.</dd>
+            <dt>Max Speed</dt>
+            <dd>Fastest speed this page has seen since it opened, not the device's
+            all-time record.</dd>
+            <dt>Seq</dt>
+            <dd>The device's frame counter. It rises by about 1 per second; a jump
+            means frames were lost in transit.</dd>
+            <dt>Gaps</dt>
+            <dd>How many frames went missing between Seq jumps since this page
+            opened. A few after a Wi-Fi hiccup is normal (live MQTT is
+            best-effort); stored history is unaffected because the board uploads it
+            separately from flash.</dd>
+            <dt>Age</dt>
+            <dd>Seconds since the last frame reached <b>this browser</b>. About 1 s
+            is normal; over 6 s and DEVICE turns to NO SIGNAL.</dd>
+            <dt>Device Time</dt>
+            <dd>The board's UTC clock (hh:mm:ss), set from GPS. <b>no clock</b>
+            means it has not seen a GPS time yet; stored fixes are stamped with the
+            same clock.</dd>
+            <dt>GPS Lat / GPS Lng / GPS Alt / GPS Spd</dt>
+            <dd>The same position and speed again, raw, for copying or checking
+            against another device. They follow Fix: <b>NO FIX</b> when there is no
+            position.</dd>
+            <dt>Uptime</dt>
+            <dd>Seconds since the board booted. A number that starts over means it
+            rebooted.</dd>
+            <dt>RSSI</dt>
+            <dd>Wi-Fi signal at the board, in dBm. &minus;50 is excellent, &minus;70 is
+            fine, &minus;85 is weak, below &minus;90 causes dropouts.</dd>
+            <dt>Heap</dt>
+            <dd>Free RAM right now, in KB. High hundreds is healthy on this build;
+            a value that keeps shrinking over hours means a leak.</dd>
+            <dt>GPS Sats</dt>
+            <dd>Satellite count again, straight from the receiver.</dd>
+          </dl>
+        </div>
+
+        <div class="hud-card">
+          <h3>Danger lights</h3>
+          <dl class="info-list">
+            <dt>BLUE safe</dt>
+            <dd>Tilt is below the warning angle. Normal driving.</dd>
+            <dt>WHITE warn</dt>
+            <dd>Tilt passed the warning angle (30&deg; by default): the vehicle is
+            leaning more than it should.</dd>
+            <dt>RED danger</dt>
+            <dd>Tilt passed the danger angle (50&deg; by default): likely a crash or
+            rollover.</dd>
+            <dt>all off</dt>
+            <dd>No MPU6050 data, so the page cannot judge. This is accident
+            indication only, not a lock and not a security feature.</dd>
+          </dl>
+        </div>
+
+        <div class="hud-card">
+          <h3>WIFI tab</h3>
+          <dl class="info-list">
+            <dt>Uptime (WIFI)</dt>
+            <dd>Same as LIVE: seconds since boot.</dd>
+            <dt>WiFi RSSI</dt>
+            <dd>Signal strength at the board in dBm (&minus;50 great &rarr; &minus;90 unusable).</dd>
+            <dt>Free Heap</dt>
+            <dd>Free RAM right now, in KB. Healthy readings sit well above the
+            lowest point this build has ever needed.</dd>
+            <dt>Min Heap</dt>
+            <dd>The <b>lowest</b> free RAM since boot. This is the leak detector:
+            Free Heap bounces, Min Heap only falls.</dd>
+            <dt>Boots</dt>
+            <dd>How many times the board has started. Climbing on its own means
+            crashes or brownouts.</dd>
+            <dt>Last Update</dt>
+            <dd>Local time this browser last received a frame.</dd>
+            <dt>SSID / BSSID</dt>
+            <dd>Wi-Fi network name, and the MAC of the access point it is attached
+            to (useful when a venue has several identical hotspots).</dd>
+            <dt>Channel</dt>
+            <dd>Wi-Fi channel in use. 1/6/11 are the non-overlapping 2.4 GHz ones.</dd>
+            <dt>Status (WIFI)</dt>
+            <dd>Association state reported by the board.</dd>
+            <dt>IP Address</dt>
+            <dd>The board's address on the local network.</dd>
+            <dt>MAC</dt>
+            <dd>The board's own Wi-Fi MAC. Use it in a DHCP reservation so the
+            address never changes.</dd>
+          </dl>
+        </div>
+
+        <div class="hud-card">
+          <h3>MPU tab</h3>
+          <dl class="info-list">
+            <dt>Temp</dt>
+            <dd>Chip temperature in &deg;C, a few degrees above ambient. It is not
+            engine or air temperature.</dd>
+            <dt>Roll / Pitch</dt>
+            <dd>Lean left-right (roll) and nose up-down (pitch) in degrees, from
+            gravity.</dd>
+            <dt>Yaw</dt>
+            <dd>Turn around the vertical axis, in degrees, integrated from the gyro.
+            It drifts over time because there is no magnetometer, so trust GPS
+            HEADING when moving.</dd>
+            <dt>Max Tilt</dt>
+            <dd>The largest tilt seen since boot. It survives nothing: a reboot
+            clears it.</dd>
+            <dt>Accel X / Accel Y / Accel Z</dt>
+            <dd>Acceleration in g (1 g = gravity). Sitting still, one axis reads
+            about &plusmn;1 and the others near 0. Cornering and bumps show up here.</dd>
+            <dt>Tilt (MPU)</dt>
+            <dd>Current combined tilt: the angle that drives the danger lights.</dd>
+            <dt>Warn at / Danger at</dt>
+            <dd>The thresholds in force, in degrees. The board uses the same values
+            to pick the LED level.</dd>
+            <dt>tilt history</dt>
+            <dd>The last 120 samples (about two minutes at one frame per second)
+            drawn as a line, so a spike is visible even after it passed.</dd>
+          </dl>
+        </div>
+
+        <div class="hud-card">
+          <h3>ACS tab</h3>
+          <dl class="info-list">
+            <dt>Module V</dt>
+            <dd>Sensor output voltage with the divider undone. At 0 A it should sit
+            near 2.5 V; far from that means the sensor is unplugged or the pin is
+            floating.</dd>
+            <dt>Zero</dt>
+            <dd>The voltage treated as 0 A. Calibrated once, because every module is
+            slightly different.</dd>
+            <dt>Current</dt>
+            <dd>(Module V &minus; Zero) &divide; sensitivity, in amperes. Signed: negative
+            means current flowing the other way. <b>ERR</b> when the sensor is not
+            present.</dd>
+            <dt>Peak</dt>
+            <dd>Highest current the firmware has held recently (peak hold).</dd>
+            <dt>Status (ACS)</dt>
+            <dd>Plain verdict: OK, <b>OK &mdash; idle (0 A)</b>, <b>OUT OF RANGE</b>
+            (wrong model or divider), or <b>NO SIGNAL</b> (nothing connected).</dd>
+            <dt>Model</dt>
+            <dd>Picks the sensitivity preset: 5 A = 185 mV/A, 20 A = 100 mV/A,
+            30 A = 66 mV/A. Match the board you actually wired.</dd>
+            <dt>Sensitivity (V/A)</dt>
+            <dd>Volts of output change per ampere. Only edit it for a module that is
+            not one of the three presets.</dd>
+            <dt>Divider ratio</dt>
+            <dd>How much your voltage divider scales the sensor output before the
+            ADC. Default 0.6875 matches this build; change it only if you wired a
+            different divider, or every amp reading shifts.</dd>
+            <dt>Zero (V)</dt>
+            <dd>Manual zero. Leave it empty (<b>auto</b>) to follow the firmware.</dd>
+            <dt>Zero now / Device zero / Defaults</dt>
+            <dd><b>Zero now</b> adopts the current reading as 0 A (do it with the
+            motor off). <b>Device zero</b> goes back to the firmware's value.
+            <b>Defaults</b> restores 5 A / 0.185 / 0.6875 / auto.</dd>
+          </dl>
+        </div>
+
+        <div class="hud-card">
+          <h3>HIST tab</h3>
+          <p class="info-lead">HIST is not live data: it asks the Cloudflare API
+          what the board stored and drew on the map, in UTC. 1 h / 6 h / 24 h is
+          the window, ending now.</p>
+          <dl class="info-list">
+            <dt>Points</dt>
+            <dd>How many stored fixes are drawn for the window. The board records
+            one per second while moving and one per 10 s while parked, and only when
+            it has a fix. Wide windows are sampled by the server so they still cover
+            the whole window; Status then says <b>1 of N points, T total</b>, where
+            T is what is really stored.</dd>
+            <dt>Distance</dt>
+            <dd>Sum of the straight lines between the drawn points, in km. Sampling
+            cuts corners, so a sampled window can read slightly low.</dd>
+            <dt>Max gap</dt>
+            <dd>The longest wait between two stored fixes in that window, measured
+            on the raw data so sampling never fakes a gap. About 1 s while moving and
+            about 10 s while parked are normal. Bigger means data was missing: no
+            GPS, no internet, a reboot, or the board was off.</dd>
+            <dt>Window</dt>
+            <dd>The exact UTC start and end the API answered with.</dd>
+            <dt>Status (HIST)</dt>
+            <dd>What happened: loaded, sampled, truncated at the row cap, empty, or
+            an error such as the API being unreachable.</dd>
+          </dl>
+        </div>
+
+        <div class="hud-card">
+          <h3>What is normal</h3>
+          <dl class="info-list">
+            <dt>A healthy parked board</dt>
+            <dd>Age 1&ndash;2 s, Speed 0.0, Gaps barely moving, HDOP under 5, Sats 7+,
+            Min Heap flat, Max gap in HIST around 10 s.</dd>
+            <dt>A healthy moving board</dt>
+            <dd>Seq rising, Gaps flat, HDOP under 5, Max gap in HIST around 1 s,
+            heading following the turns.</dd>
+            <dt>Worth investigating</dt>
+            <dd>Age over 6 s repeatedly, Gaps climbing, Min Heap falling every hour,
+            Boots climbing, HDOP pinned above 8, or a HIST max gap far above 10 s
+            with no parked period to explain it.</dd>
+          </dl>
+        </div>
+      </div>
     </div>
   </div>
   </div>
@@ -279,10 +580,10 @@
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=28"></script>
-<script src="ui/guard.js?v=28"></script>
-<script src="ui/map.js?v=28"></script>
-<script src="ui/mqtt-mini.js?v=28"></script>
-<script src="ui/app.js?v=28"></script>
+<script src="vendor/maplibre-gl-csp.js?v=29"></script>
+<script src="ui/guard.js?v=29"></script>
+<script src="ui/map.js?v=29"></script>
+<script src="ui/mqtt-mini.js?v=29"></script>
+<script src="ui/app.js?v=29"></script>
 </body>
 </html>

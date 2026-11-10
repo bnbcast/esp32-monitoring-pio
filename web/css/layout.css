@@ -299,3 +299,37 @@ html, body { height: 100%; }
 .hist-btn.active { background: var(--yellow); box-shadow: var(--shadow-ac); }
 .hist-btn:active { transform: translate(1px, 1px); box-shadow: none; }
 
+/* ---------------------------------------------------------------------------
+   INFO tab: plain-language glossary. A term and its meaning, stacked, because
+   the side panel is narrow on a phone and two columns would squeeze the text.
+--------------------------------------------------------------------------- */
+.info-lead {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: #222;
+  margin: 0 0 2px;
+}
+.info-list {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+.info-list dt {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-left: 4px solid var(--ink);
+  padding-left: 6px;
+  margin: 0;
+  line-height: 1.2;
+}
+.info-list dd {
+  margin: 3px 0 0;
+  font-size: 0.7rem;
+  line-height: 1.42;
+  color: #333;
+}
+.info-list dd b { color: var(--ink); }
+

@@ -18,10 +18,17 @@ pio run -e esp32-mqtt-simple -t upload  # flash over COM4
 
 ```powershell
 npm run dev        # local broker + GPS simulator, http://localhost:5003/?dev
-npm test           # unit tests for the live-frame plausibility gate
+npm test           # unit tests for the live-frame gate and the INFO tab
 npm run watch      # print raw MQTT traffic
 npm run capture    # record 10 minutes of payloads to test/fixtures/
 ```
+
+The **INFO** tab in the dashboard explains every value on screen in plain
+language: pills, map HUD, LIVE/WIFI/MPU/ACS fields, the danger lights, and the
+HIST terms (points, distance, max gap). It is static text, so it costs no
+requests. `test/info.test.js` fails if a panel shows a field the glossary does
+not explain, and `node dev/check-info.mjs <url>` proves it renders without
+clipping or horizontal overflow at desktop and phone widths.
 
 ## Current state
 
