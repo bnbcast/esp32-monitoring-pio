@@ -46,7 +46,7 @@ const speeds = pts.map(p => p[3]).filter(v => typeof v === 'number');
 
 console.log(`url        ${url}`);
 console.log(`window     ${new Date(from * 1000).toISOString()} .. ${new Date(to * 1000).toISOString()}`);
-console.log(`points     ${body.count}${body.truncated ? ' (truncated at the limit)' : ''}`);
+console.log(`points     ${body.count}${body.sampled ? ` (sampled 1 in ${body.step}, ${body.total} total)` : ''}${body.truncated ? ' (truncated at the limit)' : ''}`);
 if (pts.length) {
   console.log(`first/last ${new Date(pts[0][0] * 1000).toISOString()} .. ${new Date(pts[pts.length - 1][0] * 1000).toISOString()}`);
   console.log(`track      ${(dist / 1000).toFixed(2)} km`);

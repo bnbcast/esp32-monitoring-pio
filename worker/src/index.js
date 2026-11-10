@@ -177,17 +177,41 @@ async function runRetention(env, nowS) {
   }
 }
 
-async function history(url, env) {  const now = Math.floor(Date.now() / 1000);
+async function history(url, env) {
+  const now = Math.floor(Date.now() / 1000);
   const from = intParam(url, 'from', now - 24 * 3600);
   const to = intParam(url, 'to', now);
   const limit = Math.min(Math.max(intParam(url, 'limit', 2000), 1), 5000);
   if (!(from < to)) return json({ ok: false, error: 'bad-window' }, 400);
 
   const device = (url.searchParams.get('device') || DEVICE).slice(0, 32);
-  const { results } = await env.DB.prepare(
-    `SELECT ts, lat, lon, kmh, cog, hdop FROM fixes
-     WHERE device = ? AND ts >= ? AND ts <= ? ORDER BY ts LIMIT ?`
-  ).bind(device, from, to, limit).all();
+
+  // A day at 1 Hz is ~86k rows, far past the row cap. Counting first lets us
+  // pick a step that covers the whole window instead of returning the first
+  // 5000 points and pretending that is "24 hours".
+  const counted = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM fixes WHERE device = ? AND ts >= ? AND ts <= ?'
+  ).bind(device, from, to).first();
+  const total = counted && isNum(counted.n) ? counted.n : 0;
+  const step = total > limit ? Math.ceil(total / limit) : 1;
+
+  let results;
+  if (step === 1) {
+    ({ results } = await env.DB.prepare(
+      `SELECT ts, lat, lon, kmh, cog, hdop FROM fixes
+       WHERE device = ? AND ts >= ? AND ts <= ? ORDER BY ts LIMIT ?`
+    ).bind(device, from, to, limit).all());
+  } else {
+    // Every step-th row in time order. Keeps the shape (one real fix, not an
+    // average of coordinates) and always includes the oldest point.
+    ({ results } = await env.DB.prepare(
+      `SELECT ts, lat, lon, kmh, cog, hdop FROM (
+         SELECT ts, lat, lon, kmh, cog, hdop,
+                ROW_NUMBER() OVER (ORDER BY ts) AS rn
+         FROM fixes WHERE device = ? AND ts >= ? AND ts <= ?
+       ) WHERE rn % ? = 1 ORDER BY ts LIMIT ?`
+    ).bind(device, from, to, step, limit).all());
+  }
 
   return json({
     ok: true,
@@ -195,7 +219,10 @@ async function history(url, env) {  const now = Math.floor(Date.now() / 1000);
     from,
     to,
     count: results.length,
-    truncated: results.length === limit,
+    total,
+    step,
+    sampled: step > 1,
+    truncated: step === 1 && results.length === limit,
     points: results.map(r => [r.ts, r.lat, r.lon, r.kmh, r.cog, r.hdop])
   });
 }

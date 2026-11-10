@@ -27,6 +27,10 @@ function fakeD1() {
       const make = (args) => ({
         bind(...a) { return make(a); },
         async first() {
+          if (sql.includes('SELECT COUNT(*) AS n FROM fixes')) {
+            const [device, from, to] = args;
+            return { n: rows.filter(r => r.device === device && r.ts >= from && r.ts <= to).length };
+          }
           if (!sql.includes('SELECT boot, seq, ts, lat, lon FROM fixes')) throw new Error('first: ' + sql);
           const device = args[0];
           const mine = rows.filter(r => r.device === device)
@@ -63,6 +67,17 @@ function fakeD1() {
           throw new Error('run: ' + sql);
         },
         async all() {
+          if (sql.includes('ROW_NUMBER() OVER')) {
+            const [device, from, to, step, limit] = args;
+            const mine = rows
+              .filter(r => r.device === device && r.ts >= from && r.ts <= to)
+              .sort((a, b) => a.ts - b.ts);
+            const kept = [];
+            for (let i = 0; i < mine.length && kept.length < limit; i++) {
+              if (i % step === 0) kept.push(mine[i]);
+            }
+            return { results: kept.map(r => ({ ts: r.ts, lat: r.lat, lon: r.lon, kmh: r.kmh, cog: r.cog, hdop: r.hdop })) };
+          }
           if (!sql.includes('SELECT ts, lat, lon, kmh, cog, hdop FROM fixes')) throw new Error('all: ' + sql);
           const [device, from, to, limit] = args;
           const out = rows
@@ -219,6 +234,32 @@ test('history rejects an inverted window', async () => {
   const e = env();
   const r = await worker.fetch(new Request('https://x/history?from=100&to=50'), e);
   assert.equal(r.status, 400);
+});
+
+test('wide windows are sampled so the whole span survives the row cap', async () => {
+  const e = env();
+  const t = now();
+  const frames = [];
+  for (let i = 0; i < 1000; i++) {
+    frames.push(frame({
+      seq: i + 1,
+      ts: t - 1000 + i,
+      gps: { fix: true, lat: -6.9 + i * 0.00001, lng: 107.6, kmh: 20, hdop: 0.8, sats: 9 }
+    }));
+  }
+  for (let i = 0; i < frames.length; i += 100) {
+    assert.equal((await post(e, frames.slice(i, i + 100))).status, 200);
+  }
+
+  const r = await worker.fetch(new Request(`https://x/history?from=${t - 1001}&to=${t + 1}&limit=100`), e);
+  const body = await r.json();
+  assert.equal(body.total, 1000);
+  assert.equal(body.step, 10);
+  assert.equal(body.sampled, true);
+  assert.equal(body.truncated, false, 'sampling covers the window, so it is not truncated');
+  assert.equal(body.count, 100);
+  assert.equal(body.points[0][0], t - 1000, 'keeps the oldest point');
+  assert.ok(body.points[body.points.length - 1][0] >= t - 20, 'still reaches the end of the window');
 });
 
 test('retention deletes rows older than 365 days', async () => {

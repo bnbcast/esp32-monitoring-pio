@@ -115,14 +115,18 @@ and one point from `/history`. Measured on 2026-11-09:
 ## Test the rule set without the cloud
 
 ```powershell
-node --test worker/test/ingest.test.mjs     # 16 tests, in-memory D1
+node --test worker/test/ingest.test.mjs     # 17 tests, in-memory D1
 ```
 
 Covers: key required, bad key 401, unset key 503, moving stored, parked
 throttled to 10 s, no-fix skipped, duplicate vs stale seq, teleport and clock
 rejection, hdop/speed gates, empty and oversized batches, window queries,
-365-day retention, and the once-a-day marker that stops ingest from purging
-on every batch.
+365-day retention, the once-a-day marker that stops ingest from purging on
+every batch, and wide-window sampling.
+
+`/history` returns `count`, `total`, `step` and `sampled`. When a window has
+more rows than `limit`, the server returns every `step`-th real fix (oldest
+kept) so a 24 h request covers 24 h instead of the first ~83 minutes.
 
 ## Prove the device path (no GPS needed)
 

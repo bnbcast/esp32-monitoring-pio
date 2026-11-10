@@ -226,6 +226,19 @@ Evidence:
 | Live `?v=26` | deployed, `check-live` PASS, no page/CSP errors |
 | Serial `acs FAIL` after flash | pending: the board is off USB (no COM ports at the time of writing) |
 
+## Wide-window sampling (fixed, verified)
+
+A day at 1 Hz is ~86k rows; the old API returned the first 5000 rows and called
+that "24 hours". `/history` now counts the window, picks
+`step = ceil(total / limit)`, and returns every step-th real row (never an
+average of coordinates) with `total`, `step` and `sampled` in the body.
+
+| Check | Result |
+|---|---|
+| Unit tests | 17/17 (new: 1000 rows, limit 100 -> `step 10`, spans the window) |
+| Real D1 | 600 seeded rows -> `count 100`, `total 600`, `step 6`, first at `t0`, last at `t0+594` |
+| Probe cleanup | 600 rows deleted, `/history` back to 0 |
+
 ## Retention in production (fixed, verified)
 
 The Worker's `scheduled()` handler plus `[triggers] crons` never ran in

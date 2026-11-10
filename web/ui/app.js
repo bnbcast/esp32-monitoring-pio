@@ -1049,9 +1049,14 @@ if (!KEY) {
     }
 
     const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
-    const status = pts.length
-      ? `drawn as ${drawn} line(s)${body.truncated ? ', truncated at 5000' : ''}`
-      : 'nothing stored in this window';
+    let status = 'nothing stored in this window';
+    if (pts.length) {
+      status = `drawn as ${drawn} line(s)`;
+      // The API samples wide windows instead of returning the first 5000
+      // points, so say so: "24 h" that only covers two hours would be a lie.
+      if (body.sampled) status += ` (1 of ${body.step} points, ${body.total} total)`;
+      if (body.truncated) status += ', truncated at 5000';
+    }
     setHistFields(
       String(body.count != null ? body.count : pts.length),
       km.toFixed(2),
