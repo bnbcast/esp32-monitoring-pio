@@ -15,10 +15,12 @@ const KEY = 'test-key-0123456789abcdef0123456789abcdef';
 
 function fakeD1() {
   const rows = [];
+  const meta = new Map();
   let lastId = 0;
 
   const db = {
     rows,
+    meta,
     prepare(sql) {
       // Mirror real D1: bind() returns a NEW statement; mutating one and
       // reusing it would make batch() insert only the last frame.
@@ -37,6 +39,26 @@ function fakeD1() {
             const before = rows.length;
             for (let i = rows.length - 1; i >= 0; i--) if (rows[i].ts < cutoff) rows.splice(i, 1);
             return { meta: { changes: before - rows.length } };
+          }
+          if (sql.includes('UPDATE meta SET value = ?')) {
+            // Claim the daily slot: update only when older than dueBefore.
+            const [value, dueBefore] = args;
+            const cur = meta.get('retention');
+            if (cur != null && Number(cur) < Number(dueBefore)) {
+              meta.set('retention', value);
+              return { meta: { changes: 1 } };
+            }
+            return { meta: { changes: 0 } };
+          }
+          if (sql.includes("UPDATE meta SET value = '0'")) {
+            if (!meta.has('retention')) return { meta: { changes: 0 } };
+            meta.set('retention', '0');
+            return { meta: { changes: 1 } };
+          }
+          if (sql.includes('INSERT OR IGNORE INTO meta')) {
+            if (meta.has('retention')) return { meta: { changes: 0 } };
+            meta.set('retention', args[0]);
+            return { meta: { changes: 1 } };
           }
           throw new Error('run: ' + sql);
         },
@@ -212,6 +234,31 @@ test('retention deletes rows older than 365 days', async () => {
   await worker.scheduled({}, e, { waitUntil: p => { waited = p; } });
   await waited;
   assert.equal(e.DB.rows.length, 0);
+});
+
+test('ingest drives retention once a day, then backs off', async () => {
+  const e = env();
+  const ancient = (seq) => ({
+    id: 100 + seq, device: 'esp32-01', boot: 1, seq, ts: now() - 400 * 24 * 3600,
+    up: 1, lat: -6.9, lon: 107.6, alt: null, kmh: 0, cog: null, hdop: 0.9, sats: 8, dist_m: 0, received: 0
+  });
+
+  e.DB.rows.push(ancient(1));
+  const first = await (await post(e, [frame({ seq: 1 })])).json();
+  assert.equal(first.retention, 1, 'first ingest of the day purges');
+  assert.equal(e.DB.rows.filter(r => r.ts < now() - 365 * 24 * 3600).length, 0);
+
+  // A second ancient row survives a batch the same day: the marker is fresh.
+  e.DB.rows.push(ancient(2));
+  const second = await (await post(e, [frame({ seq: 2, ts: now() + 1 })])).json();
+  assert.equal(second.retention, 'skipped');
+  assert.equal(e.DB.rows.filter(r => r.ts < now() - 365 * 24 * 3600).length, 1);
+
+  // Simulate the marker being a day old: the next ingest purges again.
+  e.DB.meta.set('retention', String(now() - 25 * 3600));
+  const third = await (await post(e, [frame({ seq: 3, ts: now() + 2 })])).json();
+  assert.equal(third.retention, 1);
+  assert.equal(e.DB.rows.filter(r => r.ts < now() - 365 * 24 * 3600).length, 0);
 });
 
 test('unknown route is 404 and OPTIONS is CORS-only', async () => {

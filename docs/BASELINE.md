@@ -226,9 +226,44 @@ Evidence:
 | Live `?v=26` | deployed, `check-live` PASS, no page/CSP errors |
 | Serial `acs FAIL` after flash | pending: the board is off USB (no COM ports at the time of writing) |
 
+## Retention in production (fixed, verified)
+
+The Worker's `scheduled()` handler plus `[triggers] crons` never ran in
+production: the API is a **Pages Function**, and Pages has no cron triggers, so
+the 365-day delete was dead code. D1 would have grown forever.
+
+Ingest now drives it, throttled by a `meta` row (`key='retention'`):
+
+| Check | Result |
+|---|---|
+| Unit tests | 16/16, including "purges once, then reports skipped, then purges again after 24 h" |
+| Remote schema | `meta` table applied (`num_tables: 2`) |
+| Production purge | seeded a 400-day-old row, `POST /ingest` -> `"retention":1` |
+| Read back | ancient window `0 points`; fresh probe `1 point`; probe deleted -> `0` |
+| Failure mode | purge errors reset the marker and never fail the ingest |
+
+## Watchdog init (fixed in code, needs flash)
+
+The boot log carried two lines that should not be there:
+
+```
+E task_wdt: esp_task_wdt_init(517): TWDT already initialized
+E task_wdt: esp_task_wdt_reset(707): task not found
+```
+
+The first is cosmetic: the Arduino core initialises the TWDT before setup, and
+the code called `init()` again. The second appeared once, meaning at least one
+`reset()` ran while the loop task was not registered as a subscriber.
+
+`setup()` now probes with `esp_task_wdt_status(NULL)` and chooses `init()` vs
+`reconfigure()`, and it checks the `add()` result while accepting "already
+subscribed". Build is green (flash 40.6%); runtime confirmation is pending
+because the board is off USB.
+
 ## Still needs the board
 
-1. Flash `0dd61cd` and confirm `acs FAIL` with `zero 0.510 V` (board unplugged).
-2. The 60-minute soak, restarted on that binary.
+1. Flash `0dd61cd` + watchdog commit; confirm `acs FAIL`, `zero 0.510 V`, and
+   that the two `task_wdt` error lines are gone.
+2. The 60-minute soak, on that binary.
 3. Real parked wander radius (lat/lon spread over 10 minutes).
 4. One drive capture (route, speed, odometer).

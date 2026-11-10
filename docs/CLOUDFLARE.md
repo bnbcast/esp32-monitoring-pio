@@ -19,7 +19,7 @@ Both run the identical handler in `worker/src/index.js`.
 | Endpoints | `GET /health`, `GET /history`, `POST /ingest` |
 | D1 database | `race-tracker`, `916e0115-1d0e-482b-8e08-14b75b56ecec` (APAC) |
 | Account | `1eb96d94afa9eeab9fd7920b2ed4b251` |
-| Retention | daily cron `17 3 * * *` (365-day delete) |
+| Retention | ingest-driven, once per day, 365-day delete (Pages has no cron triggers) |
 | Secret | `INGEST_KEY` on the Pages project |
 | Local key copy | `%USERPROFILE%\.esp32-race-tracker\ingest.key` |
 
@@ -41,6 +41,26 @@ The first deploy of a project needs the project to exist:
 ```powershell
 npx wrangler@4 pages project create race-tracker-history --production-branch=main
 ```
+
+## Retention (why there is no cron here)
+
+Pages Functions do not support cron triggers, so the `scheduled()` handler in
+`worker/src/index.js` only applies to the Worker variant. Production runs the
+purge from `/ingest`: the first successful batch after 24 h deletes rows older
+than 365 days and records the timestamp in the `meta` table (key `retention`).
+That is two small statements plus one indexed `DELETE` per day, and a failed
+purge resets the marker instead of failing the ingest.
+
+Upgrading an existing database needs the new table once:
+
+```powershell
+cd worker
+npx wrangler@4 d1 execute race-tracker --remote --file=schema.sql
+```
+
+Verified in production: seeded a 400-day-old row, posted one batch, got
+`"retention":1`, the old row disappeared from `/history`, and the next batch
+reported `"retention":"skipped"`.
 
 ## Rotate the ingest key
 
@@ -95,13 +115,14 @@ and one point from `/history`. Measured on 2026-11-09:
 ## Test the rule set without the cloud
 
 ```powershell
-node --test worker/test/ingest.test.mjs     # 15 tests, in-memory D1
+node --test worker/test/ingest.test.mjs     # 16 tests, in-memory D1
 ```
 
 Covers: key required, bad key 401, unset key 503, moving stored, parked
 throttled to 10 s, no-fix skipped, duplicate vs stale seq, teleport and clock
-rejection, hdop/speed gates, empty and oversized batches, window queries, and
-365-day retention.
+rejection, hdop/speed gates, empty and oversized batches, window queries,
+365-day retention, and the once-a-day marker that stops ingest from purging
+on every batch.
 
 ## Prove the device path (no GPS needed)
 
@@ -147,7 +168,7 @@ domain the owner controls.
 | D1 rows written | 100,000/day | ≤ 86,400 (only while moving) |
 | D1 rows read | 5,000,000/day | ~3,000 |
 | D1 storage | 5 GB | ~1–2 GB for 365 days |
-| Cron triggers | included | 1/day for retention |
+| Cron triggers | not usable on Pages | not needed: ingest runs retention once a day |
 
 Storage policy is in `worker/src/index.js`: every frame while moving, one frame
 every 10 s while parked, no GPS fix = not stored. That keeps a full year well

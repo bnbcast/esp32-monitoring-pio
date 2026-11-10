@@ -27,3 +27,12 @@ CREATE TABLE IF NOT EXISTS fixes (
 
 -- Route queries are always "this device, this time window".
 CREATE INDEX IF NOT EXISTS idx_fixes_device_ts ON fixes (device, ts);
+
+-- Small key/value table for jobs that must run at most once a day.
+-- Pages Functions have no cron triggers, so retention is driven from /ingest:
+-- the first batch after 24 h deletes rows older than 365 days and records the
+-- timestamp here. Two statements, only when due.
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);

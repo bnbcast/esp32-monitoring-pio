@@ -30,6 +30,7 @@ const CLOCK_FUTURE_S = 3600;         // same generosity as web/ui/guard.js
 const CLOCK_PAST_S = 7 * 24 * 3600;
 const PARKED_STORE_S = 10;
 const RETENTION_S = 365 * 24 * 3600;
+const RETENTION_EVERY_S = 24 * 3600;  // Pages has no cron; ingest drives this
 const TELEPORT_FACTOR = 1.5;
 const TELEPORT_SLACK_M = 20;
 
@@ -50,8 +51,10 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    const cutoff = Math.floor(Date.now() / 1000) - RETENTION_S;
-    ctx.waitUntil(env.DB.prepare('DELETE FROM fixes WHERE ts < ?').bind(cutoff).run());
+    // Kept for the Worker variant (worker/wrangler.toml has the cron). The
+    // production deployment is a Pages Function, which has no cron triggers,
+    // so ingest() performs the same purge at most once a day.
+    ctx.waitUntil(purge(env, Math.floor(Date.now() / 1000)));
   }
 };
 
@@ -119,17 +122,62 @@ async function ingest(request, env) {
     }));
   }
 
+  let retention = 'skipped';
+  try {
+    const purged = await runRetention(env, nowS);
+    if (purged != null) retention = purged;
+  } catch (e) {
+    // A missing meta table or a failed purge must never fail an ingest: the
+    // device deletes the batch on any 2xx, and a 5xx would only make it retry.
+    retention = 'error';
+  }
+
   return json({
     ok: true,
     received: frames.length,
     stored: rows.length,
     duplicates,
-    rejected
+    rejected,
+    retention
   });
 }
 
-async function history(url, env) {
-  const now = Math.floor(Date.now() / 1000);
+// Deletes rows past the retention window and returns how many went.
+async function purge(env, nowS) {
+  const cutoff = nowS - RETENTION_S;
+  const res = await env.DB.prepare('DELETE FROM fixes WHERE ts < ?').bind(cutoff).run();
+  return res.meta ? res.meta.changes : 0;
+}
+
+// Pages Functions have no cron triggers, so ingest drives retention. Claim the
+// once-a-day slot in `meta`, then purge. Returns null when not due yet, else
+// the number of deleted rows.
+async function runRetention(env, nowS) {
+  const dueBefore = nowS - RETENTION_EVERY_S;
+
+  const bumped = await env.DB.prepare(
+    "UPDATE meta SET value = ? WHERE key = 'retention' AND CAST(value AS INTEGER) < ?"
+  ).bind(String(nowS), String(dueBefore)).run();
+  let due = !!(bumped.meta && bumped.meta.changes);
+
+  if (!due) {
+    const created = await env.DB.prepare(
+      "INSERT OR IGNORE INTO meta (key, value) VALUES ('retention', ?)"
+    ).bind(String(nowS)).run();
+    due = !!(created.meta && created.meta.changes);
+  }
+  if (!due) return null;
+
+  try {
+    return await purge(env, nowS);
+  } catch (e) {
+    // Let the next ingest try again instead of waiting another 24 h.
+    try { await env.DB.prepare("UPDATE meta SET value = '0' WHERE key = 'retention'").run(); } catch (e2) { /* ignore */ }
+    throw e;
+  }
+}
+
+async function history(url, env) {  const now = Math.floor(Date.now() / 1000);
   const from = intParam(url, 'from', now - 24 * 3600);
   const to = intParam(url, 'to', now);
   const limit = Math.min(Math.max(intParam(url, 'limit', 2000), 1), 5000);

@@ -1277,15 +1277,31 @@ void mqtt_simple_setup() {
   wdtCfg.timeout_ms = WDT_TIMEOUT_S * 1000UL;
   wdtCfg.idle_core_mask = 0;
   wdtCfg.trigger_panic = true;
-  wdtErr = esp_task_wdt_init(&wdtCfg);
-  if (wdtErr == ESP_ERR_INVALID_STATE) wdtErr = esp_task_wdt_reconfigure(&wdtCfg);
+  // The Arduino core initialises the TWDT before setup(), and a second init()
+  // only logs "TWDT already initialized" at ERROR. status() is the non-logging
+  // probe: INVALID_STATE means "not initialised yet"; anything else means
+  // "initialised, just retune it".
+  if (esp_task_wdt_status(NULL) == ESP_ERR_INVALID_STATE) {
+    wdtErr = esp_task_wdt_init(&wdtCfg);
+    if (wdtErr == ESP_ERR_INVALID_STATE) wdtErr = esp_task_wdt_reconfigure(&wdtCfg);
+  } else {
+    wdtErr = esp_task_wdt_reconfigure(&wdtCfg);
+    if (wdtErr == ESP_ERR_INVALID_STATE) wdtErr = esp_task_wdt_init(&wdtCfg);
+  }
 #else
   wdtErr = esp_task_wdt_init(WDT_TIMEOUT_S, true);
   if (wdtErr == ESP_ERR_INVALID_STATE) wdtErr = ESP_OK;  // already initialised
 #endif
   if (wdtErr == ESP_OK) {
-    esp_task_wdt_add(NULL);
-    logMsg(L_INFO, "SYS", "task watchdog armed (%d s)", WDT_TIMEOUT_S);
+    // add() returns an error when this task is already subscribed. status()
+    // separates that harmless case from a real failure, so the log is honest
+    // and the loop never calls reset() on a task that is not registered.
+    esp_err_t addErr = esp_task_wdt_add(NULL);
+    if (addErr != ESP_OK && esp_task_wdt_status(NULL) == ESP_OK) addErr = ESP_OK;
+    if (addErr == ESP_OK)
+      logMsg(L_INFO, "SYS", "task watchdog armed (%d s)", WDT_TIMEOUT_S);
+    else
+      logMsg(L_WARN, "SYS", "task watchdog configured but loop not subscribed (err %d)", (int)addErr);
   } else {
     logMsg(L_WARN, "SYS", "task watchdog unavailable (err %d)", (int)wdtErr);
   }

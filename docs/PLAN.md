@@ -156,7 +156,7 @@ as random disconnects under load.
 
 | Item | Why it is open |
 |---|---|
-| Flash + ACS verification | fix built and pushed (`0dd61cd`), but the board is off USB; needs `acs FAIL` with `zero 0.510 V` on COM4 |
+| Flash + ACS/watchdog verification | fixes built and pushed; board is off USB. Needs `acs FAIL` at `0.510 V` and the two `task_wdt` error lines gone |
 | 60-minute soak | restarted after the ACS change so the window describes the final binary |
 | Parked + drive captures | needs the vehicle outdoors; the Worker rules are covered by 15 tests, but real wander radius is unmeasured |
 | ECDSA batch signing | measured as viable (174 ms per batch) but not implemented; the gate is plausibility only |
