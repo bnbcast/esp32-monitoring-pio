@@ -108,6 +108,27 @@ const MAP = (function () {
   const DEFAULT_CENTER = [107.502952, -6.909235];   // lng, lat
   const DEFAULT_ZOOM = 12;
 
+  // A phone at 3x has nine times the pixels of a 1x screen, and every one of them
+  // is painted again on every frame. Capping the drawing buffer at 2x costs
+  // nothing visible at arm's length and removes more than half the fill work.
+  const PIXEL_RATIO_CAP = 2;
+
+  function isPhone() {
+    return window.matchMedia("(max-width: 900px)").matches;
+  }
+
+  // What to switch off on a phone, and what must never be switched off:
+  //   * OUT: polygon/line decoration that costs fill rate and tells you nothing
+  //     about where the car is - building footprints and 3D extrusions, airport
+  //     aprons, runways, taxiways.
+  //   * IN: every symbol layer. Street names, place names and building/POI
+  //     labels are what make the map readable, so they stay.
+  const HEAVY_LAYER = /(^|[-_])(building|aeroway)(?=$|[-_])/i;
+
+  function isDecorative(layer) {
+    return layer && layer.type !== "symbol" && HEAVY_LAYER.test(layer.id || "");
+  }
+
   const HEADING = {
     GPS_SPEED_THRESHOLD: 3,      // km/h — above this, GPS course is trusted
     GPS_HDOP_MAX: 6,             // max HDOP for GPS heading to be valid
@@ -203,8 +224,14 @@ const MAP = (function () {
   let measureCb = null;
 
   // modes
-  let myLocMode = "recenter";   // recenter | compass | north
+  let myLocMode = "recenter";   // recenter | follow | compass | north | free
   let lockNorth = false;
+
+  // Explicit camera lock ("keep the car in the middle"), independent of the
+  // mode cycle: it is the switch a spectator leaves on, and a manual pan turns
+  // it off so the map never fights the finger.
+  let followLock = false;
+  let followCb = null;
 
   // heading fusion
   let fusedHeading = 0;
@@ -322,7 +349,12 @@ const MAP = (function () {
       pitch: 0,
       bearing: 0,
       interaction: true,
-      attributionControl: false
+      attributionControl: false,
+      // Two cheap wins before anything is drawn: a smaller drawing buffer and a
+      // short tile fade. A 300 ms fade repaints every freshly loaded tile for a
+      // third of a second, which on a phone is most of the time.
+      pixelRatio: Math.min(window.devicePixelRatio || 1, PIXEL_RATIO_CAP),
+      fadeDuration: isPhone() ? 100 : 300
     });
     map.addControl(new maplibregl.AttributionControl({ compact: true }));
 
@@ -336,6 +368,7 @@ const MAP = (function () {
     // each 'style.load' - first load, raster fallback, everything.
     map.on("style.load", () => {
       try { ensureLayers(); } catch (e) { console.warn("addLayers failed:", e && e.message); }
+      try { lightenBasemap(); } catch (e) { /* not fatal */ }
       if (!initDone) {
         initDone = true;
         mapReady = true;
@@ -381,10 +414,19 @@ const MAP = (function () {
 
     // Any user gesture drops out of follow mode; the recenter button (or C)
     // puts it back. Without this the camera fights the user while panning.
-    map.on("dragstart", () => { myLocMode = "free"; });
+    map.on("dragstart", () => { myLocMode = "free"; releaseFollow(); });
     map.on("zoomstart", e => {
-      if (e.originalEvent) myLocMode = "free";
+      if (e.originalEvent) { myLocMode = "free"; releaseFollow(); }
     });
+
+    // The camera is only ever mid-animation for a moment, but a finger that
+    // lands during one is ignored by MapLibre's drag handler. Stopping the ease
+    // in the capture phase, before the handler looks, hands the map to the
+    // finger instead of making the first swipe do nothing.
+    const settle = () => { if (map.isEasing()) map.stop(); };
+    const canvasHost = map.getCanvasContainer();
+    canvasHost.addEventListener("touchstart", settle, { capture: true, passive: true });
+    canvasHost.addEventListener("mousedown", settle, { capture: true, passive: true });
 
     map.on("click", e => {
       if (!measureMode) return;
@@ -394,6 +436,23 @@ const MAP = (function () {
       renderMeasure();
       notifyMeasure();
     });
+  }
+
+  // Switch off the decorative basemap polygons a phone cannot afford. Every
+  // symbol layer (street names, place names, POI and building labels) is left
+  // alone: names are the map, fills are the wallpaper. Called on style.load, so
+  // it also survives the raster fallback, where no such layer ids exist and each
+  // call is a harmless no-op.
+  let lightApplied = false;
+  function lightenBasemap() {
+    if (lightApplied || !map || !isPhone()) return;
+    const style = map.getStyle();
+    if (!style || !Array.isArray(style.layers)) return;
+    for (const layer of style.layers) {
+      if (!isDecorative(layer)) continue;
+      try { map.setLayoutProperty(layer.id, "visibility", "none"); } catch (e) { /* already gone */ }
+    }
+    lightApplied = true;
   }
 
   // Idempotent: safe to call after every style load. Re-creates our overlays
@@ -508,8 +567,14 @@ const MAP = (function () {
       }
     });
 
-    // A style swap threw the old data away; put the current state back.
+    // A style swap threw the old data away; put the current state back. The
+    // redraw caches have to be reset first, or they would suppress the upload
+    // that is needed precisely because the sources are now empty.
+    accKey = "";
+    wedgeKey = "none";
     try { updateTrail(); } catch (e) { /* ignore */ }
+    try { updateAccuracy(); } catch (e) { /* ignore */ }
+    try { updateHeadingWedge(); } catch (e) { /* ignore */ }
     try { renderMeasure(); } catch (e) { /* ignore */ }
   }
 
@@ -640,15 +705,27 @@ const MAP = (function () {
   }
 
   // Keep the vehicle in view without re-centring on every single reading: only
-  // pan when it leaves the middle band of the viewport.
+  // pan when it leaves the middle band of the viewport. With the camera lock on
+  // (the target button), the middle is kept explicitly every fix.
   function followIfNeeded() {
     if (!map || !mapReady) return;
     if (parkedNow) return;              // never pan a parked vehicle
-    if (myLocMode !== "recenter" && myLocMode !== "follow") return;
     if (vehicle.lat == null) return;
     const w = map.getContainer().clientWidth;
     const h = map.getContainer().clientHeight;
     const p = map.project([vehicle.lng, vehicle.lat]);
+    if (followLock) {
+      // Locked still uses a band rather than re-centring on every fix. An
+      // easeTo that restarts every second never lets the camera settle, and
+      // MapLibre will not begin a drag while the camera is already moving - so
+      // a locked map could not be panned to unlock it. A tight band means the
+      // camera is idle almost all the time and a finger always wins.
+      if (p.x < w * 0.3 || p.x > w * 0.7 || p.y < h * 0.3 || p.y > h * 0.7) {
+        map.easeTo({ center: [vehicle.lng, vehicle.lat], duration: 600 });
+      }
+      return;
+    }
+    if (myLocMode !== "recenter" && myLocMode !== "follow") return;
     if (p.x < w * 0.2 || p.x > w * 0.8 || p.y < h * 0.2 || p.y > h * 0.8) {
       map.easeTo({ center: [vehicle.lng, vehicle.lat], duration: 400 });
     }
@@ -678,6 +755,10 @@ const MAP = (function () {
     markerInner.classList.toggle("nofix", !vehicle.fix);
   }
 
+  // The circle used to be uploaded twice per fix (a point, then a polygon that
+  // replaced it), which doubled the work for a shape nobody ever saw. One
+  // upload, and only when the position or the radius actually changed.
+  let accKey = "";
   function updateAccuracy() {
     if (!map || !mapReady) return;
     const src = map.getSource("accuracy");
@@ -686,18 +767,10 @@ const MAP = (function () {
     const radius = clamp(hdop * 3, 3, 60); // meters
     const pos = viewPos();
     if (pos.lat == null) return;
-    src.setData({
-      type: "FeatureCollection",
-      features: [{
-        type: "Feature",
-        properties: {},
-        geometry: {
-          type: "Point",
-          coordinates: [pos.lng, pos.lat]
-        }
-      }]
-    });
-    // MapLibre doesn't buffer natively; draw a circle via many points
+    const key = pos.lng.toFixed(5) + "," + pos.lat.toFixed(5) + "," + radius.toFixed(0);
+    if (key === accKey) return;
+    accKey = key;
+    // MapLibre has no circle primitive for a geographic radius: draw the ring.
     const circle = circleCoords(pos.lng, pos.lat, radius, 32);
     src.setData({
       type: "FeatureCollection",
@@ -732,17 +805,26 @@ const MAP = (function () {
     return coords;
   }
 
+  let wedgeKey = "none";
   function updateHeadingWedge() {
     if (!map || !mapReady) return;
     const src = map.getSource("heading-wedge");
     if (!src) return;
     const conf = clamp(headingConfidence, 0, 1);
     if (conf < 0.05) {
+      if (wedgeKey === "") return;
+      wedgeKey = "";
       src.setData({ type: "FeatureCollection", features: [] });
       return;
     }
     const pos = viewPos();
     if (pos.lat == null) return;
+    // Heading is smoothed every frame but only the drawn wedge matters: skip the
+    // upload when neither its centre nor its angle moved a visible amount.
+    const key = pos.lng.toFixed(5) + "," + pos.lat.toFixed(5) + "," +
+      Math.round(fusedHeading) + "," + conf.toFixed(2);
+    if (key === wedgeKey) return;
+    wedgeKey = key;
     const r = 12 + 8 * conf; // meters
     const d = r / 111320;
     const h = deg2rad(fusedHeading);
@@ -926,8 +1008,45 @@ const MAP = (function () {
     return myLocMode;
   }
 
+  // ---- camera lock ---------------------------------------------------------
+  // "Keep the car in the middle" as a switch, not a cycling mode: the button on
+  // the map stays lit while it is on, and a pan/zoom turns it off. The dashboard
+  // saves the choice per browser, so it survives a reload during a race day.
+  function releaseFollow() {
+    if (!followLock) return;
+    followLock = false;
+    if (followCb) followCb(false);
+  }
+
+  function setFollow(on) {
+    followLock = !!on;
+    if (followLock) {
+      myLocMode = "follow";
+      if (map && mapReady && vehicle.lat != null) {
+        map.easeTo({
+          center: [vehicle.lng, vehicle.lat],
+          zoom: Math.max(map.getZoom(), 15),
+          duration: 500
+        });
+      }
+    }
+    if (followCb) followCb(followLock);
+    return followLock;
+  }
+
+  function onFollow(cb) { followCb = cb; }
+
+  // The URL bar collapsing on a phone fires a resize on almost every scroll
+  // pixel, and map.resize() reallocates the canvas and repaints every tile. A
+  // sub-2 px wobble is not worth that: ignore it, and let the dashboard debounce
+  // the rest.
+  let lastSize = { w: 0, h: 0 };
   function resize() {
     if (!map || !mapReady || !container) return;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (Math.abs(w - lastSize.w) < 2 && Math.abs(h - lastSize.h) < 2) return;
+    lastSize = { w, h };
     map.resize();
   }
 
@@ -1009,6 +1128,9 @@ const MAP = (function () {
     resetNorth,
     setLockNorth,
     flyTo,
+    setFollow,
+    isFollowing: () => followLock,
+    onFollow,
     getHeading,
     setHeadingSource,
     getTileProvider: () => TILE_PROVIDERS[tileProviderIndex]

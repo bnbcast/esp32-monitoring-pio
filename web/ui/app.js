@@ -1089,6 +1089,12 @@ if (!KEY) {
   function showTab(name) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+    // Each tab starts at its own top. Without this, a long panel left the next
+    // one scrolled halfway down (or clamped to its end), which read as the page
+    // jumping around on a phone.
+    if (tabPanels) tabPanels.scrollTop = 0;
+    // Picking a tab is a request to see it: reopen the bottom sheet if hidden.
+    if (sidePanel && sidePanel.classList.contains('collapsed')) setCollapsed(false);
     // History is fetched on demand: opening the tab is the request.
     if (name === 'history') loadHistory(histMinutes);
   }
@@ -1126,6 +1132,92 @@ if (!KEY) {
     btnMyLocation.addEventListener('click', (e) => {
       e.preventDefault();
       MAP.recenterNow();
+    });
+  }
+
+  // ---- Camera lock (the target button on the map) -------------------------
+  // Spectator default: the camera eases toward the vehicle whenever it leaves
+  // the middle of the screen. Locked means "keep it in the middle", and the
+  // choice is remembered per browser so a reload does not lose it. A manual pan
+  // releases the lock, so the map never fights the finger.
+  const btnFollow = $('btnFollow');
+  function paintFollow(on) {
+    if (!btnFollow) return;
+    btnFollow.classList.toggle('active', !!on);
+    btnFollow.setAttribute('aria-pressed', String(!!on));
+    btnFollow.title = on
+      ? 'Camera locked on the vehicle - tap to release'
+      : 'Lock the camera on the vehicle';
+  }
+  if (btnFollow && typeof MAP !== 'undefined') {
+    let savedFollow = false;
+    try { savedFollow = localStorage.getItem('followLock') === '1'; } catch (e) { savedFollow = false; }
+    MAP.onFollow((on) => {
+      paintFollow(on);
+      try { localStorage.setItem('followLock', on ? '1' : '0'); } catch (e) { /* quota */ }
+    });
+    MAP.setFollow(savedFollow);
+    btnFollow.addEventListener('click', () => MAP.setFollow(!MAP.isFollowing()));
+  }
+
+  // ---- Full-screen map ----------------------------------------------------
+  // One class hides the top bar and the panels; the map keeps the whole window.
+  // Useful on a phone in the hand, and on a desktop when watching a long run.
+  const btnFull = $('btnFull');
+  function paintFull(on) {
+    if (!btnFull) return;
+    btnFull.classList.toggle('active', !!on);
+    btnFull.setAttribute('aria-pressed', String(!!on));
+    btnFull.title = on ? 'Leave full screen (Esc)' : 'Full-screen map (F)';
+  }
+  function setFull(on) {
+    document.body.classList.toggle('map-full', !!on);
+    paintFull(on);
+    // The grid changed: let the browser lay out, then resize the canvas once.
+    requestAnimationFrame(() => { if (typeof MAP !== 'undefined') MAP.resize(); });
+  }
+  if (btnFull) btnFull.addEventListener('click', () => setFull(!document.body.classList.contains('map-full')));
+
+  // ---- Bottom sheet: tap or swipe the handle to hide the panels -----------
+  // On a phone the panels cover 38% of the screen. The handle folds them down to
+  // the tab bar, and picking a tab unfolds them again, so nothing is hidden that
+  // the reader then cannot find.
+  const sidePanel = $('sidePanel');
+  const sheetHandle = $('sheetHandle');
+  const tabPanels = $('tabPanels');
+  function setCollapsed(on) {
+    if (!sidePanel) return;
+    sidePanel.classList.toggle('collapsed', !!on);
+    if (sheetHandle) sheetHandle.setAttribute('aria-expanded', String(!on));
+    try { localStorage.setItem('sheetCollapsed', on ? '1' : '0'); } catch (e) { /* quota */ }
+    requestAnimationFrame(() => { if (typeof MAP !== 'undefined') MAP.resize(); });
+  }
+  if (sidePanel && sheetHandle) {
+    let savedSheet = false;
+    try { savedSheet = localStorage.getItem('sheetCollapsed') === '1'; } catch (e) { savedSheet = false; }
+    setCollapsed(savedSheet);
+    const isCollapsed = () => sidePanel.classList.contains('collapsed');
+    const toggleSheet = () => setCollapsed(!isCollapsed());
+
+    sheetHandle.addEventListener('click', toggleSheet);
+    sheetHandle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(); }
+    });
+    // A swipe is the natural gesture on a phone: down = hide, up = show. A tap
+    // still works, so a short drag that ends where it started is not a toggle.
+    let startY = null;
+    sheetHandle.addEventListener('touchstart', (e) => {
+      startY = e.touches && e.touches[0] ? e.touches[0].clientY : null;
+    }, { passive: true });
+    sheetHandle.addEventListener('touchend', (e) => {
+      const t = e.changedTouches && e.changedTouches[0];
+      if (startY != null && t) {
+        const dy = t.clientY - startY;
+        if (dy > 28) setCollapsed(true);
+        else if (dy < -28) setCollapsed(false);
+        else toggleSheet();
+      }
+      startY = null;
     });
   }
 
@@ -1175,9 +1267,25 @@ if (!KEY) {
 
     else if (k === 'm') { if (LOCK.isLocked()) return; e.preventDefault(); toggleMeasure(); }
     else if (k === 'r') { if (LOCK.isLocked()) return; e.preventDefault(); resetTrip(); }
-    else if (k === 'escape') { e.preventDefault(); toggleMeasure(false); }
+    else if (k === 'f') { e.preventDefault(); setFull(!document.body.classList.contains('map-full')); }
+    else if (k === 'escape') {
+      e.preventDefault();
+      if (document.body.classList.contains('map-full')) setFull(false);
+      else toggleMeasure(false);
+    }
   });
 
   setInterval(renderBanner, 500);
-  window.addEventListener('resize', () => { if (typeof MAP !== 'undefined') MAP.resize(); });
+
+  // A phone fires `resize` while the URL bar slides away and on every pinch.
+  // Each call used to reallocate the map canvas and repaint every tile; one per
+  // burst is enough, and MAP.resize() ignores a sub-2 px change on top of that.
+  let resizeTimer = 0;
+  function scheduleResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (typeof MAP !== 'undefined') MAP.resize(); }, 150);
+  }
+  window.addEventListener('resize', scheduleResize);
+  window.addEventListener('orientationchange', scheduleResize);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleResize);
 }

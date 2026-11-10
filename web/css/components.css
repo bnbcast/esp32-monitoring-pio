@@ -149,6 +149,7 @@ button.small, a.btn.small { padding: 6px 10px; font-size: 0.7rem; }
   box-shadow: var(--shadow);
   width: 56px;
   height: 56px;
+  padding: 0;              /* the button is an icon box, not a text button */
   font-size: 1rem;
   cursor: pointer;
   display: flex;
@@ -158,6 +159,15 @@ button.small, a.btn.small { padding: 6px 10px; font-size: 0.7rem; }
 .map-btn:hover { background: var(--yellow); }
 .map-btn:active { transform: translate(3px, 3px); box-shadow: var(--shadow-ac); }
 .map-btn.active { background: var(--blue); color: #fff; }
+/* The lock/fullscreen buttons carry an inline SVG icon. */
+.map-btn svg { display: block; flex: 0 0 auto; pointer-events: none; }
+
+/* A tap should not wait 300 ms to find out whether it is a double-tap zoom:
+   on a phone that delay is what makes a button feel unresponsive. */
+.map-btn, .tab-btn, .hist-btn, .mini-btn, .lock-btn, .info-chip, .info-row,
+.info-group-head, .sheet-handle {
+  touch-action: manipulation;
+}
 
 /* LED indicators — solid blocks */
 .leds { display: flex; gap: 10px; margin-top: 10px; }

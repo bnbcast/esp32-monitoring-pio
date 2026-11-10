@@ -106,7 +106,7 @@ HDOP ≤ the configured gate. The gate moved from 20 to 8 on this branch.
 | Raster fallback | Esri World Street → Esri Topo → OSM tiles |
 | Geocoding | public Nominatim, min 8 s and 80 m between calls, 110 m cache cells |
 | CSP | present, `script-src 'self'`, no CDN |
-| Tests | none before this branch |
+| Tests | 27 unit tests (`guard` 14, `info` 5, `ui` 8) plus browser probes in `dev/` |
 
 ## Secrets
 
@@ -184,6 +184,77 @@ The probe found a real bug before release: the 1 h / 6 h / 24 h buttons used
 three landed on the same spot and the 24 h button swallowed the click. They now
 have their own `.hist-btn` segmented style.
 
+## Map cost on a phone (measured)
+
+`node dev/check-map-perf.mjs` opens the page at 390x844 with a 3x screen, applies
+a 4x CPU slowdown and records frame pacing, long tasks, the drawing buffer size,
+visible layers and how often each source is re-uploaded. Chromium here renders
+through SwiftShader (software rasteriser), so the absolute numbers are far worse
+than a real phone; they are useful only as a before/after on the same probe.
+
+| Measurement | Before | After |
+|---|---|---|
+| Drawing buffer | `1098x1107` (3x) | `732x738` (2x cap) |
+| Decorative layers drawn | 117/117 | 112/117 (5 hidden) |
+| Text/symbol layers visible | 25/25 | **25/25 - unchanged** |
+| Frame rate (12 s sample) | 3.2 fps | 4.4-6.4 fps |
+| p95 frame time | 400 ms | 200-350 ms |
+| Long tasks / 8 s | 7030 ms | ~6300 ms |
+| `accuracy` uploads | 11.98 /s | ~5 /s (one per fix) |
+
+What changed, and what deliberately did not:
+
+- The drawing buffer is capped at `pixelRatio` 2. On a 3x phone that removes
+  more than half the pixels painted per frame and is invisible at arm's length.
+- Only decoration is hidden on phones: `building`, `building-3d`,
+  `aeroway_fill`, `aeroway_runway`, `aeroway_taxiway`. These are fills and lines.
+- **Every label stays.** All 25 symbol layers remain visible, so street names,
+  district and city names, POIs and airport names still render - the probe
+  asserts `highway-name-major` and `label_city` are never hidden.
+- Tile fade is shortened from 300 ms to 100 ms on phones, because a fade repaints
+  every freshly loaded tile.
+- The accuracy circle was uploaded twice per fix and the heading wedge on every
+  fix even when nothing changed. Both now cache a small key and skip the
+  upload, and the accuracy payload is smaller.
+- `resize()` ignores changes under 2 px and the dashboard debounces
+  `resize` / `orientationchange` / `visualViewport` by 150 ms. A roaming phone
+  fires these constantly as the URL bar tucks away; each one used to rebuild the
+  whole map surface.
+
+The dev simulator publishes at 5 Hz while the board publishes at 1 Hz, so the
+production `setData` rate is about a fifth of the figures above.
+
+## Phone controls: lock, sheet, full screen (measured)
+
+| Check (`dev/check-mobile.mjs`) | Result |
+|---|---|
+| Sheet open at start | 321 px tall, handle 24 px tall |
+| Sheet folded | 90 px (tab bar only), map 381 -> 612 px |
+| Full screen | map 844 px of 844, top bar and panel hidden, canvas resized |
+| `Esc` / `F` | leaves full screen, panel returns |
+| Camera lock | `aria-pressed`, `MAP.isFollowing()`, `localStorage.followLock` all agree |
+| Lock survives reload | yes |
+| Pan releases lock | yes (real CDP touch drag moves the camera, lock clears, stored `0`) |
+| Tab switch resets panel scroll | yes (`scrollTop` back to 0) |
+| Document scrolling | none (`html`/`body` `overflow: hidden`, `overscroll-behavior: none`) |
+
+Two real bugs were found by this probe rather than by eye:
+
+1. A locked camera used to `easeTo` the vehicle on **every** fix. MapLibre
+   refuses to begin a drag while the camera is animating, so a locked map could
+   not be panned to release the lock - the log showed `touchstart` and then
+   nothing. Lock now uses a 30-70% band, so the camera is idle most of the time,
+   and a capture-phase `touchstart`/`mousedown` listener calls `map.stop()`
+   before MapLibre sees the gesture.
+2. The map button icons are inline SVGs and the generic `button` padding applied
+   to them, squeezing a 21 px icon into a 4 px box. `.map-btn` now has
+   `padding: 0` and `.map-btn svg { flex: 0 0 auto }`.
+
+Page-level pull-to-refresh was the "mobile page keeps refreshing" report:
+`html`/`body` now set `overscroll-behavior: none`, the panel scroller sets
+`overscroll-behavior: contain`, and the phone layout makes the document itself
+non-scrollable. All three are static invariants in `test/ui.test.js`.
+
 ## INFO tab: interactive glossary (measured)
 
 The first version was one long list of 72 definitions, which is unreadable in a
@@ -193,11 +264,11 @@ the dashboard opens the matching entry.
 
 | Check | Result |
 |---|---|
-| Unit tests | 5/5: data parses, 73 terms, unique, every displayed field covered, label-to-term resolution (`Tilt` -> LIVE vs `Tilt (MPU)`, `Status` -> WIFI/ACS/HIST) |
+| Unit tests | 5/5: data parses, 75 terms, unique, every displayed field covered, label-to-term resolution (`Tilt` -> LIVE vs `Tilt (MPU)`, `Status` -> WIFI/ACS/HIST) |
 | `dev/check-info.mjs` local | desktop 1440x900 and phone 390x844 PASS |
 | Collapsed start | 9 area headers, 0 terms, 0 paragraphs visible |
 | Area open | first area lists 5 term rows, still 0 paragraphs |
-| Search `hdop` | 1 hit, auto-opened, `1 of 73 terms`, text mentions dilution |
+| Search `hdop` | 1 hit, auto-opened, `1 of 75 terms`, text mentions dilution |
 | Chip `WiFi` | 1 area, 11 terms |
 | Label tap | HDOP label on LIVE -> INFO active, LIVE area open, HDOP definition |
 | Layout | no horizontal overflow (0 px), no clipped tab buttons, panel scrolls |

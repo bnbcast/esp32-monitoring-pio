@@ -34,6 +34,8 @@ window.INFO_GROUPS = [
       { "t": "TRIP", "d": "Length of the trail this page has drawn since it was opened. It is not stored anywhere and returns to 0 on reload." },
       { "t": "HEADING (map)", "d": "Direction of travel in degrees: 0 = north, 90 = east, 180 = south. Taken from GPS when moving with a good HDOP, otherwise from the MPU6050, so it can be a couple of degrees off." },
       { "t": "Position", "d": "Latitude and longitude of the last valid fix, plus the nearest street address (OpenStreetMap). <b>locating address...</b> means it is still resolving; the numbers above it are already current." },
+      { "t": "Camera lock", "d": "The target button on the map. Lit = the camera keeps the vehicle near the middle as it moves. Tap it off, or just drag the map once: the finger wins and the lock releases. The choice is stored in this browser, nothing is sent to the board." },
+      { "t": "Full screen", "d": "Hides the top bar and the panels so the map fills the window. <b>Esc</b> (or the same button) leaves it. Nothing about the data changes; it is only a bigger map." },
       { "t": "MEASURE A&rarr;B", "d": "Operator tool: tap two points on the map to get the distance between them. Nothing is uploaded." }
     ]
   },

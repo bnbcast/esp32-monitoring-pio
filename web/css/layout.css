@@ -3,7 +3,15 @@
 --------------------------------------------------------------------------- */
 
 /* Page shell */
-html, body { height: 100%; }
+html, body {
+  height: 100%;
+  /* Pull-to-refresh reloads the page when a finger drags down at the top of a
+     scroller, and scroll chaining hands the drag to the parent. Both look like
+     "the page refreshed itself" and both are switched off here; the panels keep
+     their own scrolling. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -12,6 +20,7 @@ html, body { height: 100%; }
   padding: 10px;
   gap: 10px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 /* Top bar — compact, fixed height */
@@ -56,6 +65,32 @@ html, body { height: 100%; }
   min-height: 0;
 }
 
+/* The bottom-sheet handle only exists on a phone (see the mobile block). */
+.sheet-handle { display: none; }
+
+/* Full-screen map: the map takes the whole window and the chrome steps aside.
+   The button stays on the map, so leaving is always one tap (or Esc). */
+body.map-full .top-bar-area,
+body.map-full .side-panel,
+body.map-full footer { display: none !important; }
+body.map-full .app-shell { padding: 0; gap: 0; }
+body.map-full .desktop-layout { display: flex; flex-direction: column; gap: 0; }
+body.map-full .map-area { flex: 1; min-height: 0; }
+/* A big map should not be half HUD: in full screen the overlay shrinks to the
+   numbers a spectator glances at, and the address/units step aside. The HUD
+   keeps its own width on a desktop - stretching it to both edges would turn
+   four small boxes into four full-width bars. */
+body.map-full .map-hud { top: 6px; left: 6px; }
+body.map-full .map-hud .hud-box { padding: 4px 6px; margin-bottom: 4px; }
+body.map-full .map-hud .hud-value { font-size: 1.05rem; }
+body.map-full .map-hud .hud-unit,
+body.map-full .map-hud .hud-addr { display: none; }
+@media (max-width: 900px) {
+  body.map-full #map-container { border: none; box-shadow: none; }
+  body.map-full .map-hud { right: 6px; }
+  body.map-full .map-hud .hud-box-pos { display: none; }
+}
+
 /* Tab bar stays fixed at top */
 .tab-bar {
   flex-shrink: 0;
@@ -70,6 +105,9 @@ html, body { height: 100%; }
   overflow-y: auto;
   min-height: 0;
   z-index: 10;
+  /* A swipe that reaches the end of the list must not drag the page with it. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Tab panels inside wrapper */
@@ -115,7 +153,40 @@ html, body { height: 100%; }
     gap: 0;
     overflow: hidden;
   }
-  .sheet-handle { display: none; }
+
+  /* The handle is the difference between "the panels take 38% of my screen" and
+     "the map does". Tap or swipe down and only the tab bar remains; picking a tab
+     brings the sheet back. */
+  .sheet-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    position: relative;
+    flex-shrink: 0;
+    height: 24px;
+    margin: -6px -8px 4px;
+    border-bottom: 3px solid var(--ink);
+    background: var(--bg);
+    cursor: pointer;
+    touch-action: none;          /* the handle owns the gesture, not the page */
+  }
+  .sheet-handle .grip {
+    width: 44px;
+    height: 5px;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+  }
+  .sheet-handle .handle-caret {
+    position: absolute;
+    right: 8px;
+    font-size: 0.65rem;
+    line-height: 1;
+  }
+  .side-panel.collapsed { height: auto; min-height: 0; }
+  .side-panel.collapsed .tab-panels-wrapper { display: none; }
+  .side-panel.collapsed .sheet-handle { margin-bottom: 0; border-bottom: none; }
+  .side-panel.collapsed .handle-caret { transform: rotate(180deg); }
   .side-panel .tab-bar { margin-bottom: 6px; }
   .side-panel .hud-card { padding: 8px; margin-bottom: 6px; }
   .side-panel .hud-grid { gap: 6px; }
@@ -124,6 +195,8 @@ html, body { height: 100%; }
   .tab-btn { font-size: 0.65rem; padding: 6px 2px; }
   .map-btn { width: 44px; height: 44px; font-size: 0.85rem; border-width: 3px; }
   .map-btns { bottom: 40px; right: 8px; gap: 6px; }
+  /* Drag pans and pinch zooms, so the +/- box only covers the map. */
+  .maplibregl-ctrl-top-right { display: none; }
   footer { display: none; }
 
   /* Small but readable map credit. */
