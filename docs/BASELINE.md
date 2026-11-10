@@ -184,6 +184,27 @@ The probe found a real bug before release: the 1 h / 6 h / 24 h buttons used
 three landed on the same spot and the 24 h button swallowed the click. They now
 have their own `.hist-btn` segmented style.
 
+## INFO tab: interactive glossary (measured)
+
+The first version was one long list of 72 definitions, which is unreadable in a
+390 px bottom sheet. It is now an index: 9 collapsible areas, a search box, a
+chip per area, and one term open at a time. Tapping a field label anywhere in
+the dashboard opens the matching entry.
+
+| Check | Result |
+|---|---|
+| Unit tests | 5/5: data parses, 73 terms, unique, every displayed field covered, label-to-term resolution (`Tilt` -> LIVE vs `Tilt (MPU)`, `Status` -> WIFI/ACS/HIST) |
+| `dev/check-info.mjs` local | desktop 1440x900 and phone 390x844 PASS |
+| Collapsed start | 9 area headers, 0 terms, 0 paragraphs visible |
+| Area open | first area lists 5 term rows, still 0 paragraphs |
+| Search `hdop` | 1 hit, auto-opened, `1 of 73 terms`, text mentions dilution |
+| Chip `WiFi` | 1 area, 11 terms |
+| Label tap | HDOP label on LIVE -> INFO active, LIVE area open, HDOP definition |
+| Layout | no horizontal overflow (0 px), no clipped tab buttons, panel scrolls |
+
+Search prefers term matches over body text: "hdop" used to return 5 hits because
+other entries mention HDOP in passing.
+
 ## Long-uptime soak (measured)
 
 A serial capture writes every panel line, so `up`, `heap`, `rssi` and the HIST

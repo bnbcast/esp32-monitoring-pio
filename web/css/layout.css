@@ -300,36 +300,134 @@ html, body { height: 100%; }
 .hist-btn:active { transform: translate(1px, 1px); box-shadow: none; }
 
 /* ---------------------------------------------------------------------------
-   INFO tab: plain-language glossary. A term and its meaning, stacked, because
-   the side panel is narrow on a phone and two columns would squeeze the text.
+   INFO tab: interactive glossary. A long list of paragraphs is unreadable in a
+   narrow panel, so this is search + chips + one open term at a time.
 --------------------------------------------------------------------------- */
 .info-lead {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   line-height: 1.4;
   color: #222;
-  margin: 0 0 2px;
+  margin: 0 0 8px;
 }
-.info-list {
-  display: grid;
-  gap: 9px;
+.info-search {
+  width: 100%;
   margin: 0;
+  padding: 7px 9px;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
-.info-list dt {
+.info-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  margin-top: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.info-chips::-webkit-scrollbar { display: none; }
+.info-chip {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+}
+.info-chip:hover { background: var(--yellow); }
+.info-chip.active { background: var(--yellow); box-shadow: var(--shadow-ac); }
+.info-chip:active { transform: translate(1px, 1px); box-shadow: none; }
+.info-count {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+}
+.info-group { margin-bottom: 7px; }
+.info-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
   font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-left: 4px solid var(--ink);
-  padding-left: 6px;
-  margin: 0;
-  line-height: 1.2;
+  letter-spacing: 0.6px;
+  text-align: left;
+  box-shadow: var(--shadow);
+  cursor: pointer;
 }
-.info-list dd {
-  margin: 3px 0 0;
-  font-size: 0.7rem;
-  line-height: 1.42;
-  color: #333;
+.info-group-head:hover { background: var(--yellow); }
+.info-group-name { flex: 1; }
+.info-group-count {
+  font-size: 0.56rem;
+  padding: 1px 5px;
+  border: 2px solid var(--ink);
+  background: var(--bg);
+  box-shadow: none;
 }
-.info-list dd b { color: var(--ink); }
+.info-group[aria-expanded="true"] .info-group-head,
+.info-group-head[aria-expanded="true"] { background: var(--yellow); }
+.info-group-body { margin-top: 5px; }
+.info-item {
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  margin-bottom: 5px;
+}
+.info-item.open { box-shadow: var(--shadow-ac); }
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  text-align: left;
+  cursor: pointer;
+}
+.info-row:hover { background: var(--yellow); }
+.info-item.open .info-row { background: var(--yellow); }
+.info-caret { flex-shrink: 0; font-size: 0.9rem; line-height: 1; }
+.info-def {
+  padding: 0 9px 9px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #222;
+  border-top: 2px solid var(--ink);
+  padding-top: 7px;
+}
+.info-def b { color: var(--ink); }
+.info-empty {
+  border: 3px dashed var(--ink);
+  padding: 9px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+/* A field label is a button in disguise now: tapping it opens its explanation. */
+.hud-item .lbl[title],
+.hud-label[title] { cursor: help; }
 

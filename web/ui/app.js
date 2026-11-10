@@ -1085,17 +1085,32 @@ if (!KEY) {
   window.isRecording = true;
   window.isReplaying = false;
   // ---- Tab switching ------------------------------------------------------
+  // One panel per tab now; there is no desktop/mobile duplicate to find.
+  function showTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+    // History is fetched on demand: opening the tab is the request.
+    if (name === 'history') loadHistory(histMinutes);
+  }
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      // One panel per tab now; there is no desktop/mobile duplicate to find.
-      const target = $('tab-' + btn.dataset.tab);
-      if (target) target.classList.add('active');
-      // History is fetched on demand: opening the tab is the request.
-      if (btn.dataset.tab === 'history') loadHistory(histMinutes);
-    });
+    btn.addEventListener('click', () => showTab(btn.dataset.tab));
+  });
+
+  // ---- Tap a field label to read what it means ----------------------------
+  // The wording lives only in ui/info-data.js, so a value and its explanation
+  // cannot drift apart. Unit captions are empty labels and are skipped.
+  document.querySelectorAll('.hud-item .lbl, .hud-label').forEach(el => {
+    if (el.textContent.trim()) el.title = 'What does this mean?';
+  });
+  document.addEventListener('click', (e) => {
+    const lbl = e.target.closest('.hud-item .lbl, .hud-label');
+    if (!lbl || !window.INFO || !window.INFO.reveal) return;
+    const text = lbl.textContent.replace(/\s+/g, ' ').trim();
+    if (!text || text.length > 30) return;
+    const panel = lbl.closest('.tab-panel');
+    const group = panel && panel.id.indexOf('tab-') === 0 ? panel.id.slice(4) : '';
+    showTab('info');
+    window.INFO.reveal(text, group);
   });
 
   document.querySelectorAll('.hist-btn').forEach(btn => {
