@@ -85,15 +85,18 @@ intended) and mitigated on the dashboard by `web/ui/guard.js`.
 
 ```
 seq, ts (GPS epoch, 0 when unknown), up (uptime s), mpu,
-roll, pitch, yaw, tilt, ax, ay, az, temp, lvl, warn, danger, maxTilt, peakA,
-acs{ok, amps, v, zero},
+roll, pitch, yaw, tilt, ax, ay, az, temp, lvl, warn, danger, maxTilt,
 gps{chars, view, snr, q, bad, sats, fix, lat, lng, alt, kmh, cog, hdop,
-    dist_m, utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d},
-sys{heap, rssi, wifi{ssid, bssid, channel, status, ip, mac}}
+    dist_m, ttff_s, rej, still, mode, utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d},
+lap{on, n, last_ms, best_ms, la[lat,lng], lb[lat,lng]},
+sys{heap, heap_min, boot, rssi, wifi{ssid, bssid, channel, status, ip, mac}}
 ```
 
-Position is withheld entirely (`lat`/`lng` = `null`) unless sats ≥ 4 **and**
-HDOP ≤ the configured gate. The gate moved from 20 to 8 on this branch.
+Position is withheld entirely (`lat`/`lng` = `null`) unless sats ≥ 5, HDOP ≤ 4
+and the receiver reports a 3D fix. Two further gates run on the accepted fixes:
+one implying over 200 km/h is dropped (`gps.rej`), and below 1 km/h the published
+coordinate is frozen until 8 m of real displacement (`gps.still`). There is no
+current sensor: `acs`, `peakA` and the ADC pin are gone.
 
 ## Dashboard
 
@@ -221,8 +224,9 @@ What changed, and what deliberately did not:
   fires these constantly as the URL bar tucks away; each one used to rebuild the
   whole map surface.
 
-The dev simulator publishes at 5 Hz while the board publishes at 1 Hz, so the
-production `setData` rate is about a fifth of the figures above.
+The dev simulator publishes at 5 Hz; the board publishes 50 frames/s over MQTT,
+but its NMEA source is 1 Hz out of the box and 5 Hz once the UBX configuration
+is acknowledged, so positions only change at that rate.
 
 ## Phone controls: lock, sheet, full screen (measured)
 
@@ -258,17 +262,17 @@ non-scrollable. All three are static invariants in `test/ui.test.js`.
 ## INFO tab: interactive glossary (measured)
 
 The first version was one long list of 72 definitions, which is unreadable in a
-390 px bottom sheet. It is now an index: 9 collapsible areas, a search box, a
+390 px bottom sheet. It is now an index: 8 collapsible areas, a search box, a
 chip per area, and one term open at a time. Tapping a field label anywhere in
 the dashboard opens the matching entry.
 
 | Check | Result |
 |---|---|
-| Unit tests | 5/5: data parses, 75 terms, unique, every displayed field covered, label-to-term resolution (`Tilt` -> LIVE vs `Tilt (MPU)`, `Status` -> WIFI/ACS/HIST) |
+| Unit tests | 5/5: data parses, 69 terms, unique, every displayed field covered, label-to-term resolution (`Tilt` -> LIVE vs `Tilt (MPU)`, `Status` -> WIFI/HIST) |
 | `dev/check-info.mjs` local | desktop 1440x900 and phone 390x844 PASS |
-| Collapsed start | 9 area headers, 0 terms, 0 paragraphs visible |
-| Area open | first area lists 5 term rows, still 0 paragraphs |
-| Search `hdop` | 1 hit, auto-opened, `1 of 75 terms`, text mentions dilution |
+| Collapsed start | 8 area headers, 0 terms, 0 paragraphs visible |
+| Area open | first area lists 4 term rows, still 0 paragraphs |
+| Search `hdop` | 1 hit, auto-opened, `1 of 69 terms`, text mentions dilution |
 | Chip `WiFi` | 1 area, 11 terms |
 | Label tap | HDOP label on LIVE -> INFO active, LIVE area open, HDOP definition |
 | Layout | no horizontal overflow (0 px), no clipped tab buttons, panel scrolls |
@@ -284,7 +288,7 @@ counters can be read back with `dev/`-style parsing (ANSI stripped first).
 | Session | Continuous run | Boots | Heap | Watchdog | Fatal |
 |---|---|---|---|---|---|
 | interrupted by host restart | 8 min 59 s (539 s) | 1, power-on | 184-192 KB, 187 KB at the end | armed, never fired | none |
-| 60 min soak | running | | | | |
+| 2026-11-11, after flash, no sensors | running (60 min) | 1 per deliberate reset | 187-194 KB so far | armed, never fired | none |
 
 Heap over the 9-minute session: 192, 187, 187, 187, 186, ... 187 KB. There is
 no downward trend, `boot` stayed at 1 and no `Guru Meditation` / `panic` line
@@ -294,29 +298,44 @@ is expected indoors: the GPS had no NMEA, so no fix was ever enqueued.
 The 60-minute run is the one that backs the "long uptime" claim; this table is
 updated with its numbers when it finishes.
 
-## ACS712 presence: the false "OK" (found by the owner)
+## Real board, flashed and verified (measured)
 
-With nothing wired to GPIO34 the dashboard showed `ACS OK`. Two independent
-checks were both wrong in the same way:
-
-| Layer | Old check | Why it passed with no sensor |
-|---|---|---|
-| Firmware `acsWiringOK()` | `acsFiltV` in 0.3-4.9 V | the floating pin sits at 0.51 V and calibration adopts it as the zero |
-| Dashboard `acsUpdate()` | raw `vTrue` in 0.3-4.9 V | same window, and it overrode the firmware bit |
-
-Both now require the **calibrated zero** to be near mid-supply, 2.2-2.8 V
-(the ACS712 rests at half its 5 V supply; 0.51 V means "nothing attached").
-The live reading stays bounded only by the ADC range, because it moves with
-current by design: +/-30 A would leave any mid-supply band.
-
-Evidence:
+The board came back on USB (COM4, CP210x) and the branch was flashed with
+`pio run -e esp32-mqtt-simple -t upload`:
 
 | Check | Result |
 |---|---|
-| Firmware build | green, RAM 16.3% (53,288 B), flash 40.6% (1,276,000 B) |
-| Dashboard unit probe (Chromium) | `ok=false, v=0.51` -> `inRange=false`; `ok=true, v=2.50` -> `inRange=true` |
-| Live `?v=26` | deployed, `check-live` PASS, no page/CSP errors |
-| Serial `acs FAIL` after flash | pending: the board is off USB (no COM ports at the time of writing) |
+| Upload | `SUCCESS`, 1,294,880 bytes written, hash of data verified |
+| Chip | `ESP32-D0WD-V3 rev 3.1`, 2 cores @ 240 MHz, 4096 KB flash, 265 KB heap at boot |
+| Firmware | `esp32-dash 1.3.0` |
+| Boot after reset | `rst:0xc (SW_CPU_RESET), boot:0x13 (SPI_FAST_FLASH_BOOT)` |
+| Task watchdog | `task watchdog armed (30 s)`; **no `task_wdt` error lines** |
+| GPS | fresh boot: `no NMEA data on the RX pin`; module not attached |
+| MPU6050 | `mpu FAIL`; module not attached |
+| Publish rate | `seq` and the `tx` counter advance once per second |
+| Heap over 28 min | 187-194 KB, no downward trend |
+| Boot counter | increments once per deliberate `x` reboot, not in between |
+| Live dashboard `?v=33` | `BROKER OK`, `DEVICE LIVE`, `GPS NO DATA`, `NO FIX`, no errors |
+
+The watchdog fix is now confirmed at runtime, not just in code: the two lines
+
+```
+E task_wdt: esp_task_wdt_init(517): TWDT already initialized
+E task_wdt: esp_task_wdt_reset(707): task not found
+```
+
+are gone from a real boot log, and `task watchdog armed (30 s)` follows them.
+
+The no-sensor state also exposed a dashboard bug: with no fix the map kept the
+vehicle marker at `DEFAULT_CENTER`, which is a real town, and the address line
+said "locating address..." forever. The marker is now hidden until the first
+fix (and stays at the last known spot, greyed, after a lost fix), and the
+address line says "no fix yet". `test/ui.test.js` locks that in (28 tests).
+
+Evidence that the board is the publisher and the dashboard is the consumer:
+`dev/mqtt-watch.mjs --dur 15000` on the public broker showed `seq` 197..208 at
+one per second, `sys.boot 1`, `heap 194080`, and the dashboard probe read
+`ui/app.js?v=33` with the marker `display: none`.
 
 ## Wide-window sampling (fixed, verified)
 
@@ -348,7 +367,7 @@ Ingest now drives it, throttled by a `meta` row (`key='retention'`):
 | Read back | ancient window `0 points`; fresh probe `1 point`; probe deleted -> `0` |
 | Failure mode | purge errors reset the marker and never fail the ingest |
 
-## Watchdog init (fixed in code, needs flash)
+## Watchdog init (fixed and verified)
 
 The boot log carried two lines that should not be there:
 
@@ -363,13 +382,44 @@ the code called `init()` again. The second appeared once, meaning at least one
 
 `setup()` now probes with `esp_task_wdt_status(NULL)` and chooses `init()` vs
 `reconfigure()`, and it checks the `add()` result while accepting "already
-subscribed". Build is green (flash 40.6%); runtime confirmation is pending
-because the board is off USB.
+subscribed". A real boot log after the first flash shows `task watchdog armed
+(30 s)` and neither `E task_wdt` line.
+
+## GPS conditioning, 5 Hz and lap timing (screen-verified)
+
+The firmware changes are compiled and the dashboard side is verified against the
+dev simulator; the board itself has not been re-flashed because COM4 is absent.
+
+| Check | Result |
+|---|---|
+| Build | `SUCCESS`, RAM 16.3% (53,288 B), flash 40.7% (1,281,496 B), no format warnings |
+| ACS removal | grep over `src/`, `web/`, `test/`, `dev/` and the docs: no driver, pin, payload key, tab, pill or glossary entry left |
+| Publish gate | sats ≥ 5, HDOP ≤ 4, GSA mode 3 (2D rejected), over-200 km/h jump rejected |
+| Parked hold | speed < 1 km/h freezes the published coordinate; 8 m of real movement releases it |
+| Lap engine | forward segment crossing A→B, time interpolated between fixes, minimum 3 s and 5 km/h |
+| UBX | sent only if the module answers on GPIO 33; otherwise 9600 8N1 unchanged |
+| Unit tests | 28/28 (`node --test test/guard.test.js test/info.test.js test/ui.test.js`) |
+| `dev/check-live.mjs` local | PASS, no page/CSP/console errors; `mode 3D`, `ttff 27`, `rejected 3`, laps `15`, last `41.23`, best `39.87`, gate `armed` |
+| Gate layer | `queryRenderedFeatures(['gate-line'])` = 1, 3 features (line + 2 ends) |
+| Marker | inline SVG arrow, not an emoji glyph |
+| `dev/check-info.mjs` | desktop and phone PASS, 8 areas / 69 terms |
+| `dev/check-mobile.mjs` | PASS, sheet 321→90 px, map 405→636 px, no scroll |
+
+Two bugs were found by these probes and fixed before the commit: a gate that
+arrived while the style was still loading was never drawn (the change was
+consumed before the map was ready), and the gate coordinates were passed to
+GeoJSON as `[lat, lng]` instead of `[lng, lat]`.
+
+Still missing for this block: flash over USB, a real 3D fix outdoors, the
+60-minute soak on this binary, and the extra wire from the module RX to GPIO 33
+before the 5 Hz claim can be measured.
 
 ## Still needs the board
 
-1. Flash `0dd61cd` + watchdog commit; confirm `acs FAIL`, `zero 0.510 V`, and
-   that the two `task_wdt` error lines are gone.
-2. The 60-minute soak, on that binary.
-3. Real parked wander radius (lat/lon spread over 10 minutes).
-4. One drive capture (route, speed, odometer).
+1. ~~Flash `0dd61cd` + watchdog commit; confirm the two `task_wdt` error lines
+   are gone.~~ Done 2026-11-11: no `task_wdt` lines, watchdog armed.
+2. The 60-minute soak, on that binary. Running; the table above is updated when
+   it finishes.
+3. Real parked wander radius (lat/lon spread over 10 minutes). Needs the GPS
+   module on UART2 RX=25; it is not attached yet (`gps.chars` stays 0).
+4. One drive capture (route, speed, odometer). Same blocker as (3).

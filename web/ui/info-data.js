@@ -20,7 +20,6 @@ window.INFO_GROUPS = [
     "terms": [
       { "t": "BROKER", "d": "<b>BROKER OK</b> = this page's WebSocket to the broker is open. <b>BROKER ...</b> = still connecting, or reconnecting after a drop." },
       { "t": "DEVICE", "d": "<b>DEVICE LIVE</b> = a frame arrived in the last 6 seconds. <b>NO SIGNAL</b> = the link is fine but the board went quiet. <b>DEVICE OFFLINE</b> = the board announced it is going away (shutdown, Wi-Fi loss, power cut)." },
-      { "t": "ACS", "d": "<b>ACS OK</b> = the firmware found the current sensor: its zero sits near half supply (~2.5 V) and the amps are plausible. <b>ACS CHECK</b> = floating pin, wrong wiring, or impossible readings, so current is not trustworthy." },
       { "t": "MPU6050", "d": "<b>MPU OK</b> = the tilt sensor answered and its numbers passed the range check. <b>MPU FAIL</b> = missing or unreadable, so tilt and the danger lights are unknown." },
       { "t": "GPS", "d": "<b>GPS FIX</b> = the receiver has a valid position. <b>GPS WAIT</b> = serial data is arriving but there is no fix yet (indoors, or a cold start: can take minutes). <b>GPS NO DATA</b> = nothing on the serial line (wiring or baud rate)." }
     ]
@@ -46,12 +45,11 @@ window.INFO_GROUPS = [
     "terms": [
       { "t": "Speed", "d": "Same value as the map corner: last GPS ground speed in km/h." },
       { "t": "Altitude", "d": "GPS altitude in metres. Noisy by &plusmn;5&ndash;10 m and not barometric, so treat small changes as noise." },
-      { "t": "Sats", "d": "Satellites used in the current fix. 6 or more works, 9&ndash;12 is good, under 4 means no fix." },
+      { "t": "Sats", "d": "Satellites used in the current fix. The firmware needs at least 5 and a 3D fix before it publishes a position; 7&ndash;12 is comfortable." },
       { "t": "HDOP", "d": "Horizontal dilution of precision: a geometry score, <b>lower is better</b>. Under 2 is excellent, 2&ndash;5 is good, over 8 is poor. Above 8 the firmware stops publishing a position even though it still has a fix, which is why you can see satellites but <b>NO FIX</b>." },
       { "t": "Fix", "d": "<b>VALID</b> = the receiver says the position is usable. <b>NO FIX</b> = it does not, so coordinates are sent as empty." },
       { "t": "Heading", "d": "Course in degrees, from GPS or MPU6050 (see map corner)." },
       { "t": "Tilt", "d": "How far the vehicle is leaning, from the MPU6050, in degrees. This is the number the danger lights use." },
-      { "t": "Amps", "d": "Current in amperes from the ACS712. <b>ERR</b> means the sensor is not present or not calibrated, so the number would be fiction." },
       { "t": "Odometer", "d": "Distance in metres the <b>firmware</b> has counted since it booted, minus any reset you did in this browser. It drops to 0 when the board reboots; the reset button (unlocked) zeroes it just for this browser." },
       { "t": "Trail", "d": "Distance in km of the breadcrumb line on the map. Browser-side only: reload clears it." },
       { "t": "Address", "d": "Nearest street to the last fix, as resolved above. It lags the coordinates slightly because the lookup is rate-limited." },
@@ -64,7 +62,13 @@ window.INFO_GROUPS = [
       { "t": "Uptime", "d": "Seconds since the board booted. A number that starts over means it rebooted." },
       { "t": "RSSI", "d": "Wi-Fi signal at the board, in dBm. &minus;50 is excellent, &minus;70 is fine, &minus;85 is weak, below &minus;90 causes dropouts." },
       { "t": "Heap", "d": "Free RAM right now, in KB. High hundreds is healthy on this build; a value that keeps shrinking over hours means a leak." },
-      { "t": "GPS Sats", "d": "Satellite count again, straight from the receiver." }
+      { "t": "GPS Sats", "d": "Satellite count again, straight from the receiver." },
+      { "t": "Fix Mode", "d": "<b>3D</b> = latitude, longitude and altitude are solved, which is what the firmware requires. <b>2D</b> = no altitude constraint, so the horizontal position is much less trustworthy and is deliberately not published." },
+      { "t": "TTFF", "d": "Time to first fix, in seconds after boot: how long the receiver needed for a position the firmware accepted. A warm start with a charged backup battery is a few seconds; a cold start outdoors is around 30 s." },
+      { "t": "Rejected", "d": "Fixes the firmware threw away because they implied a speed no vehicle can reach (over 200 km/h). Each one is a multipath jump, not real movement, and counting them keeps the map and the stored history clean." },
+      { "t": "Laps", "d": "Completed crossings of the virtual finish line, counted on the board. The first forward crossing arms the timer; every later crossing must also be at least 3 s and 5 km/h apart." },
+      { "t": "Last / Best", "d": "The most recent lap and the fastest lap since the gate was set, in seconds. The time is interpolated to the exact crossing point, so it is not rounded to the 5 Hz fix interval." },
+      { "t": "Gate", "d": "<b>armed</b> = two ends are stored on the board. Set them over serial: drive to one end of the line and press <b>a</b>, drive to the other and press <b>b</b>; <b>k</b> shows the gate, <b>l</b> clears it." }
     ]
   },
   {
@@ -109,23 +113,6 @@ window.INFO_GROUPS = [
       { "t": "Tilt (MPU)", "d": "Current combined tilt: the angle that drives the danger lights." },
       { "t": "Warn at / Danger at", "d": "The thresholds in force, in degrees. The board uses the same values to pick the LED level." },
       { "t": "tilt history", "d": "The last 120 samples (about two minutes at one frame per second) drawn as a line, so a spike is visible even after it passed." }
-    ]
-  },
-  {
-    "id": "acs",
-    "title": "ACS tab",
-    "short": "ACS",
-    "terms": [
-      { "t": "Module V", "d": "Sensor output voltage with the divider undone. At 0 A it should sit near 2.5 V; far from that means the sensor is unplugged or the pin is floating." },
-      { "t": "Zero", "d": "The voltage treated as 0 A. Calibrated once, because every module is slightly different." },
-      { "t": "Current", "d": "(Module V &minus; Zero) &divide; sensitivity, in amperes. Signed: negative means current flowing the other way. <b>ERR</b> when the sensor is not present." },
-      { "t": "Peak", "d": "Highest current the firmware has held recently (peak hold)." },
-      { "t": "Status (ACS)", "d": "Plain verdict: OK, <b>OK &mdash; idle (0 A)</b>, <b>OUT OF RANGE</b> (wrong model or divider), or <b>NO SIGNAL</b> (nothing connected)." },
-      { "t": "Model", "d": "Picks the sensitivity preset: 5 A = 185 mV/A, 20 A = 100 mV/A, 30 A = 66 mV/A. Match the board you actually wired." },
-      { "t": "Sensitivity (V/A)", "d": "Volts of output change per ampere. Only edit it for a module that is not one of the three presets." },
-      { "t": "Divider ratio", "d": "How much your voltage divider scales the sensor output before the ADC. Default 0.6875 matches this build; change it only if you wired a different divider, or every amp reading shifts." },
-      { "t": "Zero (V)", "d": "Manual zero. Leave it empty (<b>auto</b>) to follow the firmware." },
-      { "t": "Zero now / Device zero / Defaults", "d": "<b>Zero now</b> adopts the current reading as 0 A (do it with the motor off). <b>Device zero</b> goes back to the firmware's value. <b>Defaults</b> restores 5 A / 0.185 / 0.6875 / auto." }
     ]
   },
   {

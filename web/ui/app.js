@@ -21,7 +21,6 @@ const DEFAULT_KEY = 'race-tracker';
 // opened, so a normal page view never depends on this host being reachable.
 const HISTORY_API = 'https://race-tracker-history.pages.dev';
 const STALE_AFTER_MS = 6000;
-const N = 120;
 
 // ---- helpers --------------------------------------------------------------
 const $ = id => document.getElementById(id);
@@ -189,7 +188,6 @@ function readKey() {
 }
 
 // ---- state ----------------------------------------------------------------
-const H = { t: [], a: [] };
 const GPS = {
   origin: null,
   trace: [],
@@ -214,7 +212,6 @@ let lastFixPos = null;
 let lastFixTs = 0;
 let staleAnnounced = false;
 let lastLiveAt = 0;
-let lastPush = 0;
 let linkState = "connecting";
 let deviceState = "unknown";
 
@@ -362,184 +359,6 @@ function resetOdometer() {
 }
 
 
-// ---- ACS712 setup ---------------------------------------------------------
-// The firmware reports the module voltage (after its own 10k/22k divider), its
-// zero and its amps. The board has no downlink, so "re-zero" and re-scaling are
-// done here: the tab recomputes amps from the raw voltage with the values the
-// user picks, and the rest of the UI uses that same number.
-const ACS = {
-  model: 5,
-  sens: 0.185,
-  divider: 0.6875,
-  zero: null,          // null = follow the device zero
-  views: [],
-  hist: [],
-  maxHist: 120,
-  last: null
-};
-const ACS_SENS = { 5: 0.185, 20: 0.100, 30: 0.066 };
-
-function acsLoad() {
-  try {
-    const s = JSON.parse(localStorage.getItem('acsCfg') || 'null');
-    if (s && typeof s === 'object') {
-      if (num(s.model)) ACS.model = s.model;
-      if (num(s.sens)) ACS.sens = s.sens;
-      if (num(s.divider)) ACS.divider = s.divider;
-      if (num(s.zero)) ACS.zero = s.zero;
-    }
-  } catch (e) { /* ignore */ }
-}
-
-function acsSave() {
-  try {
-    localStorage.setItem('acsCfg', JSON.stringify({
-      model: ACS.model, sens: ACS.sens, divider: ACS.divider, zero: ACS.zero
-    }));
-  } catch (e) { /* quota */ }
-}
-
-function acsDraw(canvas) {
-  if (!canvas) return;
-  const w = canvas.clientWidth || 240;
-  const h = canvas.clientHeight || 84;
-  if (canvas.width !== w) canvas.width = w;
-  if (canvas.height !== h) canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = '#cccccc';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, h / 2);
-  ctx.lineTo(w, h / 2);
-  ctx.stroke();
-  const hist = ACS.hist;
-  if (hist.length < 2) return;
-  let peak = 1;
-  for (const a of hist) peak = Math.max(peak, Math.abs(a));
-  ctx.strokeStyle = '#2447ff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  hist.forEach((a, i) => {
-    const x = (i / (ACS.maxHist - 1)) * w;
-    const y = h / 2 - (a / peak) * (h / 2 - 4);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-}
-
-function acsSync() {
-  for (const v of ACS.views) {
-    if (v.model) v.model.value = String(ACS.model);
-    if (v.sens) v.sens.value = String(ACS.sens);
-    if (v.div) v.div.value = String(ACS.divider);
-    if (v.zeroin) {
-      v.zeroin.value = ACS.zero == null ? '' : String(ACS.zero);
-      v.zeroin.placeholder = 'auto';
-    }
-  }
-}
-
-function acsMount() {
-  const tpl = $('tpl-acs');
-  if (!tpl) return;
-  const host = $('tab-acs');
-  if (!host || host.dataset.acsMounted) return;
-  {
-    host.dataset.acsMounted = '1';
-    host.appendChild(tpl.content.cloneNode(true));
-    const q = s => host.querySelector(s);
-    const v = {
-      v: q('.a-v'), zero: q('.a-zero'), amp: q('.a-amp'), peak: q('.a-peak'),
-      state: q('.a-state'), chart: q('.a-chart'), model: q('.a-model'),
-      sens: q('.a-sens'), div: q('.a-div'), zeroin: q('.a-zeroin'), hint: q('.a-hint')
-    };
-    v.model.addEventListener('change', () => {
-      ACS.model = Number(v.model.value) || 5;
-      ACS.sens = ACS_SENS[ACS.model] || ACS.sens;
-      acsSave(); acsSync(); acsRender();
-    });
-    v.sens.addEventListener('change', () => {
-      const n = Number(v.sens.value);
-      if (num(n) && n > 0.005 && n < 1) { ACS.sens = n; acsSave(); }
-      acsSync(); acsRender();
-    });
-    v.div.addEventListener('change', () => {
-      const n = Number(v.div.value);
-      if (num(n) && n >= 0.1 && n <= 1) { ACS.divider = n; acsSave(); }
-      acsSync(); acsRender();
-    });
-    v.zeroin.addEventListener('change', () => {
-      const raw = v.zeroin.value.trim();
-      if (raw === '') ACS.zero = null;
-      else {
-        const n = Number(raw);
-        if (num(n) && n >= 0 && n <= 5) ACS.zero = n;
-      }
-      acsSave(); acsSync(); acsRender();
-    });
-    q('.a-zeronow').addEventListener('click', () => {
-      if (!ACS.last || !num(ACS.last.vTrue)) return;
-      ACS.zero = Math.round(ACS.last.vTrue * 1000) / 1000;
-      acsSave(); acsSync(); acsRender();
-    });
-    q('.a-zerodev').addEventListener('click', () => {
-      ACS.zero = null; acsSave(); acsSync(); acsRender();
-    });
-    q('.a-reset').addEventListener('click', () => {
-      ACS.model = 5; ACS.sens = 0.185; ACS.divider = 0.6875; ACS.zero = null;
-      acsSave(); acsSync(); acsRender();
-    });
-    ACS.views.push(v);
-  }
-  acsSync();
-}
-
-function acsStateText(vTrue, amps, deadband) {
-  if (!(vTrue > 0.3 && vTrue < 4.9))
-    return 'NO SIGNAL - sensor unplugged or pin floating (0 A should read ~2.5 V)';
-  if (Math.abs(amps) > 30) return 'OUT OF RANGE - check model / divider';
-  if (Math.abs(amps) < (num(deadband) ? deadband : 0.08)) return 'OK - idle (0 A)';
-  return 'OK';
-}
-
-// Called on every reading with the firmware's acs block.
-function acsUpdate(acs, peakA) {
-  if (!acs || !num(acs.v)) return;
-  const scale = 0.6875 / (ACS.divider || 0.6875);
-  const vTrue = acs.v * scale;
-  const zeroTrue = (ACS.zero != null) ? ACS.zero : (num(acs.zero) ? acs.zero * scale : 0);
-  const amps = (vTrue - zeroTrue) / (ACS.sens || 0.185);
-  // Presence is the firmware's call: it owns the calibrated zero and (since
-  // 1.3.1) requires that zero to sit near mid-supply. A second 0.3-4.9 V
-  // "presence" test here is what made the pill read ACS OK on a floating
-  // pin. The raw range is only used for the numeric readout.
-  const inRange = !!acs.ok && vTrue > 0.05 && vTrue < 4.9;
-  ACS.last = { vTrue, zeroTrue, amps, inRange, raw: acs };
-  ACS.hist.push(inRange ? amps : 0);
-  if (ACS.hist.length > ACS.maxHist) ACS.hist.shift();
-  acsRender();
-}
-
-function acsRender() {
-  const st = ACS.last;
-  if (!st) return;
-  const text = acsStateText(st.vTrue, st.amps, st.raw.deadband);
-  for (const v of ACS.views) {
-    if (v.v) v.v.textContent = st.vTrue.toFixed(3);
-    if (v.zero) v.zero.textContent = st.zeroTrue.toFixed(3);
-    if (v.amp) v.amp.textContent = st.inRange ? fmt(st.amps, 2) : 'ERR';
-    if (v.peak) v.peak.textContent = num(st.raw.peak) ? fmt(st.raw.peak, 2) : '--';
-    if (v.state) v.state.textContent = text;
-    if (v.hint) {
-      v.hint.textContent = 'Firmware: zero ' + (num(st.raw.zero) ? st.raw.zero.toFixed(3) : '--')
-        + ' V, ' + (num(st.raw.amps) ? st.raw.amps.toFixed(2) : '--') + ' A'
-        + ' · ' + (st.raw.ok ? 'acs.ok' : 'acs.not ok');
-    }
-    acsDraw(v.chart);
-  }
-}
-
 function updateStatsDOM() {
   const avgSpd = GPS.movingTime > 0 ? (GPS.totalDist / 1000) / (GPS.movingTime / 3600) : 0;
   const el = id => $(id);
@@ -587,17 +406,10 @@ function updateSignalDOM() {
 // ---- rendering: main data -------------------------------------------------
 function renderData(d) {
   warn = d.warn; danger = d.danger;
-  const ok = !!d.mpu, acs = d.acs, gps = d.gps, sys = d.sys;
-
-  // ACS712: recompute in the browser with the user's sensor settings, so the
-  // LIVE readout and the setup tab always agree.
-  acsUpdate(acs, d.peakA);
-  const acsGood = ACS.last ? ACS.last.inRange : !!acs.ok;
-  const ampsTxt = (ACS.last && ACS.last.inRange) ? fmt(ACS.last.amps, 2) : 'ERR';
+  const ok = !!d.mpu, gps = d.gps, sys = d.sys;
 
   // Pills
   setPill($('pMpu'), ok ? "MPU OK" : "MPU FAIL", ok ? "ok" : "bad");
-  setPill($('pAcs'), acsGood ? "ACS OK" : "ACS CHECK", acsGood ? "ok" : "bad");
   setPill($('pGps'), gps.fix ? "GPS FIX" : (gps.chars < 10 ? "GPS NO DATA" : "GPS WAIT"),
     gps.fix ? "ok" : (gps.chars < 10 ? "bad" : "wait"));
 
@@ -613,7 +425,6 @@ function renderData(d) {
   set('liveAlt', gv(gps.alt));
   set('liveFix', gps.fix ? 'VALID' : 'NO FIX');
   set('liveTilt', fmt(d.tilt) + ' deg');
-  set('liveAmps', ampsTxt);
   set('hudSpeed', spdTxt);
   set('gSpd', gps.fix ? (parkedNow ? '0.0 km/h' : (num(gps.kmh) ? fmt(gps.kmh) + ' km/h' : '--')) : 'NO FIX');
   if (num(gps.dist_m)) {
@@ -650,8 +461,6 @@ function renderData(d) {
   set('vAx', fmt(d.ax, 2) + ' g'); set('vAy', fmt(d.ay, 2) + ' g'); set('vAz', fmt(d.az, 2) + ' g');
   set('vWarn', d.warn + ' deg'); set('vDanger', d.danger + ' deg');
   set('tTemp', fmt(d.temp) + ' C');
-  set('vAmps', ampsTxt);
-  set('vPeak', fmt(d.peakA, 2)); set('vSv', fmt(acs.v, 3)); set('vZv', fmt(acs.zero, 3));
 
   // GPS values
   set('gSat', num(gps.sats) ? gps.sats : '--');
@@ -660,6 +469,21 @@ function renderData(d) {
   set('gLat', gps.fix ? fmt(gps.lat, 6) : 'NO FIX');
   set('gLng', gps.fix ? fmt(gps.lng, 6) : 'NO FIX');
   set('gAlt', gps.fix && num(gps.alt) ? fmt(gps.alt) + ' m' : (gps.fix ? '--' : 'NO FIX'));
+  set('gMode', gps.mode === 3 ? '3D' : gps.mode === 2 ? '2D' : '--');
+  set('gTtff', num(gps.ttff_s) && gps.ttff_s > 0 ? gps.ttff_s : '--');
+  set('gRej', num(gps.rej) ? gps.rej : '--');
+
+  // Lap timing. The board counts a lap only when the segment between two fixes
+  // crosses the stored gate A->B, and reports the last/best time in ms.
+  const lap = d.lap || {};
+  const lapS = ms => (num(ms) && ms > 0) ? (ms / 1000).toFixed(2) : '--';
+  set('lapCount', num(lap.n) ? lap.n : '--');
+  set('lapLast', lapS(lap.last_ms));
+  set('lapBest', lapS(lap.best_ms));
+  set('lapGate', lap.on ? 'armed' : 'not set (serial: a / b)');
+  if (typeof MAP !== 'undefined' && MAP.setGate) {
+    MAP.setGate(lap.on && Array.isArray(lap.la) && Array.isArray(lap.lb) ? lap : null);
+  }
 
 
   // Map HUD - position
@@ -713,7 +537,7 @@ function validData(d) {
   return d && typeof d === "object" &&
     num(d.tilt) && num(d.roll) && num(d.pitch) && num(d.yaw) && num(d.lvl) && d.lvl >= 0 && d.lvl <= 2 &&
     num(d.warn) && num(d.danger) &&
-    d.acs && typeof d.acs === "object" && d.gps && typeof d.gps === "object" &&
+    d.gps && typeof d.gps === "object" &&
     d.sys && typeof d.sys === "object";
 }
 
@@ -868,11 +692,6 @@ function onMessage(topic, payload, retained) {
   // previous one. Receipt time is the only reliable liveness signal.
   lastLiveAt = Date.now();
   const now = Date.now();
-  if (now - lastPush >= 1000) {
-    lastPush = now;
-    H.t.push(d.tilt); H.a.push(d.acs.ok && num(d.acs.amps) ? d.acs.amps : 0);
-    if (H.t.length > N) { H.t.shift(); H.a.shift(); }
-  }
   renderData(d);
   renderBanner();
 }
@@ -985,8 +804,6 @@ if (!KEY) {
 } else {
   $('setup').style.display = 'none';
   if ($('lKey')) $('lKey').textContent = KEY.slice(0, 4) + "..." + KEY.slice(-2);
-  acsLoad();
-  acsMount();
   renderBanner();
 
   const client = new MiniMqtt({

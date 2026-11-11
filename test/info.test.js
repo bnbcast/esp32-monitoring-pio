@@ -139,13 +139,14 @@ test('a field label resolves to the right term (same rules as ui/info.js)', () =
     ['Tilt', 'live', 'Tilt'],
     ['Tilt', 'mpu', 'Tilt (MPU)'],
     ['Status', 'wifi', 'Status (WIFI)'],
-    ['Status', 'acs', 'Status (ACS)'],
     ['Status', 'history', 'Status (HIST)'],
     ['Uptime', 'wifi', 'Uptime (WIFI)'],
     ['Accel X', 'mpu', 'Accel X / Accel Y / Accel Z'],
     ['SPEED', 'map', 'SPEED (map)'],
     ['Max gap', 'history', 'Max gap'],
-    ['Divider ratio', 'acs', 'Divider ratio']
+    ['TTFF', 'live', 'TTFF'],
+    ['Fix Mode', 'live', 'Fix Mode'],
+    ['Gate', 'live', 'Gate']
   ];
   for (const [label, group, expected] of cases) {
     const hit = pick(label, group);

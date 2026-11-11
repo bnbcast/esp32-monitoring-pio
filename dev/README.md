@@ -10,7 +10,7 @@ npm run dev
 
 - Serves the dashboard from `web/` at **http://localhost:5003/?dev&t=dev-test-1234**
 - Runs a WebSocket MQTT broker at `ws://localhost:5003/mqtt`
-- Publishes simulated GPS/MPU/ACS frames at 1 Hz
+- Publishes simulated GPS/MPU frames at 5 Hz, including the lap gate
 
 The topic key in dev mode is `dev-test-1234`, not the production key.
 

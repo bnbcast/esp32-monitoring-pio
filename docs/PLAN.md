@@ -135,8 +135,11 @@ Added here:
 2. **Heap low-water counter** — `minFreeHeap` is sampled every loop and
    published as `sys.heap_min`; a single warning is logged per boot below
    40,000 bytes.
-3. **Boot counter** — `RTC_DATA_ATTR bootCount`, published as `sys.boot`, so a
-   reboot loop is visible from the dashboard without any storage.
+3. **Boot counter** — published as `sys.boot`, so a reboot loop is visible from
+   the dashboard without any external storage. It first lived in
+   `RTC_DATA_ATTR`, which turned out not to survive a normal reset on this
+   board: every boot reported `1`, so the diagnostic could never fire. It now
+   lives in NVS (`sys/boot`), one write per boot.
 
 `sys.heap_min` and `sys.boot` are bound to rows in the WIFI tab
 (`wifiHeapMin`, `wifiBoot`), next to the live heap and uptime.
@@ -152,12 +155,43 @@ free heap. A TLS handshake costs ~43 KB, so this keeps a transient spike from
 starving the Wi-Fi/MQTT stack — the failure mode that would otherwise show up
 as random disconnects under load.
 
+## W5 — GPS conditioning, 5 Hz and lap timing
+
+The tracker now treats the receiver as a racing sensor rather than a map toy.
+
+1. **Fix gate:** 5 satellites, HDOP ≤ 4 and a 3D fix. A 2D fix is not published:
+   without an altitude constraint the horizontal error is far worse than HDOP
+   suggests.
+2. **Parked hold:** below 1 km/h the published coordinate is frozen, and only a
+   real 8 m displacement moves it. Multipath wander therefore never reaches the
+   map, the trail or D1.
+3. **Jump gate:** a fix implying over 200 km/h is rejected and counted, so one
+   wild solution cannot teleport the marker or add fake distance.
+4. **UBX at boot:** 38400 baud, 5 Hz navigation, automotive model, static hold
+   50 cm/s, SBAS on, GSV at 1 Hz and VTG/GLL/ZDA off. It runs only when the
+   module answers on GPIO 33; otherwise the link stays at 9600 and nothing else
+   changes.
+5. **Finish line:** two points captured from the console (`a`, `b`; `l` clears,
+   `k` shows) are stored in NVS. A lap is a forward crossing of A→B, with the
+   time interpolated between the two fixes, so a 5 Hz stream is not rounded to
+   200 ms. Crossings under 3 s or 5 km/h are ignored.
+6. **Payload/UI:** `gps` gains `ttff_s`, `rej`, `still` and `mode`; `lap` carries
+   the count, last/best and the gate. The LIVE tab shows laps, last, best and
+   gate state; the map draws the gate as a red dashed line. The emoji marker was
+   replaced by an inline SVG arrow.
+
+Every ACS712 reference is gone: ADC pin, calibration, `amps`/`peakA`, the payload
+block, the console line, the `z` key, the tab, the pill, the graph, the glossary
+and the tests.
+
 ## Still open
 
 | Item | Why it is open |
 |---|---|
-| Flash + ACS/watchdog verification | fixes built and pushed; board is off USB. Needs `acs FAIL` at `0.510 V` and the two `task_wdt` error lines gone |
-| 60-minute soak | restarted after the ACS change so the window describes the final binary |
+| Flash + outdoor check | firmware compiled but the board is not on USB; needs `boot #n` increment, a 3D fix, TTFF and hold verification |
+| GPS TX wire | 5 Hz and the UBX options need one wire from the module RX to GPIO 33 |
+| 60-minute soak | restarted after the GPS/lap change so the window describes the final binary; needs the board idle on USB |
 | Parked + drive captures | needs the vehicle outdoors; the Worker rules are covered by 15 tests, but real wander radius is unmeasured |
+| Power path (MT3608 + pack) | owner is still describing the pack and the USB board; not started on purpose |
 | ECDSA batch signing | measured as viable (174 ms per batch) but not implemented; the gate is plausibility only |
 | Custom domain | optional; `pages.dev` already works on the venue-class ISP |

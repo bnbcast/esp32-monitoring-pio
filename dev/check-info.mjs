@@ -78,8 +78,8 @@ for (const vp of VIEWPORTS) {
 
   check(problems, start.panelActive, 'INFO panel is not visible');
   check(problems, start.tabActive, 'INFO tab is not active');
-  check(problems, start.heads === 9, `expected 9 areas, found ${start.heads}`);
-  check(problems, start.rows >= 70, `expected the full glossary, found ${start.rows} terms`);
+  check(problems, start.heads === 8, `expected 8 areas, found ${start.heads}`);
+  check(problems, start.rows >= 69, `expected the full glossary, found ${start.rows} terms`);
   check(problems, start.visibleRows === 0, 'terms are visible before an area is opened');
   check(problems, start.visibleDefs === 0, 'a definition is visible before anything is tapped');
   check(problems, /^\d+ terms in \d+ areas$/.test(start.count), `count line looks wrong: "${start.count}"`);
@@ -99,7 +99,7 @@ for (const vp of VIEWPORTS) {
       expanded: panel.querySelector('.info-group-head').getAttribute('aria-expanded')
     };
   });
-  check(problems, opened.rows === 5, `first area should list 5 terms, found ${opened.rows}`);
+  check(problems, opened.rows === 4, `first area should list 4 terms, found ${opened.rows}`);
   check(problems, opened.defs === 0, 'opening an area also opened a definition');
   check(problems, opened.expanded === 'true', 'area did not mark itself expanded');
 

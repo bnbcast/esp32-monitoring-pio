@@ -222,6 +222,7 @@ const MAP = (function () {
   let measureA = null;
   let measureB = null;
   let measureCb = null;
+  let gateCurrent = null;   // last lap gate reported by the board
 
   // modes
   let myLocMode = "recenter";   // recenter | follow | compass | north | free
@@ -553,6 +554,37 @@ const MAP = (function () {
       }
     });
 
+    // ---- Virtual finish line (gate A -> B, from the board) ----
+    // Reference only: the lap count itself is computed on the ESP32, so the
+    // line can never disagree with the timing. It is drawn under the vehicle.
+    map.addSource("gate", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] }
+    });
+    map.addLayer({
+      id: "gate-line",
+      type: "line",
+      source: "gate",
+      filter: ["==", ["geometry-type"], "LineString"],
+      paint: {
+        "line-color": "#ff3b1f",
+        "line-width": 4,
+        "line-dasharray": [2, 1]
+      }
+    });
+    map.addLayer({
+      id: "gate-pts",
+      type: "circle",
+      source: "gate",
+      filter: ["==", ["geometry-type"], "Point"],
+      paint: {
+        "circle-radius": 5,
+        "circle-color": "#ff3b1f",
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 2
+      }
+    });
+
     // ---- Heading wedge (translucent view cone) ----
     map.addLayer({
       id: "heading-wedge",
@@ -576,6 +608,7 @@ const MAP = (function () {
     try { updateAccuracy(); } catch (e) { /* ignore */ }
     try { updateHeadingWedge(); } catch (e) { /* ignore */ }
     try { renderMeasure(); } catch (e) { /* ignore */ }
+    try { applyGate(); } catch (e) { /* ignore */ }
   }
 
   // ---- vehicle / trail updates -------------------------------------------
@@ -794,7 +827,12 @@ const MAP = (function () {
     if (marker) return;
     markerInner = document.createElement('div');
     markerInner.className = 'vehicle-marker';
-    markerInner.textContent = '\uD83E\uDD7A';
+    // A plain arrow, pointing up at heading 0. The emoji glyph that used to be
+    // here rendered differently on every platform and read as a sad face.
+    markerInner.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path d="M12 2 20.5 21.5 12 17 3.5 21.5Z" fill="currentColor"/>' +
+      '</svg>';
     markerInner.style.display = 'none';   // shown by updateMarker once a fix exists
     marker = new maplibregl.Marker({ element: markerInner, rotationAlignment: 'map' })
       .setLngLat([DEFAULT_CENTER[0], DEFAULT_CENTER[1]])
@@ -975,6 +1013,53 @@ const MAP = (function () {
 
   function onMeasure(cb) { measureCb = cb; }
 
+  // ---- virtual finish line -------------------------------------------------
+  // The board owns the gate and the lap count; the page only mirrors it so the
+  // operator can see where the line is. Called on every frame; the upload is
+  // skipped unless the gate actually changed.
+  let gateLast = "none";
+  function gateGeoJSON(g) {
+    const okNum = v => typeof v === "number" && isFinite(v);
+    if (!g || !g.on || !Array.isArray(g.la) || !Array.isArray(g.lb) ||
+        !okNum(g.la[0]) || !okNum(g.la[1]) || !okNum(g.lb[0]) || !okNum(g.lb[1])) {
+      return { type: "FeatureCollection", features: [] };
+    }
+    // The payload stores [lat, lng]; GeoJSON wants [lng, lat].
+    const a = [g.la[1], g.la[0]];
+    const b = [g.lb[1], g.lb[0]];
+    return {
+      type: "FeatureCollection",
+      features: [
+        { type: "Feature", properties: {},
+          geometry: { type: "LineString", coordinates: [a, b] } },
+        { type: "Feature", properties: {},
+          geometry: { type: "Point", coordinates: a } },
+        { type: "Feature", properties: {},
+          geometry: { type: "Point", coordinates: b } }
+      ]
+    };
+  }
+
+  function applyGate() {
+    if (!map || !mapReady) return;
+    const src = map.getSource("gate");
+    if (!src) return;
+    src.setData(gateGeoJSON(gateCurrent));
+  }
+
+  function setGate(g) {
+    gateCurrent = g;
+    // Before the style has loaded there is no source to draw into. Remember the
+    // gate only and let ensureLayers() paint it; do NOT consume the change here,
+    // or a gate that arrived during load would never be drawn.
+    if (!map || !mapReady) return;
+    const key = gateGeoJSON(g);
+    const sig = JSON.stringify(key.features);
+    if (sig === gateLast) return;
+    gateLast = sig;
+    applyGate();
+  }
+
   // ---- camera / controls --------------------------------------------------
   function flyTo(lng, lat, zoom, bearing, pitch, duration = 600) {
     if (!map || !mapReady) return;
@@ -1132,6 +1217,7 @@ const MAP = (function () {
     isParked: () => parkedNow,
     setMeasureMode,
     clearMeasure,
+    setGate,
     onMeasure,
     recenterNow,
     resetNorth,

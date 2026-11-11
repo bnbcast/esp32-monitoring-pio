@@ -24,7 +24,7 @@ npm run capture    # record 10 minutes of payloads to test/fixtures/
 ```
 
 The **INFO** tab explains every value on screen without turning into a wall of
-text: 75 terms in 9 collapsible areas, a search box, and one-term-at-a-time
+text: 69 terms in 8 collapsible areas, a search box, and one-term-at-a-time
 definitions. Tapping any field label (HDOP, Max gap, ...) jumps straight to its
 explanation. The wording lives in `web/ui/info-data.js`, so `test/info.test.js`
 can fail when a panel shows a field the glossary does not explain, and

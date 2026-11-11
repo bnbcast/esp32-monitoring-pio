@@ -59,7 +59,7 @@ web/
 
 `pio device monitor` (COM4 @ 115200) prints one framed panel every 2 s plus event
 lines as they happen. Every line is `[HH:MM:SS.mmm] LEVEL [TAG] message`, so a
-capture can be grepped by level (`WARN|ERR`) or tag (`GPS|NET|MQTT|IMU|PWR|CAL`).
+capture can be grepped by level (`WARN|ERR`) or tag (`GPS|NET|MQTT|IMU|LAP|CAL`).
 
 ```
 +------------------------------------------------------------------------------
@@ -68,14 +68,14 @@ capture can be grepped by level (`WARN|ERR`) or tag (`GPS|NET|MQTT|IMU|PWR|CAL`)
 | GPS   NO FIX  used 0   view 0   snr 0   q 0  hdop 25.50  nmea 0s ago
 | NMEA  2210 sent  0 bad  gga 551  rmc 551  gsa 551  gsv 557  other 0
 | IMU   tilt  64.6  DANGER  roll 12.3  pitch -4.5  yaw 3.1  mpu OK
-| PWR     0.55 A  peak  1.11 A  zero 0.439 V  acs OK
+| POS   fix 3D    ttff 27s   rejected 0    hold no    lap 0  last --  best --
 +------------------------------------------------------------------------------
   ! GPS  0 satellites in view - antenna / sky view, not the wiring
 ```
 
 Keys (single byte, no Enter): `g` raw NMEA echo (on at boot), `v` verbose
-(one line per publish), `c` colours, `p` panel, `r` yaw=0, `z` re-zero ACS712,
-`?` help.
+(one line per publish), `c` colours, `p` panel, `r` yaw=0, `a` / `b` capture
+finish-line ends, `l` clear the gate, `k` show it, `?` help.
 
 `monitor_filters = log2file` tees the whole session to
 `logs/device-monitor-<timestamp>.log`.
@@ -94,6 +94,10 @@ hears nothing" from "hears satellites but will not lock":
 | `gps.snr` | GSV field 7 | best SNR in the current GSV cycle |
 | `gps.q` | GGA field 6 | fix quality (0 none, 1 GPS, 2 DGPS) |
 | `gps.sats` | GGA field 7 | satellites **used** (0 whenever there is no fix) |
+| `gps.mode` | GSA field 2 | 1 none, 2 = 2D, 3 = 3D; only 3D is published |
+| `gps.ttff_s` | firmware | seconds from boot to the first accepted fix |
+| `gps.rej` | firmware | fixes dropped by the 200 km/h jump gate |
+| `gps.still` | firmware | true while the parked hold is freezing the coordinate |
 
 Reading it: `chars` climbing + `view 0` = receiver alive, antenna hears nothing;
 `view 6` + `sats 0` = hears satellites, no lock yet; `chars` frozen = the module
@@ -131,7 +135,7 @@ flat solid colors, thick black borders, hard offset shadows, zero rounded corner
 no gradients/blur/glassmorphism. Single light theme, MapLibre 2D map only.
 
 ### UI structure
-- Top bar: title, SIMULATED badge, status pills (broker/device/MPU/ACS/GPS),
+- Top bar: title, SIMULATED badge, status pills (broker/device/MPU/GPS),
   status strip (SAFE/WARNING/DANGER/NO SIGNAL)
 - Desktop: map (left, ~2/3) + side panel tabs (right, ~1/3)
 - Mobile: map full-width + bottom sheet with same tabs
@@ -189,14 +193,26 @@ DOM elements, asserts zero console errors. Chromium install:
   re-projects correctly on pan/zoom; a CSS transform transition would make it
   lag the map and is intentionally absent.
 
-### ACS712 setup tab
+### GPS conditioning and lap timing
 
-`ACS` tab (desktop and mobile) shows the live module voltage, zero, current and
-a 60 s history, plus model (5/20/30 A), sensitivity, divider ratio and a manual
-zero. The board only publishes, so re-zeroing is done in the browser: the tab
-recomputes amps from `acs.v` and the LIVE readout uses the same number. Config
-is stored in `localStorage.acsCfg`. A voltage outside 0.3-4.9 V shows "NO
-SIGNAL - sensor unplugged or pin floating (0 A should read ~2.5 V)".
+There is no current sensor in this build: the ACS712 was removed from the
+firmware, the payload and the dashboard.
+
+- **Parked hold:** below `GPS_STILL_KMH` (1.0 km/h) the published coordinate is
+  frozen and only follows a real displacement over `GPS_HOLD_MOVE_M` (8 m), so
+  multipath wander never reaches the map or the database.
+- **Jump gate:** a fix that implies more than `GPS_MAX_KMH` (200 km/h) is dropped
+  and counted in `gps.rej`.
+- **Publish gate:** at least 5 satellites, HDOP ≤ 4 and a 3D fix. A 2D fix has
+  no altitude constraint and is not published.
+- **5 Hz:** at boot the firmware pushes UBX configuration (38400 baud, 5 Hz,
+  automotive model, static hold, SBAS) when the module answers on GPIO 33. With
+  that pin unwired nothing changes: it falls back to the 9600 baud default.
+- **Finish line:** the board stores two points captured over serial (`a`, `b`;
+  `l` clears, `k` shows). A lap is the segment P0→P1 crossing A→B in the forward
+  direction, timed by interpolating the crossing between the two fixes; laps
+  under 3 s or 5 km/h are ignored. The dashboard draws the gate in red and the
+  LIVE tab shows laps, last and best.
 
 ### UI details worth not breaking
 
@@ -275,6 +291,22 @@ Servers configured:
 
 ---
 
+## Important: System Maintenance — Pi Session Purge Removed
+
+**Do not recreate or re-enable the following:**
+
+- **Removed scheduled task:** `PiSessionPurge` (Windows Task Scheduler, root path `\`)
+  - Was running every 30 minutes, 24/7
+  - Ran `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\Users\User\.pi\agent\bin\purge-sessions.ps1 -SessionRetentionMinutes 60 -LogRetentionDays 7`
+  - **Effect:** Deleted Pi session transcripts older than 60 minutes and permission logs older than 7 days — causing sessions/config to disappear continuously
+- **Removed PowerShell script:** `C:\Users\User\.pi\agent\bin\purge-sessions.ps1`
+  - File deleted; no longer present in `.pi/agent/bin/`
+- **OpenCode:** Searched `~/.config/opencode/`, `~/.opencode/`, `~/.cache/opencode/`, `~/.local/share/opencode/`, and desktop app data — **no equivalent purge/auto-cleanup scripts found** for OpenCode
+
+**Current state:** Pi sessions and config now persist automatically. No background task is removing them. If you need session retention, it is now handled by normal operation only — no scheduled cleanup exists.
+
+---
+
 ## UI Refactor — neo-brutalist (6 stages, committed)
 
 | Stage | Description | Status |
@@ -290,3 +322,13 @@ Servers configured:
 All commits on `master` branch at `C:/Users/User/Documents/PlatformIO/Projects/esp32`.
 Live data path unchanged: MQTT over WebSocket, `ingestGPS()`, `?dev&t=...`,
 simulator, GPS + MPU6050 fields — no firmware/payload changes.
+
+---
+
+## What to Do Next (for the AI agent)
+
+- The ESP32 firmware build is verified working (`pio run -e esp32-mqtt-simple`).
+- The web dashboard refactor (6 stages) is complete and committed.
+- Pi session purge has been removed — sessions/config will no longer be auto-deleted.
+- No pending architectural or product decisions are blocking.
+- If starting new work: check `MEMORY_INDEX.md` and any unfinished-task handoffs before planning.

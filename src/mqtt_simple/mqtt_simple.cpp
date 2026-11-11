@@ -13,6 +13,7 @@
 #include <PubSubClient.h>
 #include <TinyGPSPlus.h>
 #include <Wire.h>
+#include <Preferences.h>
 #include <esp_system.h>
 #include <stdarg.h>
 
@@ -82,13 +83,23 @@
 #define TXQ_LEN   1024
 
 // GPS sanity gates (a "fix" below these is not worth publishing as a position)
-#define GPS_MIN_SATS  4
-// HDOP 20 is roughly a 100 m error circle. Accepting that made the marker and
-// the odometer wander while the vehicle was parked, so the gate is now tight
-// enough to reject multipath garbage but loose enough for a normal race track
-// (the healthy log showed HDOP 0.7-0.8).
-#define GPS_MAX_HDOP  8.0
+#define GPS_MIN_SATS  5
+// HDOP 20 is roughly a 100 m error circle. 4.0 still passes a normal race
+// track (the healthy log showed 0.7-0.8) and rejects the multipath garbage
+// that made the marker wander indoors.
+#define GPS_MAX_HDOP  4.0
 #define GPS_MAX_KMH   200.0          // anything faster is a bad frame, not a vehicle
+
+// A 2D fix (no altitude) has no vertical constraint, so its horizontal error
+// is several times worse than HDOP suggests. Only 3D fixes are published.
+#define GPS_REQUIRE_3D 1
+
+// Parked hold. Below 1 km/h the receiver reports micro-movement from multipath:
+// the module itself says "0 km/h" but its coordinates still wander tens of
+// metres. While that is true the published position is frozen, and it only
+// moves again when the fix has genuinely travelled GPS_HOLD_MOVE_M.
+#define GPS_STILL_KMH     1.0f
+#define GPS_HOLD_MOVE_M   8.0f
 
 // Odometer gates: distance is only counted while the module itself reports
 // motion, and a single fix may not imply more than the frame limit allows.
@@ -97,7 +108,6 @@
 
 // Physical plausibility clamps
 #define GYRO_MAX_DPS  500.0f         // MPU6050 configured range is +-500 dps
-#define AMPS_MAX      30.0f          // ACS712 30 A module limit
 
 // GPS privacy: decimals published for latitude/longitude.
 //   2 = about 1.1 km accuracy   5 = about 1.1 m   6 = about 0.11 m (exact)
@@ -111,8 +121,10 @@
 #define I2C_SDA_PIN   21
 #define I2C_SCL_PIN   22
 #define GPS_RX_PIN    25
-#define GPS_TX_PIN    -1
-#define ACS_PIN       34     // ADC1 pin: keeps working while Wi-Fi is on
+// GPS module RX: needed to push UBX configuration (5 Hz, automotive, static
+// hold, SBAS) into the NEO-6M. With the pin unwired the config simply never
+// answers, the firmware falls back to 9600 8N1 and everything still works.
+#define GPS_TX_PIN    33
 #define LED_BLUE_PIN  26
 #define LED_WHITE_PIN 27
 #define LED_RED_PIN   32
@@ -126,17 +138,17 @@
 #define DANGER_ANGLE 50.0f
 #define HYSTERESIS   2.0f
 
-// ACS712 sensitivity in V per Ampere: 5A = 0.185, 20A = 0.100, 30A = 0.066
-#define ACS_SENS 0.185f
-// Divider ratio R2 / (R1 + R2): 10k/22k = 0.6875, 4.7k/10k = 0.6803
-#define ACS_DIVIDER 0.6875f
-#define ACS_DEADBAND 0.08f
-// The module rests at half its 5 V supply (~2.5 V at the sensor output). A
-// pin with nothing attached floats to an arbitrary voltage - 0.51 V on this
-// board - which the old 0.3-4.9 V window happily called "OK". Require the
-// calibrated zero to sit near mid-supply, so a missing sensor reads FAIL.
-#define ACS_ZERO_MIN 2.2f
-#define ACS_ZERO_MAX 2.8f
+// ---- GPS link + u-blox configuration -----------------------------------
+#define GPS_BAUD         9600     // NEO-6M power-on default
+#define GPS_BAUD_FAST    38400    // enough headroom for 5 Hz NMEA
+#define GPS_NAV_HZ       5        // nav solution rate once configured
+#define GPS_UBX_ENABLE   1        // only runs when a module answers on GPS_TX_PIN
+
+// ---- finish line --------------------------------------------------------
+// The gate is stored as two points; a lap counts when the segment between two
+// consecutive fixes crosses A->B in the forward direction.
+#define LAP_MIN_MS       3000UL   // ignore re-crossings closer than this
+#define LAP_MIN_KMH      5.0f     // a lap cannot be walked across the line
 
 // ============ GLOBALS ============
 TinyGPSPlus gps;
@@ -181,23 +193,50 @@ unsigned long lastSend = 0;
 unsigned long lastDash = 0;
 int level = 0;
 
-float acsOffsetV = 2.5f;
-float acsFiltV = 2.5f;
-float amps = 0;
-
 float maxTilt = 0;
-float peakAmps = 0;
 
 // GPS odometer (device-side cumulative distance)
 float gpsDistTotalM = 0;
 bool gpsHasPrev = false;
 float gpsPrevLat = 0, gpsPrevLng = 0;
 
-// Uptime diagnostics. bootCount survives a software reset (RTC memory), so a
-// reboot loop is visible from the dashboard. minFreeHeap catches a slow leak
-// long before the board actually runs out.
-RTC_DATA_ATTR uint32_t bootCount = 0;
+// ---- GPS position conditioning -----------------------------------------
+// last accepted fix (used by the jump gate and the lap interpolator)
+bool  fixHasPrev = false;
+float fixPrevLat = 0, fixPrevLng = 0;
+uint32_t fixPrevMs = 0;
+
+// parked hold: while the module reports < 1 km/h the published coordinate is
+// frozen here, so multipath wander never reaches the map
+bool  holdValid = false;
+float holdLat = 0, holdLng = 0;
+
+uint32_t gpsRejected = 0;       // fixes dropped by the jump gate
+uint32_t gpsTtffMs = 0;         // time to first usable fix after boot
+
+// ---- finish line --------------------------------------------------------
+bool     gateValid = false;
+double   gateALat = 0, gateALng = 0, gateBLat = 0, gateBLng = 0;
+uint32_t lapCount = 0, lapLastMs = 0, lapBestMs = 0;
+uint32_t lapCrossMs = 0;        // interpolated time of the last crossing
+
+// Uptime diagnostics. minFreeHeap catches a slow leak long before the board
+// actually runs out. bootCount must survive a reset to make a reboot loop
+// visible from the dashboard. RTC_DATA_ATTR looked like the obvious home, but
+// on a normal (non deep-sleep) reset the runtime initialises that section
+// again: every boot reported 1, so the diagnostic could never fire. NVS is the
+// durable store this board already has, and one write per boot is nothing.
+uint32_t bootCount = 1;
 uint32_t minFreeHeap = 0xFFFFFFFFu;
+
+static uint32_t bootCountInit() {
+  Preferences prefs;
+  if (!prefs.begin("sys", false)) return bootCount;
+  bootCount = prefs.getUInt("boot", 0) + 1;
+  prefs.putUInt("boot", bootCount);
+  prefs.end();
+  return bootCount;
+}
 
 // A hang in Wi-Fi/MQTT used to be silent: the board stayed powered, published
 // nothing and looked offline until somebody power-cycled it. 30 s is
@@ -285,6 +324,7 @@ struct GpsMon {
   int      snr;       // GSV field 7: best SNR of the last completed cycle
   int      snrCycle;  // peak SNR inside the cycle that is still arriving
   int      fixQ;      // GGA field 6: 0 none, 1 GPS, 2 DGPS
+  int      fixMode;   // GSA field 2: 1 no fix, 2 = 2D, 3 = 3D
   uint32_t lastMs;    // last complete sentence
   char     lastType[6];
   bool     silent;    // silence warning already printed
@@ -387,6 +427,13 @@ static void gpsMonParse() {
     snprintf(note, sizeof note, "status=%s date=%s", st[0] ? st : "?", dt);
   } else if (!strcmp(kind, "GSA")) {
     gm.cGSA++;
+    // Field 2 is the fix type: 1 none, 2 = 2D, 3 = 3D. A 2D fix has no
+    // altitude constraint, so its horizontal error is much worse than HDOP
+    // suggests; the publish gate rejects it.
+    if (nmeaField(gm.line, 2, f, sizeof f) && f[0]) {
+      gm.fixMode = atoi(f);
+      snprintf(note, sizeof note, "fix=%s", gm.fixMode == 3 ? "3D" : gm.fixMode == 2 ? "2D" : "none");
+    }
   } else {
     gm.cOther++;
   }
@@ -446,10 +493,7 @@ bool mpuInit();
 bool mpuRead(float &ax, float &ay, float &az, float &temp,
              float &gx, float &gy, float &gz);
 void updateMotion();
-float acsReadVoltage(int samples);
-void acsCalibrate();
-void updateCurrent();
-bool acsWiringOK();
+void updateGpsPositioning();
 bool connectMqtt();
 void publishData();
 void networkService();
@@ -603,41 +647,300 @@ void updateMotion() {
   updateLevel(tilt);
 }
 
-// ============ ACS712 ============
-float acsReadVoltage(int samples) {
-  uint32_t sum = 0;
-  for (int i = 0; i < samples; i++) {
-    sum += analogReadMilliVolts(ACS_PIN);
-    delayMicroseconds(200);
+// ============ GPS POSITION CONDITIONING ============
+// Two separate problems, two separate answers:
+//   * while parked, multipath wander moves the reported coordinate by tens of
+//     metres even though the module says 0 km/h -> the published point is
+//     frozen until the vehicle really moves;
+//   * while moving, one wild fix must not teleport the map, the trail or the
+//     odometer -> impossible steps are rejected and counted.
+// Both work on the accepted fix stream, after the HDOP/satellite gate.
+
+bool gpsFixUsable() {
+  if (!gps.location.isValid()) return false;
+  if (!gps.satellites.isValid() || gps.satellites.value() < GPS_MIN_SATS) return false;
+  if (gps.hdop.isValid() && gps.hdop.hdop() > GPS_MAX_HDOP) return false;
+#if GPS_REQUIRE_3D
+  // 2 = 2D fix: no altitude, so the horizontal solution is unconstrained.
+  // 0 = the module sent no GSA at all; HDOP and satellite count then decide.
+  if (gm.fixMode == 2) return false;
+#endif
+  return true;
+}
+
+bool gpsIsParked() {
+  return gps.speed.isValid() && gps.speed.kmph() < GPS_STILL_KMH;
+}
+
+// The coordinate the rest of the world (map, history, odometer) must see.
+bool gpsPublishPos(float* outLat, float* outLng) {
+  if (!gpsFixUsable()) return false;
+  if (holdValid) { *outLat = holdLat; *outLng = holdLng; }
+  else           { *outLat = gps.location.lat(); *outLng = gps.location.lng(); }
+  return true;
+}
+
+// Cross product (in metres, local flat projection) of gate vector and point.
+static double gateSide(double lat, double lng) {
+  const double midLat = (gateALat + gateBLat) * 0.5;
+  const double kx = 111320.0 * cos(midLat * PI / 180.0);
+  const double ky = 110540.0;
+  const double gx = (gateBLng - gateALng) * kx;
+  const double gy = (gateBLat - gateALat) * ky;
+  return gx * ((lat - gateALat) * ky) - gy * ((lng - gateALng) * kx);
+}
+
+// Runs once per parsed fix, before publishing.
+void updateGpsPositioning() {
+  if (!gps.location.isUpdated() || !gps.location.isValid()) return;
+
+  const uint32_t now = millis();
+  const float lat = gps.location.lat();
+  const float lng = gps.location.lng();
+  const bool usable = gpsFixUsable();
+
+  if (usable && gpsTtffMs == 0) gpsTtffMs = now;
+
+  // Jump gate: a fix that needs more than GPS_MAX_KMH to be true is noise.
+  if (usable && fixHasPrev) {
+    uint32_t dt = now - fixPrevMs;
+    if (dt == 0) dt = 1;
+    const float d = haversineM(fixPrevLat, fixPrevLng, lat, lng);
+    const float kmh = (d / (float)dt) * 3600.0f;   // m/ms -> km/h
+    if (kmh > GPS_MAX_KMH) {
+      gpsRejected++;
+      if (verbose) logMsg(L_WARN, "GPS", "fix rejected: %.0f m in %lu ms (%.0f km/h)",
+                          d, (unsigned long)dt, kmh);
+      return;                                       // keep the last good fix
+    }
   }
-  return (sum / (float)samples) / 1000.0f / ACS_DIVIDER;
-}
 
-void acsCalibrate() {
-  for (int i = 0; i < 20; i++) {
-    analogReadMilliVolts(ACS_PIN);
-    delay(5);
+  // Parked hold.
+  if (usable && gpsIsParked()) {
+    if (!holdValid) {
+      holdValid = true;
+      holdLat = lat;
+      holdLng = lng;
+    } else if (haversineM(holdLat, holdLng, lat, lng) > GPS_HOLD_MOVE_M) {
+      // Carried, towed or a genuine slow creep: trust the new place.
+      holdLat = lat;
+      holdLng = lng;
+    }
+  } else if (usable) {
+    holdValid = false;
   }
-  acsOffsetV = acsReadVoltage(500);
-  acsFiltV = acsOffsetV;
+
+  // Finish line: does the segment P0->P1 cross A->B in the forward direction?
+  if (gateValid && usable && fixHasPrev) {
+    const double s0 = gateSide(fixPrevLat, fixPrevLng);
+    const double s1 = gateSide(lat, lng);
+    if (s0 < 0.0 && s1 >= 0.0) {
+      const double midLat = (gateALat + gateBLat) * 0.5;
+      const double kx = 111320.0 * cos(midLat * PI / 180.0);
+      const double ky = 110540.0;
+      const double px = (lng - fixPrevLng) * kx;
+      const double py = (lat - fixPrevLat) * ky;
+      const double a0 = px * ((gateALat - fixPrevLat) * ky) - py * ((gateALng - fixPrevLng) * kx);
+      const double a1 = px * ((gateBLat - fixPrevLat) * ky) - py * ((gateBLng - fixPrevLng) * kx);
+      const bool insideGate = (a0 < 0.0 && a1 >= 0.0) || (a0 >= 0.0 && a1 < 0.0);
+      if (insideGate) {
+        const double frac = s0 / (s0 - s1);           // 0..1 along P0->P1
+        const uint32_t dt = now - fixPrevMs;
+        const uint32_t crossMs = fixPrevMs + (uint32_t)(frac * (double)dt);
+        const bool fast = gps.speed.isValid() && gps.speed.kmph() >= LAP_MIN_KMH;
+        if (fast && (lapCrossMs == 0 || crossMs - lapCrossMs >= LAP_MIN_MS)) {
+          if (lapCrossMs != 0) {
+            lapLastMs = crossMs - lapCrossMs;
+            if (lapBestMs == 0 || lapLastMs < lapBestMs) lapBestMs = lapLastMs;
+            lapCount++;
+            logMsg(L_OK, "LAP", "%lu  %lu.%02lu s  (best %lu.%02lu)",
+                   (unsigned long)lapCount,
+                   (unsigned long)(lapLastMs / 1000UL), (unsigned long)((lapLastMs % 1000UL) / 10UL),
+                   (unsigned long)(lapBestMs / 1000UL), (unsigned long)((lapBestMs % 1000UL) / 10UL));
+          }
+          lapCrossMs = crossMs;                        // arm the next lap
+        }
+      }
+    }
+  }
+
+  fixPrevLat = lat;
+  fixPrevLng = lng;
+  fixPrevMs = now;
+  fixHasPrev = true;
 }
 
-void updateCurrent() {
-  float v = acsReadVoltage(16);
-  acsFiltV = 0.9f * acsFiltV + 0.1f * v;
-  amps = (acsFiltV - acsOffsetV) / ACS_SENS;
-  if (fabs(amps) < ACS_DEADBAND) amps = 0;
-  if (fabs(amps) > peakAmps) peakAmps = fabs(amps);
+// ============ UBX CONFIGURATION ============
+// A NEO-6M out of the box runs 1 Hz at 9600 baud with a pedestrian dynamic
+// model: no static hold, no SBAS, and 33 m of blind travel per second at
+// 120 km/h. All three are fixed by pushing UBX-CFG messages once at boot.
+//
+// This only runs when something actually answers on GPS_TX_PIN. If the module
+// does not move to 38400 the firmware restores 9600 and carries on exactly as
+// before, so an unwired TX pin cannot brick the tracker.
+
+static void gpsPump(uint32_t ms) {
+  unsigned long t0 = millis();
+  while (millis() - t0 < ms) {
+    while (gpsSerial.available()) {
+      char gc = (char)gpsSerial.read();
+      gps.encode(gc);
+      gpsMonFeed(gc);
+    }
+    delay(1);
+  }
 }
 
-bool acsWiringOK() {
-  // Two independent checks, because either one alone can lie:
-  //   * the calibrated zero must be near mid-supply (sensor really present);
-  //   * the live reading must stay inside the ADC range (not saturated).
-  // Do NOT bound the live reading to mid-supply: it moves with current by
-  // design, and +/-30 A would exceed that band.
-  return (acsOffsetV > ACS_ZERO_MIN && acsOffsetV < ACS_ZERO_MAX &&
-          acsFiltV > 0.05f && acsFiltV < 4.9f);
+static void ubxSend(uint8_t cls, uint8_t id, const uint8_t* payload, uint16_t len) {
+  uint8_t ckA = 0, ckB = 0;
+  const uint8_t head[4] = {cls, id, (uint8_t)(len & 0xFF), (uint8_t)(len >> 8)};
+  gpsSerial.write(0xB5);
+  gpsSerial.write(0x62);
+  for (int i = 0; i < 4; i++) { gpsSerial.write(head[i]); ckA = (uint8_t)(ckA + head[i]); ckB = (uint8_t)(ckB + ckA); }
+  for (uint16_t i = 0; i < len; i++) { gpsSerial.write(payload[i]); ckA = (uint8_t)(ckA + payload[i]); ckB = (uint8_t)(ckB + ckA); }
+  gpsSerial.write(ckA);
+  gpsSerial.write(ckB);
+}
+
+static void ubxMsgRate(uint8_t id, uint8_t uart1Rate) {
+  const uint8_t m[8] = {0xF0, id, 0, uart1Rate, 0, 0, 0, 0};
+  ubxSend(0x06, 0x01, m, sizeof m);
+}
+
+static bool gpsUbxConfigure() {
+#if GPS_UBX_ENABLE
+  if (GPS_TX_PIN < 0) return false;
+
+  gpsPump(700);                                   // let the module finish booting
+  const uint32_t before = gm.sentences;
+  gpsPump(400);
+  if (gm.sentences == before) {
+    if (verbose) logMsg(L_INFO, "GPS", "no NMEA to configure - UBX setup skipped");
+    return false;
+  }
+
+  // 1. Move UART1 to 38400 8N1.
+  uint8_t prt[20] = {0};
+  prt[0] = 1;                                     // portID: UART1
+  prt[4] = 0xD0; prt[5] = 0x08;                   // 8 data bits, no parity, 1 stop
+  prt[8] = (uint8_t)(GPS_BAUD_FAST & 0xFF);
+  prt[9] = (uint8_t)(GPS_BAUD_FAST >> 8);
+  prt[12] = 0x07;                                 // in:  UBX | NMEA | RTCM
+  prt[14] = 0x03;                                 // out: UBX | NMEA
+  ubxSend(0x06, 0x00, prt, sizeof prt);
+  gpsSerial.flush();
+  delay(50);
+  gpsSerial.updateBaudRate(GPS_BAUD_FAST);
+
+  // 2. Verify it really moved. Garbage at the wrong rate parses as nothing.
+  gpsPump(1400);
+  if (gm.sentences == before) {
+    gpsSerial.updateBaudRate(GPS_BAUD);
+    gpsPump(300);
+    logMsg(L_WARN, "GPS", "UBX config not acknowledged - staying at %d baud", GPS_BAUD);
+    return false;
+  }
+
+  // 3. 5 Hz navigation.
+  const uint8_t rate[6] = {200, 0, 1, 0, 1, 0};   // measRate 200 ms, navRate 1, GPS time
+  ubxSend(0x06, 0x08, rate, sizeof rate);
+
+  // 4. Automotive model + static hold below 0.5 m/s.
+  uint8_t nav5[36] = {0};
+  nav5[0] = 0x41; nav5[1] = 0x00;                 // apply dynModel + staticHoldThresh
+  nav5[2] = 4;                                    // automotive
+  nav5[3] = 3;                                    // auto 2D/3D
+  nav5[22] = 50;                                  // static hold 50 cm/s
+  ubxSend(0x06, 0x24, nav5, sizeof nav5);
+
+  // 5. SBAS (WAAS/EGNOS/MSAS): differential corrections, ~2 m instead of ~3 m.
+  const uint8_t sbas[8] = {1, 3, 3, 0, 0, 0, 0, 0};
+  ubxSend(0x06, 0x16, sbas, sizeof sbas);
+
+  // 6. Trim the stream: keep GGA/GSA/RMC every fix, GSV once a second, drop
+  //    VTG/GLL/ZDA entirely. At 5 Hz the default set would not fit 38400.
+  ubxMsgRate(0x00, 1);                            // GGA
+  ubxMsgRate(0x02, 1);                            // GSA
+  ubxMsgRate(0x04, 1);                            // RMC
+  ubxMsgRate(0x03, GPS_NAV_HZ);                   // GSV: once per second
+  ubxMsgRate(0x01, 0);                            // GLL: off
+  ubxMsgRate(0x05, 0);                            // VTG: off
+  ubxMsgRate(0x08, 0);                            // ZDA: off
+  gpsSerial.flush();
+
+  logMsg(L_OK, "GPS", "UBX: %d Hz, %d baud, automotive, static hold 1.8 km/h, SBAS on",
+         GPS_NAV_HZ, GPS_BAUD_FAST);
+  return true;
+#else
+  return false;
+#endif
+}
+
+// ============ FINISH LINE STORAGE ============
+// Two points, captured from the console while the vehicle sits on each end of
+// the line, kept in NVS so a reboot does not lose the track.
+static bool gateASet = false, gateBSet = false;
+
+static void gpsSaveGates() {
+  Preferences prefs;
+  if (!prefs.begin("lap", false)) return;
+  prefs.putBool("aSet", gateASet);
+  prefs.putBool("bSet", gateBSet);
+  prefs.putInt("alat", (int32_t)lround(gateALat * 1e7));
+  prefs.putInt("alng", (int32_t)lround(gateALng * 1e7));
+  prefs.putInt("blat", (int32_t)lround(gateBLat * 1e7));
+  prefs.putInt("blng", (int32_t)lround(gateBLng * 1e7));
+  prefs.end();
+}
+
+void gpsLoadGates() {
+  Preferences prefs;
+  if (!prefs.begin("lap", true)) return;
+  gateASet = prefs.getBool("aSet", false);
+  gateBSet = prefs.getBool("bSet", false);
+  gateALat = prefs.getInt("alat", 0) / 1e7;
+  gateALng = prefs.getInt("alng", 0) / 1e7;
+  gateBLat = prefs.getInt("blat", 0) / 1e7;
+  gateBLng = prefs.getInt("blng", 0) / 1e7;
+  prefs.end();
+  gateValid = gateASet && gateBSet && haversineM(gateALat, gateALng, gateBLat, gateBLng) > 1.0f;
+  if (gateValid) logMsg(L_OK, "LAP", "gate loaded: A %.6f,%.6f  B %.6f,%.6f",
+                        gateALat, gateALng, gateBLat, gateBLng);
+}
+
+static void gpsClearGates() {
+  Preferences prefs;
+  if (prefs.begin("lap", false)) { prefs.clear(); prefs.end(); }
+  gateASet = gateBSet = gateValid = false;
+  lapCount = lapLastMs = lapBestMs = lapCrossMs = 0;
+  logMsg(L_OK, "LAP", "gate cleared");
+}
+
+static void gpsCaptureGate(char which) {
+  float lat = 0, lng = 0;
+  if (!gpsPublishPos(&lat, &lng)) {
+    logMsg(L_WARN, "LAP", "no usable fix - cannot set gate %c", which);
+    return;
+  }
+  if (which == 'a') { gateALat = lat; gateALng = lng; gateASet = true; }
+  else              { gateBLat = lat; gateBLng = lng; gateBSet = true; }
+  gateValid = gateASet && gateBSet && haversineM(gateALat, gateALng, gateBLat, gateBLng) > 1.0f;
+  gpsSaveGates();
+  if (gateValid) {
+    const float width = haversineM(gateALat, gateALng, gateBLat, gateBLng);
+    lapCount = lapLastMs = lapBestMs = lapCrossMs = 0;
+    logMsg(L_OK, "LAP", "gate armed: %c %.6f,%.6f  width %.1f m - cross A->B to start",
+           which, lat, lng, width);
+  } else {
+    logMsg(L_INFO, "LAP", "gate %c stored - set the other end (%.6f,%.6f)", which, lat, lng);
+  }
+}
+
+static void gpsShowGates() {
+  if (!gateValid) { logMsg(L_INFO, "LAP", "no gate set: press a at one end, b at the other"); return; }
+  logMsg(L_INFO, "LAP", "A %.6f,%.6f  B %.6f,%.6f  width %.1f m  laps %lu",
+         gateALat, gateALng, gateBLat, gateBLng,
+         haversineM(gateALat, gateALng, gateBLat, gateBLng), (unsigned long)lapCount);
 }
 
 // ============ NETWORK ============
@@ -787,22 +1090,20 @@ void txqDrain() {
 }
 
 // ============ GPS sanity ============
-bool gpsFixUsable() {
-  if (!gps.location.isValid()) return false;
-  if (!gps.satellites.isValid() || gps.satellites.value() < GPS_MIN_SATS) return false;
-  if (gps.hdop.isValid() && gps.hdop.hdop() > GPS_MAX_HDOP) return false;
-  return true;
-}
+// gpsFixUsable() lives with the position conditioning above, because the jump
+// gate and the parked hold both need the same verdict.
 
 void publishData() {
   // A position is only published when the fix is actually usable (enough
-  // satellites, sane HDOP); otherwise the fields stay null and the dashboard
-  // shows "NO FIX" instead of a wrong place on the map.
+  // satellites, sane HDOP, 3D); otherwise the fields stay null and the
+  // dashboard shows "NO FIX" instead of a wrong place on the map.
   const bool fix = gpsFixUsable();
+  float pubLat = 0, pubLng = 0;
+  const bool havePos = fix && gpsPublishPos(&pubLat, &pubLng);
   char lat[16] = "null", lng[16] = "null", alt[16] = "null", spd[16] = "null";
-  if (fix && GPS_DECIMALS >= 0) {
-    snprintf(lat, sizeof lat, "%.*f", GPS_DECIMALS, gps.location.lat());
-    snprintf(lng, sizeof lng, "%.*f", GPS_DECIMALS, gps.location.lng());
+  if (havePos && GPS_DECIMALS >= 0) {
+    snprintf(lat, sizeof lat, "%.*f", GPS_DECIMALS, pubLat);
+    snprintf(lng, sizeof lng, "%.*f", GPS_DECIMALS, pubLng);
   }
   if (fix && gps.altitude.isValid()) snprintf(alt, sizeof alt, "%.0f", gps.altitude.meters());
   if (fix && gps.speed.isValid() && gps.speed.kmph() <= GPS_MAX_KMH)
@@ -840,21 +1141,22 @@ void publishData() {
   float tRoll  = constrain(roll,  -180.0f, 180.0f);
   float tPitch = constrain(pitch, -180.0f, 180.0f);
   float tYaw   = constrain(yaw,   -180.0f, 180.0f);
-  float tAmps  = constrain(amps,  -AMPS_MAX, AMPS_MAX);
 
   txSeq++;
 
 #if GPS_DECIMALS >= 0
   // History path: only real fixes with a real clock are worth storing. It is a
   // separate queue, so a history or TLS problem can never delay the live map.
-  if (fix && epoch > 0) {
+  // The stored point is the conditioned one, otherwise the parked hold would
+  // keep the live map still while the database filled with wander.
+  if (havePos && epoch > 0) {
     HistoryFix hf = {};
     hf.seq  = txSeq;
     hf.ts   = epoch;
     hf.up   = (uint32_t)(millis() / 1000);
     hf.boot = (uint16_t)bootCount;
-    hf.lat  = gps.location.lat();
-    hf.lng  = gps.location.lng();
+    hf.lat  = pubLat;
+    hf.lng  = pubLng;
     hf.alt  = gps.altitude.isValid() ? gps.altitude.meters() : 0.0f;
     hf.kmh  = (gps.speed.isValid() && gps.speed.kmph() <= GPS_MAX_KMH) ? gps.speed.kmph() : 0.0f;
     hf.cog  = gps.course.isValid() ? gps.course.deg() : 0.0f;
@@ -869,25 +1171,31 @@ void publishData() {
   int n = snprintf(b, sizeof b,
     "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
     "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"temp\":%.1f,\"lvl\":%d,"
-    "\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,\"peakA\":%.2f,"
-    "\"acs\":{\"ok\":%s,\"amps\":%.3f,\"v\":%.3f,\"zero\":%.3f},"
+    "\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,"
     "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
     "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
-    "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,"
+    "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d,"
     "\"utc_h\":%d,\"utc_m\":%d,\"utc_s\":%d,\"utc_y\":%d,\"utc_mo\":%d,\"utc_d\":%d},"
+    "\"lap\":{\"on\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu,"
+    "\"la\":[%.*f,%.*f],\"lb\":[%.*f,%.*f]},"
     "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"rssi\":%d,"
     "\"wifi\":{\"ssid\":\"%.32s\",\"bssid\":\"%.17s\",\"channel\":%d,\"status\":\"%s\","
     "\"ip\":\"%.15s\",\"mac\":\"%.17s\"}}}",
     (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
     mpuValid ? "true" : "false",
     tRoll, tPitch, tYaw, tilt, lax, lay, laz, lt, level,
-    (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt, peakAmps,
-    acsWiringOK() ? "true" : "false", tAmps, acsFiltV, acsOffsetV,
+    (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt,
     (unsigned long)gps.charsProcessed(), gm.cGSV ? gm.view : -1, gm.snr, gm.fixQ, (unsigned long)gm.bad,
     (int)gps.satellites.value(),
     fix ? "true" : "false", lat, lng, alt, spd,
     cog, hdop, gpsDistTotalM,
+    (unsigned long)(gpsTtffMs / 1000UL), (unsigned long)gpsRejected,
+    holdValid ? "true" : "false", (int)gm.fixMode,
     utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d,
+    gateValid ? "true" : "false", (unsigned long)lapCount,
+    (unsigned long)lapLastMs, (unsigned long)lapBestMs,
+    GPS_DECIMALS, gateALat, GPS_DECIMALS, gateALng,
+    GPS_DECIMALS, gateBLat, GPS_DECIMALS, gateBLng,
     (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
     WiFi.RSSI(),
     WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), wifiStatusStr(),
@@ -902,19 +1210,22 @@ void publishData() {
     logMsg(L_WARN, "MQTT", "payload truncated (%d >= %d), publishing slim variant", n, (int)sizeof b);
     n = snprintf(b, sizeof b,
       "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
-      "\"lvl\":%d,\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,\"peakA\":%.2f,"
-      "\"acs\":{\"ok\":%s,\"amps\":%.3f,\"v\":%.3f,\"zero\":%.3f},"
+      "\"lvl\":%d,\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,"
       "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
       "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
-      "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f},"
+      "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d},"
+      "\"lap\":{\"on\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu},"
       "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"rssi\":%d}}",
       (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
       mpuValid ? "true" : "false", tRoll, tPitch, tYaw, tilt, level,
-      (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt, peakAmps,
-      acsWiringOK() ? "true" : "false", tAmps, acsFiltV, acsOffsetV,
+      (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt,
       (unsigned long)gps.charsProcessed(), gm.cGSV ? gm.view : -1, gm.snr, gm.fixQ, (unsigned long)gm.bad,
       (int)gps.satellites.value(),
       fix ? "true" : "false", lat, lng, alt, spd, cog, hdop, gpsDistTotalM,
+      (unsigned long)(gpsTtffMs / 1000UL), (unsigned long)gpsRejected,
+      holdValid ? "true" : "false", (int)gm.fixMode,
+      gateValid ? "true" : "false", (unsigned long)lapCount,
+      (unsigned long)lapLastMs, (unsigned long)lapBestMs,
       (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
       WiFi.RSSI());
     if (n <= 0 || n >= (int)sizeof b) { txFail++; return; }
@@ -1012,6 +1323,14 @@ static void printStatus() {
   if (gpsLive) snprintf(age, sizeof age, "%lus", (unsigned long)((ms - gm.lastMs) / 1000UL));
   else         snprintf(age, sizeof age, "--");
 
+  // Optional columns: empty when there is nothing to say, so the line stays
+  // readable in the common all-empty case.
+  char spTtff[16] = "";
+  if (gpsTtffMs) snprintf(spTtff, sizeof spTtff, "%lus", (unsigned long)(gpsTtffMs / 1000UL));
+  char spLast[16] = "", spBest[16] = "";
+  if (lapCrossMs) snprintf(spLast, sizeof spLast, "%lu.%02lu", (unsigned long)(lapLastMs / 1000UL), (unsigned long)((lapLastMs % 1000UL) / 10UL));
+  if (lapBestMs)  snprintf(spBest, sizeof spBest, "%lu.%02lu", (unsigned long)(lapBestMs / 1000UL), (unsigned long)((lapBestMs % 1000UL) / 10UL));
+
   // -1 = the module sent no GSV at all, so "0 in view" would be a lie.
   char viewTxt[8], snrTxt[8];
   if (gm.cGSV > 0) { snprintf(viewTxt, sizeof viewTxt, "%d", gm.view); snprintf(snrTxt, sizeof snrTxt, "%d", gm.snr); }
@@ -1051,10 +1370,15 @@ static void printStatus() {
                 roll, pitch, yaw,
                 A(mpuValid ? ANSI_GRN : ANSI_RED), mpuValid ? "OK" : "FAIL", A(ANSI_RESET));
 
-  Serial.printf("%s|%s PWR   %6.2f A  peak %5.2f A  zero %.3f V  acs %s%s%s\n",
+  Serial.printf("%s|%s POS   fix %-4s  ttff %-4s  rejected %-3lu  hold %-3s  lap %lu  last %s  best %s\n",
                 A(ANSI_DIM), A(ANSI_RESET),
-                amps, peakAmps, acsOffsetV,
-                A(acsWiringOK() ? ANSI_GRN : ANSI_RED), acsWiringOK() ? "OK" : "FAIL", A(ANSI_RESET));
+                gm.fixMode == 3 ? "3D" : gm.fixMode == 2 ? "2D" : "--",
+                gpsTtffMs ? (spTtff[0] ? spTtff : "--") : "--",
+                (unsigned long)gpsRejected,
+                holdValid ? "yes" : "no",
+                (unsigned long)lapCount,
+                lapLastMs ? spLast : "--",
+                lapBestMs ? spBest : "--");
 
   {
     HistoryStats hs = historyStats();
@@ -1083,13 +1407,14 @@ static void printStatus() {
   else if (!fix && gm.view == 0)
     Serial.println("  ! GPS  0 satellites in view - antenna / sky view, not the wiring");
   else if (!fix && gm.view > 0)
-    Serial.printf("  ! GPS  %d in view, %d used, q=%d - still locking (needs 4+)\n",
-                  gm.view, used, gm.fixQ);
+    Serial.printf("  ! GPS  %d in view, %d used, q=%d - still locking (needs %d+)\n",
+                  gm.view, used, gm.fixQ, GPS_MIN_SATS);
+
+  if (!fix && gm.fixMode == 2)
+    Serial.println("  ! GPS  2D fix only (no altitude) - position stays unpublished until 3D");
 
   if (!mpuValid)
     Serial.println("  ! IMU  MPU6050 not reading - check VCC, GND, SDA, SCL");
-  if (!acsWiringOK())
-    Serial.println("  ! PWR  ACS712 out of range - check 5V, GND, OUT, divider");
 }
 
 // ============ BANNER / HELP ============
@@ -1135,19 +1460,23 @@ void printBanner() {
                 ESP.getChipModel(), (unsigned)(rev / 100), (unsigned)(rev % 100),
                 ESP.getChipCores(), (unsigned)ESP.getCpuFreqMHz(),
                 (unsigned)(ESP.getFlashChipSize() / 1024), (unsigned)(ESP.getFreeHeap() / 1024));
-  Serial.printf(" reset %s   mac %s\n", resetReasonStr(), macStr);
+  Serial.printf(" reset %s   mac %s   boot #%lu\n", resetReasonStr(), macStr,
+                (unsigned long)bootCount);
   Serial.printf(" topic %s\n", TOPIC_DATA);
   Serial.printf(" broker %s:%d  keepalive %ds  publish %dms\n",
                 MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_S, PUBLISH_INTERVAL_MS);
-  Serial.printf(" gps   uart2  RX=%d  TX=%d  9600 8N1\n", GPS_RX_PIN, GPS_TX_PIN);
-  Serial.printf(" pins  i2c SDA=%d SCL=%d @100kHz   acs ADC1/%d   leds %d/%d/%d\n",
-                I2C_SDA_PIN, I2C_SCL_PIN, ACS_PIN, LED_BLUE_PIN, LED_WHITE_PIN, LED_RED_PIN);
+  Serial.printf(" gps   uart2  RX=%d  TX=%d  %d 8N1 (UBX re-baud to %d when it answers)\n",
+                GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD, GPS_BAUD_FAST);
+  Serial.printf(" pins  i2c SDA=%d SCL=%d @100kHz   leds %d/%d/%d\n",
+                I2C_SDA_PIN, I2C_SCL_PIN, LED_BLUE_PIN, LED_WHITE_PIN, LED_RED_PIN);
   rule('=');
   printHelp();
 }
 
 void printHelp() {
-  Serial.printf("%skeys  g raw nmea | v verbose | c colours | p panel | r yaw=0 | z acs zero | x reboot | ? help%s\n",
+  Serial.printf("%skeys  g raw nmea | v verbose | c colours | p panel | r yaw=0 | x reboot | ? help%s\n",
+                A(ANSI_DIM), A(ANSI_RESET));
+  Serial.printf("%slap   a gate A here | b gate B here | l clear paint | k show gates%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
 }
 
@@ -1156,7 +1485,7 @@ void printHelp() {
 void mqtt_simple_setup() {
   Serial.begin(115200);
 
-  bootCount++;
+  bootCountInit();
   minFreeHeap = ESP.getFreeHeap();
 
 
@@ -1173,17 +1502,22 @@ void mqtt_simple_setup() {
   }
 
   // 1 KB RX buffer: a Wi-Fi/MQTT stall must not drop mid-sentence bytes, which
-  // would show up as checksum failures in the NMEA tap.
-  gpsSerial.setRxBufferSize(1024);
-  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+  // would show up as checksum failures in the NMEA tap. 5 Hz at 38400 is also
+  // more than one sentence per loop, so the buffer has to hold a burst.
+  gpsSerial.setRxBufferSize(2048);
+  gpsSerial.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(100000);
-  analogReadResolution(12);
-  analogSetPinAttenuation(ACS_PIN, ADC_11db);
   delay(500);
 
   gm.lastMs = millis();
   printBanner();
+
+  // Ask the module to run 5 Hz / automotive / static hold / SBAS. Falls back to
+  // the power-on defaults when nothing answers on the TX pin.
+  gpsUbxConfigure();
+  gpsLoadGates();
+  gm.lastMs = millis();
 
 #if VIEWER_MODE == 0
   // Start Wi-Fi in the background so calibration is not delayed. At boot we do
@@ -1218,7 +1552,7 @@ void mqtt_simple_setup() {
 
   float ax = 0, ay = 0, az = 0, t = 0, gx = 0, gy = 0, gz = 0;
   if (imuPresent) {
-    logMsg(L_INFO, "CAL", "keep the board still, no current in the ACS712 (about 3 s)");
+    logMsg(L_INFO, "CAL", "keep the board still while the gyro zero is measured (about 2 s)");
     digitalWrite(LED_WHITE_PIN, HIGH);
     const int N = 500;
     int good = 0;
@@ -1240,7 +1574,6 @@ void mqtt_simple_setup() {
   }
 
   delay(1000);
-  acsCalibrate();
 
   if (imuPresent && mpuRead(ax, ay, az, t, gx, gy, gz)) {
     roll  = atan2(ay, az) * RAD_TO_DEG;
@@ -1261,10 +1594,6 @@ void mqtt_simple_setup() {
     logMsg(L_OK, "IMU", "MPU6050 at 0x%02X  gyro bias %.2f/%.2f/%.2f dps",
            MPU_ADDR, gyroBiasX, gyroBiasY, gyroBiasZ);
   }
-  if (acsOffsetV >= ACS_ZERO_MIN && acsOffsetV <= ACS_ZERO_MAX)
-    logMsg(L_OK, "PWR", "ACS712 zero %.3f V (expected %.1f-%.1f V)", acsOffsetV, ACS_ZERO_MIN, ACS_ZERO_MAX);
-  else
-    logMsg(L_WARN, "PWR", "ACS712 zero %.3f V - outside %.1f-%.1f V, check 5V/GND/OUT", acsOffsetV, ACS_ZERO_MIN, ACS_ZERO_MAX);
 
 #if HAVE_TASK_WDT
   // Armed here, not at the top of setup: hardware probing is allowed to wait
@@ -1335,10 +1664,17 @@ static void handleKeys() {
         yaw = 0;
         logMsg(L_INFO, "IMU", "yaw reset to 0");
         break;
-      case 'z': case 'Z':
-        acsCalibrate();
-        peakAmps = 0;
-        logMsg(L_OK, "PWR", "ACS712 re-zeroed at %.3f V", acsOffsetV);
+      case 'a': case 'A':
+        gpsCaptureGate('a');
+        break;
+      case 'b': case 'B':
+        gpsCaptureGate('b');
+        break;
+      case 'l': case 'L':
+        gpsClearGates();
+        break;
+      case 'k': case 'K':
+        gpsShowGates();
         break;
       case 'x': case 'X':
         logMsg(L_WARN, "SYS", "restart requested from console");
@@ -1439,6 +1775,7 @@ void mqtt_simple_loop() {
 
   handleKeys();
   gpsWatch();
+  updateGpsPositioning();
 
   // GPS odometer: accumulate distance only while the module reports real
   // motion. A parked receiver wanders 2-10 m per fix; counting that made the
@@ -1459,7 +1796,6 @@ void mqtt_simple_loop() {
     gpsHasPrev = true;
   }
 
-  updateCurrent();
   updateMotion();
 
   if (mpuValid) setLeds(level);

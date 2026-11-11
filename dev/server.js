@@ -362,6 +362,10 @@ function startSimulator() {
         cog: fix ? Math.round(cog * 10) / 10 : null,
         hdop: fix ? Math.round(hdop * 100) / 100 : null,
         dist_m: Math.round(totalDistM * 100) / 100,
+        ttff_s: 27,
+        rej: 3,
+        still: false,
+        mode: fix ? 3 : 0,
         utc_h: utc.h,
         utc_m: utc.m,
         utc_s: utc.s,
@@ -380,9 +384,16 @@ function startSimulator() {
         yaw: angle * 180 / Math.PI,
         tilt: Math.abs(5 * Math.sin(angle)),
         ax: 0.1, ay: 0.2, az: 0.9, temp: 25,
-        lvl: 0, warn: 30, danger: 50, maxTilt: 8, peakA: 1.5,
-        acs: { ok: true, amps: 2.5, v: 2.9, zero: 2.5 },
+        lvl: 0, warn: 30, danger: 50, maxTilt: 8,
         gps,
+        lap: {
+          on: true,
+          n: 15,
+          last_ms: 41230,
+          best_ms: 39870,
+          la: [centerLat, centerLng - 0.001],
+          lb: [centerLat, centerLng + 0.001]
+        },
         sys: { heap: 200000, heap_min: 180000, boot: 1, rssi: -50 },
       });
 
