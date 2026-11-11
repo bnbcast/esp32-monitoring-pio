@@ -821,7 +821,19 @@ function onMessage(topic, payload, retained) {
 
   // Ask for the street name even when the vehicle is parked and sends no new
   // trail point (the first retained fix on page load lands here).
-  if (d.gps && d.gps.fix && !GEO.text) maybeAddress(d.gps.lat, d.gps.lng);
+  if (d.gps && d.gps.fix && !GEO.text) {
+    maybeAddress(d.gps.lat, d.gps.lng);
+  } else if (d.gps && !d.gps.fix && !GEO.text) {
+    // No lock yet: say so instead of leaving "locating address..." up forever.
+    // Only the DOM is touched - GEO.text stays empty so the first real fix
+    // still triggers the lookup.
+    for (const id of ['hudAddress', 'liveAddr']) {
+      const el = $(id);
+      if (!el) continue;
+      el.textContent = 'no fix yet - the address follows the first GPS lock';
+      el.classList.remove('loading');
+    }
+  }
 
   // Feed live GPS into the map
   if (typeof MAP !== 'undefined' && MAP.isReady() && d.gps && typeof d.gps.lat === 'number') {

@@ -746,7 +746,15 @@ const MAP = (function () {
     if (!mapReady || !marker || !markerInner) return;
     const p = viewPos();
     const lat = p.lat, lng = p.lng;
-    if (lat == null || lng == null) return;
+    // Before the first fix there is nowhere to draw. The marker used to stay at
+    // the default centre, which on the live site pointed at a real town and
+    // looked like the car was parked there. Hide it until a position exists;
+    // after a lost fix the last known spot stays, greyed out.
+    if (lat == null || lng == null) {
+      markerInner.style.display = "none";
+      return;
+    }
+    markerInner.style.display = "";
     marker.setLngLat([lng, lat]);
     // Freeze the rotation while parked: gyro drift would otherwise spin the
     // marker forever on a stationary vehicle.
@@ -787,6 +795,7 @@ const MAP = (function () {
     markerInner = document.createElement('div');
     markerInner.className = 'vehicle-marker';
     markerInner.textContent = '\uD83E\uDD7A';
+    markerInner.style.display = 'none';   // shown by updateMarker once a fix exists
     marker = new maplibregl.Marker({ element: markerInner, rotationAlignment: 'map' })
       .setLngLat([DEFAULT_CENTER[0], DEFAULT_CENTER[1]])
       .addTo(map);

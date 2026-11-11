@@ -99,6 +99,15 @@ test('the phone basemap drops decoration but never text labels', () => {
   }
 });
 
+test('the vehicle marker is hidden until the first fix', () => {
+  // With no GPS lock the map used to leave the marker at DEFAULT_CENTER, which
+  // is a real town: the live site looked like the car was parked there.
+  const body = fnBody(MAPJS, 'updateMarker');
+  assert.match(body, /markerInner\.style\.display = "none"/, 'the marker is drawn before any fix');
+  const create = fnBody(MAPJS, 'createMarker');
+  assert.match(create, /style\.display = 'none'/, 'the marker starts visible at the default centre');
+});
+
 test('resize ignores sub-pixel wobble and the dashboard debounces it', () => {
   const body = fnBody(MAPJS, 'resize');
   assert.match(body, /lastSize/, 'resize does not remember the last size');
