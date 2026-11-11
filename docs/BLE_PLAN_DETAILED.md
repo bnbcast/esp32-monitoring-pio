@@ -15,9 +15,9 @@
 |------|------|
 | `platformio.ini` | Single env `esp32-mqtt-simple`. Board: `esp32doit-devkit-v1`. Framework: Arduino. Libs: PubSubClient, TinyGPSPlus. `build_src_filter` restricts compile to `main.cpp` + `mqtt_simple/*`. |
 | `src/main.cpp` | Build-flag dispatcher. `#if defined(USE_MQTT_SIMPLE)` → `mqtt_simple_setup()` / `mqtt_simple_loop()`. |
-| `src/mqtt_simple/mqtt_simple.cpp` | Monolithic implementation: Wi-Fi, MQTT, GPS (HardwareSerial 2, RX=GPIO25), MPU6050 (I2C GPIO21/22), ACS712 current (GPIO34 ADC1), odometer (Haversine), JSON publisher, LED status. |
+| `src/mqtt_simple/mqtt_simple.cpp` | Monolithic implementation: Wi-Fi, MQTT, GPS (HardwareSerial 2, RX=GPIO25, TX=GPIO33), MPU6050 (I2C GPIO21/22), odometer (Haversine), JSON publisher, lap gate, LED status. |
 | `src/mqtt_simple/mqtt_simple.h` | Two function declarations only. |
-| `web/ui/app.js` | Dashboard MQTT consumer. Subscribes to `esp32-dash/<KEY>/data` and `/status`. `validData()` requires fields: `tilt, roll, pitch, yaw, lvl, warn, danger, acs, gps, sys`. Extra fields are ignored. |
+| `web/ui/app.js` | Dashboard MQTT consumer. Subscribes to `esp32-dash/<KEY>/data` and `/status`. `validData()` requires fields: `tilt, roll, pitch, yaw, lvl, warn, danger, gps, sys`. Extra fields are ignored. |
 | `web/ui/mqtt-mini.js` | Browser MQTT-over-WebSocket client (read-only). |
 | `web/ui/map.js` | MapLibre vehicle/trail/heading rendering. |
 | `test/` | README only. No unit tests. |
@@ -25,8 +25,8 @@
 
 ### 1.2 Setup / loop structure
 
-- `setup()` (`mqtt_simple_setup`): Serial, LED pin test, GPS serial begin (9600), Wire I2C begin, MPU6050 find+init (blocking retry loop with `delay(100)`), gyro calibration (500 samples × `delay(4)` ≈ 2 s), ACS712 calibration (~2 s), initial roll/pitch seed.
-- `loop()` (`mqtt_simple_loop`): GPS serial drain, Serial command handling ('r' reset yaw, 'z' recalibrate ACS), GPS odometer update, `updateCurrent()`, `updateMotion()`, LED update, `networkService()`, status print every 2 s.
+- `setup()` (`mqtt_simple_setup`): Serial, LED pin test, GPS serial begin (9600), Wire I2C begin, MPU6050 find+init (blocking retry loop with `delay(100)`), gyro calibration (500 samples × `delay(4)` ≈ 2 s), initial roll/pitch seed.
+- `loop()` (`mqtt_simple_loop`): GPS serial drain, Serial command handling ('r' reset yaw, 'a'/'b' set the finish gate), GPS odometer update, `updateMotion()`, LED update, `networkService()`, status print every 2 s.
 - **Blocking calls present:** MPU init retry loop (`delay(100)`), calibration loops (`delay(4)`), Wi-Fi reconnect attempts inside `networkService()` (15 s interval), MQTT connect retry (5 s interval). None block indefinitely but the loop can pause for hundreds of ms during Wi-Fi/MQTT reconnect.
 
 ### 1.3 MQTT layer
@@ -64,7 +64,7 @@
 | RAM (heap) | ~250–300 KB free at runtime (unverified — read real `sys.heap`). | Medium — NimBLE + BLE stack + frame buffers need ~40–80 KB (unverified) |
 | Partition | Default `esp32doit-devkit-v1` uses default Arduino partition (likely 1.9 MB app). | Low |
 
-**Flag:** `platformio.ini` does not specify a partition scheme. Adding NimBLE and BLE buffers on a single ESP32 with Wi-Fi + MQTT + GPS + MPU + ACS is feasible but leaves less headroom. Monitor `ESP.getFreeHeap()` and `ESP.getMinFreeHeap()`.
+**Flag:** `platformio.ini` does not specify a partition scheme. Adding NimBLE and BLE buffers on a single ESP32 with Wi-Fi + MQTT + GPS + MPU is feasible but leaves less headroom. Monitor `ESP.getFreeHeap()` and `ESP.getMinFreeHeap()`.
 
 ### 1.6 Where BMS code fits
 

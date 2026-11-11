@@ -167,10 +167,14 @@ The tracker now treats the receiver as a racing sensor rather than a map toy.
    map, the trail or D1.
 3. **Jump gate:** a fix implying over 200 km/h is rejected and counted, so one
    wild solution cannot teleport the marker or add fake distance.
-4. **UBX at boot:** 38400 baud, 5 Hz navigation, automotive model, static hold
-   50 cm/s, SBAS on, GSV at 1 Hz and VTG/GLL/ZDA off. It runs only when the
-   module answers on GPIO 33; otherwise the link stays at 9600 and nothing else
-   changes.
+4. **UBX at boot:** the firmware probes 9600/38400/115200, then sets 38400 baud,
+   5 Hz navigation, automotive model, static hold 0.5 m/s, SBAS on, GGA/GSA/RMC
+   every fix, GSV at 1 Hz and VTG/GLL/ZDA off. The configuration is saved in the
+   module (BBR + flash), so the next power-up starts already at 5 Hz and the probe
+   keeps a saved rate from locking the tracker out. It runs only when the module
+   answers on GPIO 33; otherwise the link stays at 9600 and nothing else changes.
+   GSA is kept because it is the only 2D/3D flag available, and GSV at 1 Hz
+   because the dashboard reports satellites in view.
 5. **Finish line:** two points captured from the console (`a`, `b`; `l` clears,
    `k` shows) are stored in NVS. A lap is a forward crossing of A→B, with the
    time interpolated between the two fixes, so a 5 Hz stream is not rounded to

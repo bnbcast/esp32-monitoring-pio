@@ -205,9 +205,16 @@ firmware, the payload and the dashboard.
   and counted in `gps.rej`.
 - **Publish gate:** at least 5 satellites, HDOP ≤ 4 and a 3D fix. A 2D fix has
   no altitude constraint and is not published.
-- **5 Hz:** at boot the firmware pushes UBX configuration (38400 baud, 5 Hz,
-  automotive model, static hold, SBAS) when the module answers on GPIO 33. With
-  that pin unwired nothing changes: it falls back to the 9600 baud default.
+- **5 Hz:** at boot the firmware probes 9600, 38400 and 115200, then pushes UBX
+  configuration into the module that answered: 38400 baud, 5 Hz, automotive
+  model, static hold 0.5 m/s, SBAS, GGA/GSA/RMC every fix, GSV once a second,
+  GLL/VTG/ZDA off. The configuration is then saved in the module (BBR + flash),
+  so a power cycle restarts already at 5 Hz. With the TX pin (GPIO 33) unwired
+  nothing changes: the probe finds no module and the link stays at 9600.
+  GSA is kept because it is the only 2D/3D indicator TinyGPSPlus exposes, and
+  GSV at 1 Hz because the dashboard shows satellites in view.
+- **Static hold mask:** `CFG-NAV5` applies fields per bit. The static-hold
+  threshold is bit 8 (0x0100); the earlier mask 0x0041 left it silently off.
 - **Finish line:** the board stores two points captured over serial (`a`, `b`;
   `l` clears, `k` shows). A lap is the segment P0→P1 crossing A→B in the forward
   direction, timed by interpolating the crossing between the two fixes; laps

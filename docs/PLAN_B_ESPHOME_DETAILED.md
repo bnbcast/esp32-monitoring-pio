@@ -14,7 +14,7 @@
 | Path | Size | Responsibility |
 |------|------|----------------|
 | `src/main.cpp` | 750 B | Build-flag dispatcher. Routes to `mqtt_simple_setup/loop` under `USE_MQTT_SIMPLE`. No logic of its own. |
-| `src/mqtt_simple/mqtt_simple.cpp` | 16,250 B | **Monolith.** Wi-Fi, MQTT (PubSubClient), GPS (TinyGPSPlus), MPU6050 (I2C), ACS712 (ADC), odometer (Haversine), LED patterns, JSON publisher, serial commands, status logging. |
+| `src/mqtt_simple/mqtt_simple.cpp` | 16,250 B | **Monolith.** Wi-Fi, MQTT (PubSubClient), GPS (TinyGPSPlus), MPU6050 (I2C), odometer (Haversine), lap gate, LED patterns, JSON publisher, serial commands, status logging. |
 | `src/mqtt_simple/mqtt_simple.h` | 121 B | Two function declarations only. |
 
 **Verdict confirmed:** The firmware is effectively **one source file** (`mqtt_simple.cpp`) plus a dispatcher (`main.cpp`). There is no separate `testno3.ino` or other variant present in the repo (the failover branch in `main.cpp` is dead code referencing a missing file).
@@ -52,13 +52,11 @@
 | 7 | Gyro bias calibration (500 samples @ 4 ms) | `setup()` blocking loop | Custom C++ lambda / `button:` trigger |
 | 8 | Roll/pitch/yaw fusion (complementary, ALPHA=0.98) | `updateMotion()` in `loop()` | **Custom C++** — no ESPHome equivalent for fused attitude |
 | 9 | Tilt = max(|roll|, |pitch|), warn/danger with hysteresis | `updateLevel()`, `setLeds()` | Lambda + `output:`/`binary_sensor:` |
-| 10 | ACS712 current (GPIO34 ADC1, 12-bit, 11 dB, divider, deadband) | `analogReadMilliVolts`, calibration, filtering | `adc:` + `filter:` + lambda scaling |
-| 11 | ACS712 `z` serial recalibrate command | Serial 'z' in `loop()` | `button:` entity |
-| 12 | `r` serial reset yaw command | Serial 'r' in `loop()` | `button:` entity or logger hook |
-| 13 | JSON publisher (500 ms, retained, 800-byte buffer) | `publishData()` `snprintf` to 800-byte buffer | `mqtt.publish_json` from `interval:` lambda |
-| 14 | Status LEDs (blue/white/red, solid + fast/slow blink) | `digitalWrite` patterns in `loop()` | `output:` + lambda or `light:` |
-| 15 | Sys block (heap, uptime, RSSI) | `ESP.getFreeHeap()`, `millis()`, `WiFi.RSSI()` | Lambda reading `system.uptime`, `wifi.rssi`, heap |
-| 16 | Serial debug status line (every 2 s) | `printStatus()` | ESPHome `logger:` (different format) |
+| 10 | `r` serial reset yaw command | Serial 'r' in `loop()` | `button:` entity or logger hook |
+| 11 | JSON publisher (500 ms, retained, 800-byte buffer) | `publishData()` `snprintf` to 800-byte buffer | `mqtt.publish_json` from `interval:` lambda |
+| 12 | Status LEDs (blue/white/red, solid + fast/slow blink) | `digitalWrite` patterns in `loop()` | `output:` + lambda or `light:` |
+| 13 | Sys block (heap, uptime, RSSI) | `ESP.getFreeHeap()`, `millis()`, `WiFi.RSSI()` | Lambda reading `system.uptime`, `wifi.rssi`, heap |
+| 14 | Serial debug status line (every 2 s) | `printStatus()` | ESPHome `logger:` (different format) |
 
 ### 1.4 Exact JSON schema (compatibility contract)
 
@@ -73,12 +71,6 @@ The dashboard `validData()` in `web/ui/app.js` requires:
   "lvl": number,        // required, 0..2 integer
   "warn": number,       // required, finite
   "danger": number,     // required, finite
-  "acs": {              // required object
-    "ok": boolean-ish,  // truthy/falsy
-    "amps": number,     // required, finite
-    "v": number,        // required, finite (raw voltage)
-    "zero": number      // required, finite (offset voltage)
-  },
   "gps": {              // required object
     "sats": number,     // required, finite
     "lat": number,      // required, finite (when fix)
@@ -105,7 +97,6 @@ The dashboard `validData()` in `web/ui/app.js` requires:
   "up": number,         // required, finite (uptime seconds)
   "temp": number,       // required, finite (MPU temp)
   "maxTilt": number,    // required, finite
-  "peakA": number,      // required, finite
   "mpu": boolean-ish    // truthy/falsy
 }
 ```
@@ -132,9 +123,8 @@ The dashboard `validData()` in `web/ui/app.js` requires:
 | Gyro calibration | Custom `button:` + lambda | Medium | Store bias in `globals:` |
 | Roll/pitch/yaw fusion | **Custom C++** (`includes:`) | **High** | No ESPHome component fuses gyro+accel into attitude. Must write custom sensor class. |
 | Tilt warn/danger + hysteresis | Lambda + `binary_sensor:`/`text_sensor:` | Low | Compare fused tilt to thresholds |
-| ACS712 current | `adc:` (GPIO34) + `filter:` + lambda | Medium | `analogReadMilliVolts` → `adc` with attenuation; offset calibration via `button:` |
 | LEDs | `output:` (GPIO26/27/32) + lambda | Low | Digital on/off; blink via lambda with `millis()`-equivalent or `light:` with effects |
-| Serial commands `r`/`z` | `button:` entities | Low | Trigger lambda to reset yaw or recalibrate ACS |
+| Serial command `r` | `button:` entity | Low | Trigger lambda to reset yaw |
 | JSON payload reproduction | `mqtt.publish_json` lambda | **High** | Must match field names/types exactly; `publish_json` serializes differently than `snprintf` |
 | Sys block (heap/rssi) | `system.uptime`, `wifi.rssi`, lambda | Low | Heap via `lambda` reading `ESP.getFreeHeap()` |
 | Serial status line | `logger:` | Low | Different format; acceptable loss |
@@ -143,7 +133,6 @@ The dashboard `validData()` in `web/ui/app.js` requires:
 
 1. **MPU6050 attitude fusion** (roll/pitch/yaw complementary filter) — `mpu6050` only gives raw accel/gyro/temp.
 2. **Exact JSON payload serialization** — `mqtt.publish_json` may not produce byte-identical output to `snprintf`; field order, decimal places, and `null` strings need care.
-3. **ACS712 offset calibration routine** — `button:` can trigger, but the sampling loop (500 samples @ 4 ms) is custom lambda.
 4. **Gyro bias calibration loop** — same as above.
 
 ---
@@ -214,16 +203,6 @@ mpu6050:
   update_interval: 50ms
   # accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, temperature exposed
 
-# ACS712 on GPIO34 (ADC1)
-adc:
-  id: adc1
-
-sensor:
-  - platform: adc
-    id: acs_raw
-    pin: GPIO34
-    attenuation: 11db
-    update_interval: 20ms
 
 # JK-BMS over BLE (external component)
 external_components:
@@ -270,7 +249,6 @@ class DashPublisher : public PollingComponent {
  public:
   MpuFusion *fusion = nullptr;
   GPS *gps = nullptr;
-  Sensor *acs_raw = nullptr;
   // ...
   void publish_json();  // builds exact payload, calls mqtt::publish_json
 };
@@ -317,8 +295,6 @@ For each feature, implement in ESPHome, flash, and compare readings side-by-side
 | MPU6050 raw | `i2c:` + `mpu6050:` | raw accel/gyro match |
 | Fusion + tilt | Custom `MpuFusion` component | roll/pitch/yaw/tilt match within 2° |
 | Warn/danger LEDs | Lambda + `output:` | level matches at 30°/50° |
-| ACS712 | `adc:` + filter + lambda | amps match within 0.05 A |
-| ACS calibrate button | `button:` trigger | zero-point resets |
 | Sys block | Lambda | heap/rssi/uptime reasonable |
 
 ### Phase B3 — Reproduce the JSON payload
@@ -420,7 +396,7 @@ Append `"bms":{...}` to the JSON payload:
 | Test | Method | Pass criteria |
 |------|--------|---------------|
 | B1 spike | ESPHome + `jk_bms_ble` on spare ESP32 | BMS V/A/SOC match phone app; protocol version identified |
-| Feature side-by-side | Flash ESPHome build, compare Serial/MQTT output to current firmware | GPS, ACS, MPU, odometer within tolerance (GPS ±5 m, amps ±0.05 A, tilt ±2°) |
+| Feature side-by-side | Flash ESPHome build, compare Serial/MQTT output to current firmware | GPS, MPU, odometer within tolerance (GPS ±5 m, tilt ±2°) |
 | JSON regression | Capture current firmware JSON vs ESPHome JSON | `validData()` passes; all dashboard pills/charts render |
 | Dashboard BMS panel | Add `bms` object, optional web panel | Panel shows data when `bms.valid`, greys when `bms.age` high |
 | Soak test | 8+ h, weak Wi-Fi, vehicle motion, BMS power cycles | No reboot, no heap leak trend, BMS refresh ≤30 s |

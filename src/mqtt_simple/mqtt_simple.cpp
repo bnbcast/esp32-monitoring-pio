@@ -141,6 +141,7 @@
 // ---- GPS link + u-blox configuration -----------------------------------
 #define GPS_BAUD         9600     // NEO-6M power-on default
 #define GPS_BAUD_FAST    38400    // enough headroom for 5 Hz NMEA
+#define GPS_BAUD_ALT     115200   // a module configured by u-center may be here
 #define GPS_NAV_HZ       5        // nav solution rate once configured
 #define GPS_UBX_ENABLE   1        // only runs when a module answers on GPS_TX_PIN
 
@@ -807,38 +808,64 @@ static void ubxMsgRate(uint8_t id, uint8_t uart1Rate) {
   ubxSend(0x06, 0x01, m, sizeof m);
 }
 
+// Any complete NMEA sentence in the next window proves the link is alive at the
+// current rate: half a sentence at the wrong baud never reaches a '$'...'*'.
+static bool gpsLinkAlive(uint32_t ms) {
+  const uint32_t before = gm.sentences;
+  gpsPump(ms);
+  return gm.sentences != before;
+}
+
+// The factory rate is 9600, but once this firmware stores its configuration in
+// the module (step 7 below) the next power-up starts at 38400, and a module
+// touched by u-center may be at 115200. Probe all three so a saved rate can
+// never leave the tracker listening at the wrong speed.
+static uint32_t gpsDetectBaud() {
+  const uint32_t rates[3] = {GPS_BAUD, GPS_BAUD_FAST, GPS_BAUD_ALT};
+  for (int i = 0; i < 3; i++) {
+    gpsSerial.updateBaudRate(rates[i]);
+    if (gpsLinkAlive(600)) return rates[i];
+  }
+  gpsSerial.updateBaudRate(GPS_BAUD);
+  return 0;
+}
+
 static bool gpsUbxConfigure() {
 #if GPS_UBX_ENABLE
   if (GPS_TX_PIN < 0) return false;
 
   gpsPump(700);                                   // let the module finish booting
-  const uint32_t before = gm.sentences;
-  gpsPump(400);
-  if (gm.sentences == before) {
+  const uint32_t found = gpsDetectBaud();
+  if (found == 0) {
     if (verbose) logMsg(L_INFO, "GPS", "no NMEA to configure - UBX setup skipped");
     return false;
   }
+  if (found != GPS_BAUD) {
+    logMsg(L_INFO, "GPS", "module already at %lu baud", (unsigned long)found);
+  }
 
-  // 1. Move UART1 to 38400 8N1.
-  uint8_t prt[20] = {0};
-  prt[0] = 1;                                     // portID: UART1
-  prt[4] = 0xD0; prt[5] = 0x08;                   // 8 data bits, no parity, 1 stop
-  prt[8] = (uint8_t)(GPS_BAUD_FAST & 0xFF);
-  prt[9] = (uint8_t)(GPS_BAUD_FAST >> 8);
-  prt[12] = 0x07;                                 // in:  UBX | NMEA | RTCM
-  prt[14] = 0x03;                                 // out: UBX | NMEA
-  ubxSend(0x06, 0x00, prt, sizeof prt);
-  gpsSerial.flush();
-  delay(50);
-  gpsSerial.updateBaudRate(GPS_BAUD_FAST);
+  if (found != GPS_BAUD_FAST) {
+    // 1. Move UART1 to 38400 8N1.
+    uint8_t prt[20] = {0};
+    prt[0] = 1;                                   // portID: UART1
+    prt[4] = 0xD0; prt[5] = 0x08;                 // 8 data bits, no parity, 1 stop
+    prt[8] = (uint8_t)(GPS_BAUD_FAST & 0xFF);
+    prt[9] = (uint8_t)(GPS_BAUD_FAST >> 8);
+    prt[12] = 0x07;                               // in:  UBX | NMEA | RTCM
+    prt[14] = 0x03;                               // out: UBX | NMEA
+    ubxSend(0x06, 0x00, prt, sizeof prt);
+    gpsSerial.flush();
+    delay(50);
+    gpsSerial.updateBaudRate(GPS_BAUD_FAST);
 
-  // 2. Verify it really moved. Garbage at the wrong rate parses as nothing.
-  gpsPump(1400);
-  if (gm.sentences == before) {
-    gpsSerial.updateBaudRate(GPS_BAUD);
-    gpsPump(300);
-    logMsg(L_WARN, "GPS", "UBX config not acknowledged - staying at %d baud", GPS_BAUD);
-    return false;
+    // 2. Verify it really moved. Garbage at the wrong rate parses as nothing.
+    if (!gpsLinkAlive(1400)) {
+      gpsSerial.updateBaudRate(found);
+      gpsPump(300);
+      logMsg(L_WARN, "GPS", "UBX config not acknowledged - staying at %lu baud",
+             (unsigned long)found);
+      return false;
+    }
   }
 
   // 3. 5 Hz navigation.
@@ -846,8 +873,12 @@ static bool gpsUbxConfigure() {
   ubxSend(0x06, 0x08, rate, sizeof rate);
 
   // 4. Automotive model + static hold below 0.5 m/s.
+  //    The mask is per field, not "apply everything": bit 0 = dynamic model,
+  //    bit 2 = fix mode, bit 8 = static hold threshold. 0x0105 sets exactly
+  //    those three; an earlier 0x41 applied the dynamic model and a DOP mask
+  //    and left static hold silently off.
   uint8_t nav5[36] = {0};
-  nav5[0] = 0x41; nav5[1] = 0x00;                 // apply dynModel + staticHoldThresh
+  nav5[0] = 0x05; nav5[1] = 0x01;                 // dynModel | fixMode | staticHoldThresh
   nav5[2] = 4;                                    // automotive
   nav5[3] = 3;                                    // auto 2D/3D
   nav5[22] = 50;                                  // static hold 50 cm/s
@@ -868,7 +899,19 @@ static bool gpsUbxConfigure() {
   ubxMsgRate(0x08, 0);                            // ZDA: off
   gpsSerial.flush();
 
-  logMsg(L_OK, "GPS", "UBX: %d Hz, %d baud, automotive, static hold 1.8 km/h, SBAS on",
+  // 7. Store the configuration in the module itself (battery-backed RAM +
+  //    flash). Without this every power cycle returns to 1 Hz / 9600 / no SBAS
+  //    and the first seconds of every run are wasted re-negotiating; with it a
+  //    warm start is already at 5 Hz. gpsDetectBaud() above handles the 38400
+  //    start this creates.
+  const uint8_t save[13] = {0, 0, 0, 0,            // clearMask: nothing
+                            0xFF, 0xFF, 0, 0,      // saveMask: BBR|Flash|EEPROM|SPI|IO|MSG
+                            0, 0, 0, 0, 0};        // loadMask: nothing
+  ubxSend(0x06, 0x09, save, sizeof save);
+  gpsSerial.flush();
+  delay(100);
+
+  logMsg(L_OK, "GPS", "UBX: %d Hz, %d baud, automotive, static hold 1.8 km/h, SBAS on (saved)",
          GPS_NAV_HZ, GPS_BAUD_FAST);
   return true;
 #else
@@ -948,12 +991,16 @@ static void gpsShowGates() {
 // previously working network wins ties so we do not flap between APs.
 int8_t pickBestNetwork(int found) {
   int8_t exact = -1, prefix = -1;
-  for (size_t c = 0; c < WIFI_NET_COUNT; c++) {
-    for (int i = 0; i < found; i++) {
-      String seen = WiFi.SSID(i);
+  for (int i = 0; i < found; i++) {
+    // One String per visible AP, not one per (AP, candidate) pair: this call
+    // used to allocate inside the inner loop and fragment the heap on every
+    // rescan, which happens for hours on a pit lane.
+    String seen = WiFi.SSID(i);
+    for (size_t c = 0; c < WIFI_NET_COUNT; c++) {
       if (seen == WIFI_NETS[c].ssid) { if (exact < 0) exact = (int8_t)c; }
       else if (seen.startsWith(WIFI_NETS[c].ssid)) { if (prefix < 0) prefix = (int8_t)c; }
     }
+    if (exact >= 0) break;
   }
   if (exact >= 0) return exact;
   if (prefix >= 0) return prefix;
@@ -1465,8 +1512,8 @@ void printBanner() {
   Serial.printf(" topic %s\n", TOPIC_DATA);
   Serial.printf(" broker %s:%d  keepalive %ds  publish %dms\n",
                 MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_S, PUBLISH_INTERVAL_MS);
-  Serial.printf(" gps   uart2  RX=%d  TX=%d  %d 8N1 (UBX re-baud to %d when it answers)\n",
-                GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD, GPS_BAUD_FAST);
+  Serial.printf(" gps   uart2  RX=%d  TX=%d  %d/%d/115200 8N1 (UBX re-baud to %d when it answers)\n",
+                GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD, GPS_BAUD_FAST, GPS_BAUD_FAST);
   Serial.printf(" pins  i2c SDA=%d SCL=%d @100kHz   leds %d/%d/%d\n",
                 I2C_SDA_PIN, I2C_SCL_PIN, LED_BLUE_PIN, LED_WHITE_PIN, LED_RED_PIN);
   rule('=');
@@ -1527,6 +1574,9 @@ void mqtt_simple_setup() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
+  // No modem sleep: a full 5 Hz telemetry stream must not wait for a beacon
+  // interval, and the receiver is on USB power for the whole session anyway.
+  WiFi.setSleep(false);
   logMsg(L_INFO, "NET", "scanning for a known network (async)");
   WiFi.scanNetworks(true /*async*/, false);
   wifiPhase = WF_SCANNING;
