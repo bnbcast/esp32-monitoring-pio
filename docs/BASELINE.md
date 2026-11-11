@@ -109,7 +109,7 @@ current sensor: `acs`, `peakA` and the ADC pin are gone.
 | Raster fallback | Esri World Street → Esri Topo → OSM tiles |
 | Geocoding | public Nominatim, min 8 s and 80 m between calls, 110 m cache cells |
 | CSP | present, `script-src 'self'`, no CDN |
-| Tests | 27 unit tests (`guard` 14, `info` 5, `ui` 8) plus browser probes in `dev/` |
+| Tests | 38 unit tests (`guard` 14, `info` 5, `lap` 10, `ui` 9) plus browser probes in `dev/` |
 
 ## Secrets
 
@@ -330,7 +330,7 @@ The no-sensor state also exposed a dashboard bug: with no fix the map kept the
 vehicle marker at `DEFAULT_CENTER`, which is a real town, and the address line
 said "locating address..." forever. The marker is now hidden until the first
 fix (and stays at the last known spot, greyed, after a lost fix), and the
-address line says "no fix yet". `test/ui.test.js` locks that in (28 tests).
+address line says "no fix yet". `test/ui.test.js` locks that in.
 
 Evidence that the board is the publisher and the dashboard is the consumer:
 `dev/mqtt-watch.mjs --dur 15000` on the public broker showed `seq` 197..208 at
@@ -400,7 +400,8 @@ dev simulator; the board itself has not been re-flashed because COM4 is absent.
 | UBX | probe at 9600/38400/115200 on GPIO 33; when a module answers: 38400, 5 Hz, automotive, static hold 0.5 m/s (mask 0x0105), SBAS, config saved in the module; with the pin unwired the link stays 9600 8N1 |
 | UBX masks | `CFG-NAV5` applies field by field: dynModel bit 0, fixMode bit 2, static-hold threshold bit 8. The previous 0x0041 mask left static hold off while the log claimed it was on |
 | Wi-Fi latency | `WiFi.setSleep(false)`; the scan matcher now builds one `String` per visible AP instead of one per (AP, candidate) pair, which removes N×M heap churn on every rescan |
-| Unit tests | 28/28 (`node --test test/guard.test.js test/info.test.js test/ui.test.js`) |
+| Unit tests | 38/38 (`node --test test/guard.test.js test/info.test.js test/lap.test.js test/ui.test.js`) |
+| Lap geometry | `test/lap.test.js` (10 tests) mirrors the firmware cross-product and asserts the source still matches; a 144 km/h crossing 37 ms after a fix is timed at 37 ms, where nearest-sample rounding costs up to 100 ms and next-sample up to 163 ms |
 | `dev/check-live.mjs` local | PASS, no page/CSP/console errors; `mode 3D`, `ttff 27`, `rejected 3`, laps `15`, last `41.23`, best `39.87`, gate `armed` |
 | Gate layer | `queryRenderedFeatures(['gate-line'])` = 1, 3 features (line + 2 ends) |
 | Marker | inline SVG arrow, not an emoji glyph |

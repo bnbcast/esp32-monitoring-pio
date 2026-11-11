@@ -178,7 +178,9 @@ The tracker now treats the receiver as a racing sensor rather than a map toy.
 5. **Finish line:** two points captured from the console (`a`, `b`; `l` clears,
    `k` shows) are stored in NVS. A lap is a forward crossing of A→B, with the
    time interpolated between the two fixes, so a 5 Hz stream is not rounded to
-   200 ms. Crossings under 3 s or 5 km/h are ignored.
+   200 ms. Crossings under 3 s or 5 km/h are ignored. `test/lap.test.js` mirrors
+   the geometry and checks it against the firmware source: a 144 km/h crossing
+   37 ms after a fix is reported as 37 ms.
 6. **Payload/UI:** `gps` gains `ttff_s`, `rej`, `still` and `mode`; `lap` carries
    the count, last/best and the gate. The LIVE tab shows laps, last, best and
    gate state; the map draws the gate as a red dashed line. The emoji marker was
