@@ -220,6 +220,7 @@ bool     gateValid = false;
 double   gateALat = 0, gateALng = 0, gateBLat = 0, gateBLng = 0;
 uint32_t lapCount = 0, lapLastMs = 0, lapBestMs = 0;
 uint32_t lapCrossMs = 0;        // interpolated time of the last crossing
+static void lapSaveCounters();  // defined with the NVS gate storage below
 
 // Uptime diagnostics. minFreeHeap catches a slow leak long before the board
 // actually runs out. bootCount must survive a reset to make a reboot loop
@@ -758,6 +759,7 @@ void updateGpsPositioning() {
                    (unsigned long)lapCount,
                    (unsigned long)(lapLastMs / 1000UL), (unsigned long)((lapLastMs % 1000UL) / 10UL),
                    (unsigned long)(lapBestMs / 1000UL), (unsigned long)((lapBestMs % 1000UL) / 10UL));
+            lapSaveCounters();   // a brownout must not erase the session
           }
           lapCrossMs = crossMs;                        // arm the next lap
         }
@@ -924,6 +926,18 @@ static bool gpsUbxConfigure() {
 // the line, kept in NVS so a reboot does not lose the track.
 static bool gateASet = false, gateBSet = false;
 
+// Counters are written once per completed lap, not per fix: roughly one NVS
+// commit every 90 s at race pace, which is nowhere near the flash endurance
+// limit, but it means a race survives a brownout or a reset on the grid.
+static void lapSaveCounters() {
+  Preferences prefs;
+  if (!prefs.begin("lap", false)) return;
+  prefs.putUInt("n", lapCount);
+  prefs.putUInt("last", lapLastMs);
+  prefs.putUInt("best", lapBestMs);
+  prefs.end();
+}
+
 static void gpsSaveGates() {
   Preferences prefs;
   if (!prefs.begin("lap", false)) return;
@@ -945,10 +959,20 @@ void gpsLoadGates() {
   gateALng = prefs.getInt("alng", 0) / 1e7;
   gateBLat = prefs.getInt("blat", 0) / 1e7;
   gateBLng = prefs.getInt("blng", 0) / 1e7;
+  lapCount  = prefs.getUInt("n", 0);
+  lapLastMs = prefs.getUInt("last", 0);
+  lapBestMs = prefs.getUInt("best", 0);
   prefs.end();
+  // millis() restarts at boot, so a stored crossing time would be meaningless.
+  // The line re-arms on the next forward crossing; finished laps survive.
+  lapCrossMs = 0;
   gateValid = gateASet && gateBSet && haversineM(gateALat, gateALng, gateBLat, gateBLng) > 1.0f;
   if (gateValid) logMsg(L_OK, "LAP", "gate loaded: A %.6f,%.6f  B %.6f,%.6f",
                         gateALat, gateALng, gateBLat, gateBLng);
+  if (lapCount) logMsg(L_OK, "LAP", "%lu lap(s) restored, last %lu.%02lu s, best %lu.%02lu s",
+                       (unsigned long)lapCount,
+                       (unsigned long)(lapLastMs / 1000UL), (unsigned long)((lapLastMs % 1000UL) / 10UL),
+                       (unsigned long)(lapBestMs / 1000UL), (unsigned long)((lapBestMs % 1000UL) / 10UL));
 }
 
 static void gpsClearGates() {
@@ -972,6 +996,7 @@ static void gpsCaptureGate(char which) {
   if (gateValid) {
     const float width = haversineM(gateALat, gateALng, gateBLat, gateBLng);
     lapCount = lapLastMs = lapBestMs = lapCrossMs = 0;
+    lapSaveCounters();   // persist the reset; otherwise a reboot revives the old session
     logMsg(L_OK, "LAP", "gate armed: %c %.6f,%.6f  width %.1f m - cross A->B to start",
            which, lat, lng, width);
   } else {
@@ -981,9 +1006,11 @@ static void gpsCaptureGate(char which) {
 
 static void gpsShowGates() {
   if (!gateValid) { logMsg(L_INFO, "LAP", "no gate set: press a at one end, b at the other"); return; }
-  logMsg(L_INFO, "LAP", "A %.6f,%.6f  B %.6f,%.6f  width %.1f m  laps %lu",
+  logMsg(L_INFO, "LAP", "A %.6f,%.6f  B %.6f,%.6f  width %.1f m  laps %lu  last %lu.%02lu s  best %lu.%02lu s",
          gateALat, gateALng, gateBLat, gateBLng,
-         haversineM(gateALat, gateALng, gateBLat, gateBLng), (unsigned long)lapCount);
+         haversineM(gateALat, gateALng, gateBLat, gateBLng), (unsigned long)lapCount,
+         (unsigned long)(lapLastMs / 1000UL), (unsigned long)((lapLastMs % 1000UL) / 10UL),
+         (unsigned long)(lapBestMs / 1000UL), (unsigned long)((lapBestMs % 1000UL) / 10UL));
 }
 
 // ============ NETWORK ============

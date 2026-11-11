@@ -211,3 +211,52 @@ test('a 5 Hz sample that straddles the line is exact where a nearest-sample gues
   const nearestSampleError = Math.min(got, 200 - got);   // what rounding would cost
   assert.ok(nearestSampleError < 50, 'the point of interpolation is a sub-50 ms error');
 });
+
+// ---- session persistence ------------------------------------------------
+// The lap engine lives in NVS namespace "lap". These checks read the firmware
+// so a refactor that silently drops the save (or restores the crossing time)
+// fails here instead of losing a race to a brownout on the grid.
+
+test('counters are saved on every completed lap', () => {
+  const countIdx = CPP.indexOf('lapCount++;');
+  const saveIdx = CPP.indexOf('lapSaveCounters();   // a brownout must not erase the session');
+  assert.ok(countIdx > 0, 'the lap counter increment moved');
+  assert.ok(saveIdx > countIdx, 'lapSaveCounters() must run right after lapCount++');
+  assert.ok(saveIdx - countIdx < 1200, 'the save drifted away from the counted lap');
+});
+
+test('the save writes all three durable counters', () => {
+  const save = CPP.slice(CPP.indexOf('static void lapSaveCounters() {'));
+  const body = save.slice(0, save.indexOf('prefs.end();') + 'prefs.end();'.length);
+  assert.match(body, /prefs\.putUInt\("n", lapCount\)/);
+  assert.match(body, /prefs\.putUInt\("last", lapLastMs\)/);
+  assert.match(body, /prefs\.putUInt\("best", lapBestMs\)/);
+});
+
+test('a reboot restores the counters but re-arms the line', () => {
+  const load = CPP.slice(CPP.indexOf('void gpsLoadGates()'));
+  const body = load.slice(0, load.indexOf('prefs.end();') + 'prefs.end();'.length);
+  assert.match(body, /lapCount\s*=\s*prefs\.getUInt\("n", 0\)/);
+  assert.match(body, /lapLastMs\s*=\s*prefs\.getUInt\("last", 0\)/);
+  assert.match(body, /lapBestMs\s*=\s*prefs\.getUInt\("best", 0\)/);
+  // millis() restarts at boot, so a restored crossing time would be a lie.
+  const after = load.slice(load.indexOf('prefs.end();'));
+  assert.match(after, /lapCrossMs = 0;/,
+    'the crossing time must not be restored: millis() starts at 0 after a reboot');
+});
+
+test('arming a new gate clears the stored session too', () => {
+  const cap = CPP.slice(CPP.indexOf('static void gpsCaptureGate(char which)'));
+  const body = cap.slice(0, cap.indexOf('static void gpsShowGates'));
+  const resetIdx = body.indexOf('lapCount = lapLastMs = lapBestMs = lapCrossMs = 0;');
+  const saveIdx = body.indexOf('lapSaveCounters();   // persist the reset');
+  assert.ok(resetIdx > 0, 'the gate capture no longer resets the counters');
+  assert.ok(saveIdx > resetIdx, 'the reset must be persisted, or a reboot revives the old laps');
+});
+
+test('clearing the gate wipes the whole namespace, counters included', () => {
+  const clr = CPP.slice(CPP.indexOf('static void gpsClearGates()'));
+  const body = clr.slice(0, clr.indexOf('logMsg(L_OK, "LAP", "gate cleared")'));
+  assert.match(body, /prefs\.clear\(\)/, 'gpsClearGates must clear the namespace, not just the gate keys');
+  assert.match(body, /lapCount = lapLastMs = lapBestMs = lapCrossMs = 0;/);
+});
