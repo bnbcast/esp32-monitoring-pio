@@ -176,10 +176,10 @@ body.map-full .map-hud .hud-addr { display: none; }
     margin: -6px -8px 4px;
     border-bottom: 3px solid var(--ink);
     background: var(--bg);
-    cursor: grab;
+    cursor: var(--cur-grab);
     touch-action: none;          /* the handle owns the gesture, not the page */
   }
-  .side-panel.dragging .sheet-handle { cursor: grabbing; }
+  .side-panel.dragging .sheet-handle { cursor: var(--cur-grabbing); }
   .sheet-handle:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
   .sheet-handle .grip {
     width: 44px;
@@ -321,7 +321,7 @@ body.map-full .map-hud .hud-addr { display: none; }
   font-weight: 900;
   text-transform: uppercase;
   font-size: 0.75rem;
-  cursor: pointer;
+  cursor: var(--cur-pointer);
   box-shadow: 3px 3px 0 var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -348,9 +348,9 @@ body.map-full .map-hud .hud-addr { display: none; }
   border: 2px solid var(--ink);
   background: var(--paper);
   box-shadow: 2px 2px 0 var(--ink);
-  cursor: pointer;
+  cursor: var(--cur-pointer);
 }
-.mini-btn:active { transform: translate(1px, 1px); box-shadow: none; }
+.mini-btn:active { transform: translate(1px, 1px); box-shadow: none; cursor: var(--cur-active); }
 
 /* ---------------------------------------------------------------------------
    Short landscape phones: hand as much height as possible back to the map.
@@ -396,11 +396,11 @@ body.map-full .map-hud .hud-addr { display: none; }
   background: var(--paper);
   color: var(--ink);
   box-shadow: 2px 2px 0 var(--ink);
-  cursor: pointer;
+  cursor: var(--cur-pointer);
 }
 .hist-btn:hover { background: var(--yellow); }
 .hist-btn.active { background: var(--yellow); box-shadow: var(--shadow-ac); }
-.hist-btn:active { transform: translate(1px, 1px); box-shadow: none; }
+.hist-btn:active { transform: translate(1px, 1px); box-shadow: none; cursor: var(--cur-active); }
 
 /* ---------------------------------------------------------------------------
    Timeline rows (HIST tab). Same hard-edged language as the picker above: a
@@ -443,11 +443,11 @@ body.map-full .map-hud .hud-addr { display: none; }
   background: var(--paper);
   color: var(--ink);
   box-shadow: 2px 2px 0 var(--ink);
-  cursor: pointer;
+  cursor: var(--cur-pointer);
 }
 .hist-session:hover { background: var(--yellow); }
 .hist-session.active { background: var(--yellow); box-shadow: var(--shadow-ac); }
-.hist-session:active { transform: translate(1px, 1px); box-shadow: none; }
+.hist-session:active { transform: translate(1px, 1px); box-shadow: none; cursor: var(--cur-active); }
 .hs-time { font-weight: 700; font-variant-numeric: tabular-nums; }
 .hs-dur { text-align: right; font-variant-numeric: tabular-nums; }
 .hs-meta { grid-column: 1 / -1; font-size: 0.66rem; opacity: 0.75; }
@@ -639,11 +639,11 @@ body.map-full .map-hud .hud-addr { display: none; }
   text-transform: uppercase;
   letter-spacing: 0.5px;
   box-shadow: 2px 2px 0 var(--ink);
-  cursor: pointer;
+  cursor: var(--cur-pointer);
 }
 .info-chip:hover { background: var(--yellow); }
 .info-chip.active { background: var(--yellow); box-shadow: var(--shadow-ac); }
-.info-chip:active { transform: translate(1px, 1px); box-shadow: none; }
+.info-chip:active { transform: translate(1px, 1px); box-shadow: none; cursor: var(--cur-active); }
 .info-count {
   margin-top: 7px;
   font-family: var(--font-mono);
@@ -670,7 +670,7 @@ body.map-full .map-hud .hud-addr { display: none; }
   letter-spacing: 0.6px;
   text-align: left;
   box-shadow: var(--shadow);
-  cursor: pointer;
+  cursor: var(--cur-pointer);
 }
 .info-group-head:hover { background: var(--yellow); }
 .info-group-name { flex: 1; }
@@ -707,7 +707,7 @@ body.map-full .map-hud .hud-addr { display: none; }
   text-transform: uppercase;
   letter-spacing: 0.4px;
   text-align: left;
-  cursor: pointer;
+  cursor: var(--cur-pointer);
 }
 .info-row:hover { background: var(--yellow); }
 .info-item.open .info-row { background: var(--yellow); }

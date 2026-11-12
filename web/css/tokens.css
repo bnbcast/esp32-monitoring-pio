@@ -3,7 +3,22 @@
    Flat, loud, hard edges. No gradients, no blur, no glassmorphism, no rounded
    corners. Everything is a solid color with a thick black border and a hard
    offset shadow.
---------------------------------------------------------------------------- */
+   --------------------------------------------------------------------------- */
+
+/* Custom emoji cursors — each is a tiny 24×24 SVG with an emoji face.
+   Hotspot is at 12,12 (center) for symmetric faces, 6,6 for pointing. */
+:root {
+  --cur-default: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%98%90%3C/text%3E%3C/svg%3E") 12 12, auto;
+  --cur-pointer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%98%8A%3C/text%3E%3C/svg%3E") 12 12, pointer;
+  --cur-active:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%98%B2%3C/text%3E%3C/svg%3E") 12 12, auto;
+  --cur-grab:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%91%8A%3C/text%3E%3C/svg%3E") 12 12, grab;
+  --cur-grabbing:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%91%8B%3C/text%3E%3C/svg%3E") 12 12, grabbing;
+  --cur-zoom-in: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%94%8D%3C/text%3E%3C/svg%3E") 12 12, zoom-in;
+  --cur-zoom-out:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%94%8E%3C/text%3E%3C/svg%3E") 12 12, zoom-out;
+  --cur-crosshair:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%93%8F%3C/text%3E%3C/svg%3E") 12 12, crosshair;
+  --cur-cell:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%93%93%3C/text%3E%3C/svg%3E") 12 12, cell;
+  --cur-wait:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ctext x='12' y='18' font-size='16' text-anchor='middle' dominant-baseline='central'%3E%E2%8F%B0%3C/text%3E%3C/svg%3E") 12 12, wait;
+}
 
 /* Light (default) */
 :root {
@@ -30,3 +45,23 @@
   --lv1: var(--yellow);
   --lv2: var(--red);
 }
+
+/* Focus ring — thick, offset, brutal. */
+:root {
+  --focus-ring: 0 0 0 3px var(--ink);
+}
+
+/* Map container border uses the thick border token. */
+:root {
+  --map-border: var(--border-w-thick) solid var(--ink);
+}
+
+/* Scrollbar — brutal, no-nonsense. */
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: var(--bg); border-left: var(--border-w) solid var(--ink); }
+::-webkit-scrollbar-thumb { background: var(--ink); border: 3px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--red); }
+::-webkit-scrollbar-corner { background: var(--bg); }
+
+/* Selection — high contrast, no transparency. */
+::selection { background: var(--ink); color: var(--paper); }

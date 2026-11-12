@@ -142,7 +142,7 @@ button, a.btn {
   border: var(--border-w) solid var(--ink);
   box-shadow: var(--shadow);
   padding: 10px 16px;
-  cursor: pointer;
+  cursor: var(--cur-pointer);
   text-decoration: none;
   display: inline-block;
 }
@@ -150,6 +150,7 @@ button:hover, a.btn:hover { background: var(--pink, #ff7ad9); }
 button:active, a.btn:active {
   transform: translate(4px, 4px);
   box-shadow: var(--shadow-ac);
+  cursor: var(--cur-active);
 }
 button.secondary, a.btn.secondary { background: var(--paper); }
 button.danger, a.btn.danger { background: var(--red); color: #fff; }
@@ -165,7 +166,7 @@ button.small, a.btn.small { padding: 6px 10px; font-size: 0.7rem; }
   height: 56px;
   padding: 0;              /* the button is an icon box, not a text button */
   font-size: 1rem;
-  cursor: pointer;
+  cursor: var(--cur-pointer);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -290,7 +291,7 @@ body.locked .operator-only { display: none !important; }
   border: 2px solid var(--ink, #000);
   background: transparent;
   color: inherit;
-  cursor: pointer;
+  cursor: var(--cur-pointer);
   touch-action: manipulation;
   min-height: 32px;
 }
