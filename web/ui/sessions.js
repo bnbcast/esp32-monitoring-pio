@@ -306,7 +306,7 @@ const SESSIONS = (function () {
   function toGpx(points, name) {
     const pts = (Array.isArray(points) ? points : []).filter(usable);
     let out = '<?xml version="1.0" encoding="UTF-8"?>\n' +
-      '<gpx version="1.1" creator="esp32-race-tracker" ' +
+      '<gpx version="1.1" creator="orion-project" ' +
       'xmlns="http://www.topografix.com/GPX/1/1">\n' +
       '  <trk><name>' + xmlEsc(name || "session") + '</name><trkseg>\n';
     for (const p of pts) {

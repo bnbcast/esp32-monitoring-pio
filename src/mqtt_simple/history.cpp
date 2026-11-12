@@ -34,6 +34,8 @@
 #define HISTORY_KEY ""
 #endif
 #ifndef HISTORY_DEVICE
+// Kept as the data identity: D1 rows, the worker allowlist and the /history
+// query all use "esp32-01". Orion is the project name, not a new device.
 #define HISTORY_DEVICE "esp32-01"
 #endif
 #if __has_include("../history_secret.h")

@@ -1,6 +1,6 @@
 # Plan B — Convert Tracker Firmware to ESPHome (Detailed)
 
-**Project:** ESP32 EV distance tracker  
+**Project:** Orion Project — ESP32 EV distance tracker  
 **Goal:** Move firmware from PlatformIO + Arduino to ESPHome while keeping the dashboard unchanged, and add JK-BMS over BLE via `syssi/esphome-jk-bms`.  
 **Constraint:** Single ESP32 (`esp32doit-devkit-v1`, classic). Dashboard must not change.  
 **Status:** Pre-implementation. Do not write firmware yet. Review required.

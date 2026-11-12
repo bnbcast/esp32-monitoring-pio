@@ -1,5 +1,5 @@
 /*
- * ESP32 Monitoring — PlatformIO Migration
+ * Orion Project — ESP32 firmware entry point
  *
  * Build environments (see platformio.ini):
  *   pio run -e esp32-mqtt-simple   -> MQTT, single Wi-Fi network  (secret.txt)

@@ -1,6 +1,6 @@
 # JK-BMS over BLE — Detailed Integration Plan
 
-**Project:** ESP32 EV distance tracker (PlatformIO + Arduino)
+**Project:** Orion Project — ESP32 EV distance tracker (PlatformIO + Arduino)
 **Goal:** Read JK-BMS battery data over BLE on the **same ESP32**, publish to MQTT alongside existing data.
 **Constraint:** Single device. Stay on Arduino/PlatformIO. `syssi/esphome-jk-bms` is ESPHome-only — reference only (**license unverified — check the repo's LICENSE file before using as protocol reference**).
 **Status:** Pre-implementation. Do not write code until reviewed.

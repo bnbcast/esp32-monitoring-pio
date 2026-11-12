@@ -1,11 +1,20 @@
-# ESP32 Race Tracker
+<img src="web/assets/orion.png" alt="Orion" width="110" align="right">
 
-Live GPS/telemetry dashboard for one race vehicle.
+# Orion Project
+
+Live GPS/telemetry dashboard for one vehicle. The board is a classic ESP32; the
+project, the site and the mascot are Orion.
 
 - **Firmware:** `src/mqtt_simple/mqtt_simple.cpp` (classic ESP32, `esp32doit-devkit-v1`)
 - **Dashboard:** static site in `web/`, deployed to GitHub Pages
 - **Transport:** ESP32 → public HiveMQ (`broker.hivemq.com`) → dashboard over WSS
 - **Live site:** https://bnbcast.github.io/esp32-monitoring-pio/
+
+The mascot lives in `web/assets/orion.png` with square favicon/app icons in
+`web/icons/`. Both are generated from the supplied artwork by
+`dev/make-orion-assets.ps1`, which removes the flat background, crops the
+margin, and draws the yellow/black icon set. The source PNG itself is not
+committed.
 
 ## Build and flash
 

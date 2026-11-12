@@ -1,5 +1,5 @@
 /*
- * mqtt_simple.cpp — ESP32 sensor dashboard publishing to MQTT broker
+ * mqtt_simple.cpp — Orion Project sensor dashboard publishing to MQTT broker
  * Source: secret.txt (GitHub bnbcast/esp32-monitoring)
  *
  * The ESP32 joins Wi-Fi and publishes sensor readings to a public MQTT broker.
@@ -45,16 +45,18 @@
 // never secret (it ships in public JS), and it forced every user to edit two
 // files. Open the dashboard with #t=<slug> to run a second tracker.
 #define TOPIC_KEY     "race-tracker"
+// The wire names stay esp32-dash/...: retained frames, the dashboard and every
+// saved bookmark already use them. Orion is the product name, not a new topic.
 #define TOPIC_DATA    "esp32-dash/" TOPIC_KEY "/data"
 #define TOPIC_STATUS  "esp32-dash/" TOPIC_KEY "/status"
 
-// 1 Hz is enough for a race tracker and halves broker traffic, log volume and
+// 1 Hz is enough for Orion and halves broker traffic, log volume and
 // the power draw compared with the old 500 ms cadence.
 #define PUBLISH_INTERVAL_MS 1000
 
 // ============ IDENTITY ============
-#define FW_NAME     "esp32-dash"
-#define FW_VERSION  "1.3.0"
+#define FW_NAME     "orion"
+#define FW_VERSION  "1.4.0"
 
 // ============ SERIAL CONSOLE ============
 // One framed panel every DASH_INTERVAL_MS plus event lines as they happen.
@@ -1278,7 +1280,7 @@ const char* wifiStatusStr() {
 
 bool connectMqtt() {
   logMsg(L_INFO, "MQTT", "connecting to %s:%d", MQTT_HOST, MQTT_PORT);
-  // Last will: if the ESP32 vanishes, the broker publishes "offline" for us
+  // Last will: if Orion vanishes, the broker publishes "offline" for us
   if (mqtt.connect(clientId, nullptr, nullptr, TOPIC_STATUS, 0, true, "offline")) {
     mqtt.publish(TOPIC_STATUS, "online", true);
     logMsg(L_OK, "MQTT", "session up, status=online (retained)");
@@ -1765,7 +1767,7 @@ void mqtt_simple_setup() {
   // Start Wi-Fi in the background so calibration is not delayed. At boot we do
   // not know which candidate is around, so go straight to the async scan
   // instead of burning 15 s on a guess.
-  snprintf(clientId, sizeof clientId, "esp32-dash-%08lX", (unsigned long)ESP.getEfuseMac());
+  snprintf(clientId, sizeof clientId, "orion-%08lX", (unsigned long)ESP.getEfuseMac());
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);

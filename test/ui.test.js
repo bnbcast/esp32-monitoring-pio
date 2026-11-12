@@ -148,3 +148,27 @@ test('every asset is requested at one version', () => {
   const unique = [...new Set(versions)];
   assert.strictEqual(unique.length, 1, `mixed asset versions: ${unique.join(', ')}`);
 });
+
+test('the page, icons and manifest carry the Orion brand', () => {
+  assert.match(HTML, /<title>Orion Project \/\/ LIVE SENSORS<\/title>/);
+  assert.match(HTML, /class="brand-mascot"[^>]*src="assets\/orion\.png\?v=\d+"/,
+    'the header mascot is missing');
+  assert.match(HTML, /<span>Orion<br>LIVE<\/span>/, 'the wordmark is missing');
+  assert.match(HTML, /<link rel="manifest" href="manifest\.webmanifest\?v=\d+">/);
+  assert.match(HTML, /icons\/orion-64\.png\?v=\d+/, 'no 64 px favicon');
+  assert.match(HTML, /icons\/orion-180\.png\?v=\d+/, 'no apple-touch icon');
+  assert.match(HTML, /ORION \/\/ LIVE VIA MQTT/, 'the footer still uses the old name');
+  assert.doesNotMatch(HTML, /ESP32 \/\/ LIVE/);
+
+  const manifest = JSON.parse(read('web/manifest.webmanifest'));
+  assert.strictEqual(manifest.name, 'Orion Project');
+  assert.strictEqual(manifest.short_name, 'Orion');
+  assert.ok(manifest.icons.length >= 2, 'the manifest has no home-screen icons');
+
+  for (const p of ['web/assets/orion.png',
+                   ...[32, 48, 64, 180, 192, 512].map(n => `web/icons/orion-${n}.png`)]) {
+    const file = path.join(root, p);
+    assert.ok(fs.existsSync(file), `missing ${p}`);
+    assert.ok(fs.statSync(file).size > 500, `${p} looks empty`);
+  }
+});

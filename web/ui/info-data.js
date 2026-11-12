@@ -9,7 +9,7 @@
  * innerHTML. `short` is the chip label.
  */
 window.INFO_INTRO =
-  "Tap an area, then a term. Search jumps straight to it. " +
+  "Orion Project: tap an area, then a term. Search jumps straight to it. " +
   "GREEN = healthy, YELLOW = waiting, RED = a problem.";
 
 window.INFO_GROUPS = [

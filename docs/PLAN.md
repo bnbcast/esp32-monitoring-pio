@@ -28,6 +28,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 | W9 | **Session log** - lap rows, GPX/CSV export, lean trace, HDOP overlay, derived event log, lifetime odometer | **done 2026-11-12**, migration applied | `npm test` 105/105, `worker/test` 17/17, `dev/check-laps-export.mjs` PASS, `pio run` SUCCESS |
 | W10 | **Replay and chart** - select a session, scrub or play it on the map, speed/lean chart with HDOP bands | **done 2026-11-12**, live `?v=40` | `npm test` 107/107, `worker/test` 17/17, `dev/check-playback.mjs` PASS |
 | W11 | **Tab charts** - LIVE speed/quality, WIFI link history, MPU acceleration, HIST chart modes and stats | **done 2026-11-12**, live `?v=41` | `npm test` 114/114, `worker/test` 17/17, `dev/check-live-charts.mjs` PASS |
+| W12 | **Orion rebrand** - project name, wordmark and mascot across the dashboard, firmware banner and docs | **done 2026-11-12**, live `?v=42` | `npm test` 115/115, `pio run`, `dev/check-orion.mjs` PASS |
 
 ## W1 — Stabilize (this branch)
 
@@ -251,6 +252,28 @@ node, like `sessions.js`.
 The live buffers use arrival time, not `gps.ts`, because the timestamp is 0
 until the first fix; a dropout stays a visible gap. History stats use point
 shares rather than summed seconds because wide windows are sampled by the API.
+
+## W12 — Orion rebrand (2026-11-12)
+
+Orion is the name of the project, the site and the mascot. The ESP32 remains the
+board, and nothing on the wire moved:
+
+| Keep | Reason |
+|---|---|
+| MQTT topics `esp32-dash/<key>/data|status` | the dashboard and the retained frames already use them |
+| `HISTORY_DEVICE "esp32-01"` and the D1 rows | changing the device id would split history or need a migration |
+| Worker/Pages names and URLs | the board uploads to the existing endpoint |
+| PlatformIO envs (`esp32-mqtt-simple`, ...) | they name the board and toolchain |
+
+| Change | Detail |
+|---|---|
+| Page | title, wordmark, mascot, favicon/app icons, manifest, footer |
+| Firmware | banner name `orion`, version `1.4.0`, MQTT client id `orion-<MAC>` |
+| Docs | README, AGENTS and the plan use Orion |
+
+`dev/make-orion-assets.ps1` performs the background key, crop and icon render, so
+the assets can be rebuilt from the supplied PNG without an image editor.
+`dev/check-orion.mjs` is the browser gate for the rename.
 
 ## Still open
 

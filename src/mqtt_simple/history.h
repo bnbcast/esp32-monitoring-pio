@@ -1,5 +1,5 @@
 /*
- * history.h - store-and-forward history for the race tracker.
+ * history.h - store-and-forward history for Orion.
  *
  * Live data keeps flowing over MQTT (best effort, QoS 0) exactly as before.
  * This module is a second, independent path: every frame with a usable GPS fix

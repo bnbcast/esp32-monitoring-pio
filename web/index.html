@@ -5,15 +5,22 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23ffe600' stroke='%23000' stroke-width='5'/%3E%3Ccircle cx='21' cy='25' r='6.5' fill='%23000'/%3E%3Ccircle cx='43' cy='25' r='6.5' fill='%23000'/%3E%3Cpath d='M17 41q15 13 30 0' fill='none' stroke='%23000' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/tokens.css?v=41">
-<link rel="stylesheet" href="css/base.css?v=41">
-<link rel="stylesheet" href="css/components.css?v=41">
-<link rel="stylesheet" href="css/layout.css?v=41">
-<link rel="stylesheet" href="css/map.css?v=41">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=41">
-<title>ESP32 // LIVE SENSORS</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; manifest-src 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
+<link rel="icon" type="image/png" sizes="64x64" href="icons/orion-64.png?v=42">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/orion-32.png?v=42">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/orion-180.png?v=42">
+<link rel="manifest" href="manifest.webmanifest?v=42">
+<meta name="theme-color" content="#ffe600">
+<meta name="application-name" content="Orion Project">
+<meta name="apple-mobile-web-app-title" content="Orion">
+<meta name="description" content="Orion Project - live GPS and telemetry for one vehicle.">
+<link rel="stylesheet" href="css/tokens.css?v=42">
+<link rel="stylesheet" href="css/base.css?v=42">
+<link rel="stylesheet" href="css/components.css?v=42">
+<link rel="stylesheet" href="css/layout.css?v=42">
+<link rel="stylesheet" href="css/map.css?v=42">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=42">
+<title>Orion Project // LIVE SENSORS</title>
 </head>
 <body class="locked">
 <div class="app-shell" id="app-shell">
@@ -22,7 +29,10 @@
   <div class="top-bar-area">
     <div class="top-bar">
       <div class="flex items-center gap-4">
-        <h1>ESP32<br>LIVE</h1>
+        <h1 class="brand">
+          <img class="brand-mascot" src="assets/orion.png?v=42" alt="" width="540" height="680">
+          <span>Orion<br>LIVE</span>
+        </h1>
         <span class="label-tag" id="sim-badge">SIMULATED</span>
       </div>
       <div class="pills" role="status" aria-live="polite">
@@ -384,21 +394,21 @@
   </section>
 
   <footer>
-    <span>ESP32 // LIVE VIA MQTT</span>
+    <span>ORION // LIVE VIA MQTT</span>
     <span id="fTime">--</span>
   </footer>
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=41"></script>
-<script src="ui/guard.js?v=41"></script>
-<script src="ui/map.js?v=41"></script>
-<script src="ui/mqtt-mini.js?v=41"></script>
-<script src="ui/info-data.js?v=41"></script>
-<script src="ui/info.js?v=41"></script>
-<script src="ui/sessions.js?v=41"></script>
-<script src="ui/charts.js?v=41"></script>
-<script src="ui/mpu3d.js?v=41"></script>
-<script src="ui/app.js?v=41"></script>
+<script src="vendor/maplibre-gl-csp.js?v=42"></script>
+<script src="ui/guard.js?v=42"></script>
+<script src="ui/map.js?v=42"></script>
+<script src="ui/mqtt-mini.js?v=42"></script>
+<script src="ui/info-data.js?v=42"></script>
+<script src="ui/info.js?v=42"></script>
+<script src="ui/sessions.js?v=42"></script>
+<script src="ui/charts.js?v=42"></script>
+<script src="ui/mpu3d.js?v=42"></script>
+<script src="ui/app.js?v=42"></script>
 </body>
 </html>

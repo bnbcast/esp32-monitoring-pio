@@ -109,7 +109,7 @@ current sensor: `acs`, `peakA` and the ADC pin are gone.
 | Raster fallback | Esri World Street → Esri Topo → OSM tiles |
 | Geocoding | public Nominatim, min 8 s and 80 m between calls, 110 m cache cells |
 | CSP | present, `script-src 'self'`, no CDN |
-| Tests | 114 unit tests across nine files (`charts`, `gps`, `guard`, `info`, `lap`, `led`, `mpu3d`, `sessions`, `ui`) plus browser probes in `dev/` |
+| Tests | 115 unit tests across nine files (`charts`, `gps`, `guard`, `info`, `lap`, `led`, `mpu3d`, `sessions`, `ui`) plus browser probes in `dev/` |
 
 ## Secrets
 
@@ -677,6 +677,34 @@ stats and the lap list to that session.
 | Live-chart probe | `dev/check-live-charts.mjs` PASS: LIVE avg 22 km/h / stopped 0% / peak 25 / 2335 ink; WIFI `SIM-WIFI` −57 dBm strong, 2.7 msg/s, gap 1.6 s / 3124 ink; MPU 0.93 g now, peak 0.93 g, peak tilt 5.0 deg / 2461 ink |
 | HIST probe | `dev/check-playback.mjs` PASS: moving 100%, avg 23 km/h, max 26; HDOP view 4225 red pixels; lap view 3 chips and a green best-lap bar (204 pixels) |
 | Regression probes | `dev/check-timeline.mjs` PASS, `dev/check-laps-export.mjs` PASS |
+
+## Orion rebrand (2026-11-12)
+
+The project, site and firmware banner are now **Orion Project**; the hardware
+is still a classic ESP32 and the wire protocol is unchanged, so retained MQTT
+data, the history URL and every stored row keep working:
+
+| Surface | Change |
+|---|---|
+| Page | title `Orion Project // LIVE SENSORS`, `ORION / LIVE` wordmark with the mascot, footer `ORION // LIVE VIA MQTT` |
+| Icons | mascot PNG in `web/assets/orion.png`; square 32/48/64/180/192/512 icons in `web/icons/`, plus a `manifest.webmanifest` |
+| Info | glossary intro names Orion; field help unchanged |
+| Firmware | `FW_NAME "orion"`, firmware `1.4.0`, MQTT client id `orion-<MAC>`; topics stay `esp32-dash/...` and `HISTORY_DEVICE` stays `esp32-01` so no data or backend migration is needed |
+| Docs | README, AGENTS, PLAN and the setup comments use the Orion name |
+
+The mascot pipeline is `dev/make-orion-assets.ps1`: it floods the flat
+background to transparency from the border (so white highlights inside the art
+survive), crops the margin, and renders the square icons on the dashboard's
+yellow with a black border. The supplied source PNG is not committed.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| JS suite | 115/115 pass (one new static brand check; `?v=42` stays uniform) |
+| Browser probe | `dev/check-orion.mjs` PASS: title, wordmark, mascot 540x680 at a 92 px box, favicon 64, apple 180, manifest `Orion Project`, all five PNGs decode, `INFO` intro, footer, no CSP error |
+| Firmware | `pio run -e esp32-mqtt-simple` SUCCESS |
+| Shots | `%TEMP%\orion-desktop.png`, `%TEMP%\orion-phone.png` |
 
 ## Still needs the board
 

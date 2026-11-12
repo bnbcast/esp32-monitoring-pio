@@ -1,7 +1,7 @@
 "use strict";
 
 // ---------------------------------------------------------------------------
-// web/ui/app.js — ESP32 Live Dashboard (neo-brutalist refactor)
+// web/ui/app.js - Orion Project live dashboard (neo-brutalist refactor)
 // Keeps the live data path unchanged: MQTT over WebSocket, ingestGPS(),
 // "?dev&t=..." mode, simulator, GPS + MPU6050 fields. No firmware changes.
 // ---------------------------------------------------------------------------
@@ -786,7 +786,7 @@ function renderBanner() {
   } else if (deviceState === "offline") {
     strip.classList.add('nofix');
     text.textContent = "DEVICE OFFLINE";
-    sub.textContent = last ? "showing last known values" : "waiting for the ESP32 to come online";
+    sub.textContent = last ? "showing last known values" : "waiting for Orion to come online";
   } else if (!live) {
     strip.classList.add('stale');
     text.textContent = last ? "NO SIGNAL" : "WAITING";

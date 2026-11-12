@@ -36,6 +36,20 @@
   justify-content: space-between;
 }
 
+/* Orion wordmark. The mascot is a transparent PNG cropped by
+   dev/make-orion-assets.ps1, so it sits directly on the yellow field. */
+.top-bar h1.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-mascot {
+  height: clamp(58px, 8vw, 92px);
+  width: auto;
+  display: block;
+  filter: drop-shadow(3px 3px 0 rgba(0, 0, 0, 0.18));
+}
+
 /* Status pills */
 .pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .pill {

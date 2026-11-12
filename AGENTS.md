@@ -1,4 +1,4 @@
-# AGENTS.md — esp32 PlatformIO project
+# AGENTS.md - Orion Project (ESP32 / PlatformIO)
 
 ## Build / Upload / Monitor
 
