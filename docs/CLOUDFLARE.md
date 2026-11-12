@@ -33,8 +33,11 @@ npx wrangler@4 pages deploy
 ```
 
 `worker/pages/functions/[[path]].js` imports `../../src/index.js`, so the Pages
-Function and the Worker can never drift apart. The static output
-(`worker/pages/public/`) is only a landing page.
+Function and the Worker can never drift apart. Only `/health`, `/history` and
+`/ingest` go to that handler; every other path falls through to the static
+output, so `/` serves the rebranded landing page in `worker/pages/public/`.
+Before that split, the catch-all swallowed `/` and the landing page could not be
+reached.
 
 The first deploy of a project needs the project to exist:
 

@@ -704,6 +704,7 @@ yellow with a black border. The supplied source PNG is not committed.
 | JS suite | 115/115 pass (one new static brand check; `?v=42` stays uniform) |
 | Browser probe | `dev/check-orion.mjs` PASS: title, wordmark, mascot 540x680 at a 92 px box, favicon 64, apple 180, manifest `Orion Project`, all five PNGs decode, `INFO` intro, footer, no CSP error |
 | Firmware | `pio run -e esp32-mqtt-simple` SUCCESS |
+| Pages deploy | `wrangler pages deploy` production `race-tracker-history`: `/` 200 with `Orion Project - history API`; `/health` and `/history` still 200; `POST /ingest` without a key 401; `OPTIONS` 204 |
 | Shots | `%TEMP%\orion-desktop.png`, `%TEMP%\orion-phone.png` |
 
 ## Still needs the board
