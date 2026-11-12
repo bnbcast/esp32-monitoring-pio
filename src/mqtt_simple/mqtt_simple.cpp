@@ -586,8 +586,8 @@ bool mpuInit() {
   return true;
 }
 
-bool mpuRead(float &ax, float &ay, float &az, float &temp,
-             float &gx, float &gy, float &gz) {
+static bool mpuReadOnce(float &ax, float &ay, float &az, float &temp,
+                        float &gx, float &gy, float &gz) {
   Wire.beginTransmission(MPU_ADDR);
   Wire.write(0x3B);
   if (Wire.endTransmission(false) != 0) return false;
@@ -611,6 +611,16 @@ bool mpuRead(float &ax, float &ay, float &az, float &temp,
   gy = rgy / 65.5f;
   gz = rgz / 65.5f;
   return true;
+}
+
+bool mpuRead(float &ax, float &ay, float &az, float &temp,
+             float &gx, float &gy, float &gz) {
+  // One NACK on a breadboard patch cable is not a dead sensor. A single retry
+  // hides the transient that used to flip mpuValid twice a few seconds apart
+  // and blink the dashboard between OK and FAIL.
+  if (mpuReadOnce(ax, ay, az, temp, gx, gy, gz)) return true;
+  delayMicroseconds(200);
+  return mpuReadOnce(ax, ay, az, temp, gx, gy, gz);
 }
 
 void updateMotion() {
@@ -859,6 +869,29 @@ static uint32_t gpsDetectBaud() {
   return 0;
 }
 
+// Active probe: does anything answer UBX on the TX pin at all? A MON-VER poll
+// is answered by a healthy module even when it ignores CFG-PRT, so this tells
+// "wire missing / wrong pin" apart from "module refused the configuration".
+// Both used to print the same "not acknowledged" line.
+static bool ubxPing() {
+  ubxSend(0x0A, 0x04, nullptr, 0);                 // UBX-MON-VER poll
+  const uint32_t t0 = millis();
+  bool sync = false;
+  while (millis() - t0 < 400) {
+    while (gpsSerial.available()) {
+      const uint8_t b = (uint8_t)gpsSerial.read();
+      if (b == 0xB5) {
+        sync = true;
+      } else if (sync) {
+        if (b == 0x62) return true;                // 0xB5 0x62 = UBX frame start
+        sync = false;
+      }
+    }
+    delay(1);
+  }
+  return false;
+}
+
 static bool gpsUbxConfigure() {
 #if GPS_UBX_ENABLE
   if (GPS_TX_PIN < 0) return false;
@@ -866,7 +899,9 @@ static bool gpsUbxConfigure() {
   gpsPump(700);                                   // let the module finish booting
   const uint32_t found = gpsDetectBaud();
   if (found == 0) {
-    if (verbose) logMsg(L_INFO, "GPS", "no NMEA to configure - UBX setup skipped");
+    // Not verbose-gated: a tracker that cannot reach the module should say so
+    // once at boot instead of looking healthy while publishing no position.
+    logMsg(L_INFO, "GPS", "no NMEA on GPIO %d - UBX setup skipped (check module TX)", GPS_RX_PIN);
     return false;
   }
   if (found != GPS_BAUD) {
@@ -891,8 +926,13 @@ static bool gpsUbxConfigure() {
     if (!gpsLinkAlive(1400)) {
       gpsSerial.updateBaudRate(found);
       gpsPump(300);
-      logMsg(L_WARN, "GPS", "UBX config not acknowledged - staying at %lu baud",
-             (unsigned long)found);
+      if (ubxPing()) {
+        logMsg(L_WARN, "GPS", "UBX: module answers on GPIO %d but ignored 38400 - staying at %lu baud",
+               GPS_TX_PIN, (unsigned long)found);
+      } else {
+        logMsg(L_WARN, "GPS", "UBX: no reply on GPIO %d - wire module RX to it; staying at %lu baud",
+               GPS_TX_PIN, (unsigned long)found);
+      }
       return false;
     }
   }

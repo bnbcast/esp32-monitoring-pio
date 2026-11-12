@@ -211,7 +211,7 @@ and the tests.
 | Item | Why it is open |
 |---|---|
 | Flash + outdoor check | firmware compiled but the board is not on USB; needs `boot #n` increment, a 3D fix, TTFF and hold verification |
-| GPS TX wire | 5 Hz and the UBX options need one wire from the module RX to GPIO 33 |
+| GPS TX wire | confirmed missing by the new probe: boot prints `UBX: no reply on GPIO 33 - wire module RX to it`; 5 Hz and the UBX options need that wire |
 | HDOP 2.0 vs 4.0 | the live gate stays 5/4.0 until one track session reports `tight n/N (%)`; near 0 on a clean track means the strict gate is free, double digits means it costs segments |
 | 60-minute soak | restarted after the GPS/lap change so the window describes the final binary; needs the board idle on USB |
 | Parked + drive captures | needs the vehicle outdoors; the Worker rules are covered by 15 tests, but real wander radius is unmeasured |

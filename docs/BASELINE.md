@@ -109,7 +109,7 @@ current sensor: `acs`, `peakA` and the ADC pin are gone.
 | Raster fallback | Esri World Street → Esri Topo → OSM tiles |
 | Geocoding | public Nominatim, min 8 s and 80 m between calls, 110 m cache cells |
 | CSP | present, `script-src 'self'`, no CDN |
-| Tests | 47 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 4, `ui` 9) plus browser probes in `dev/` |
+| Tests | 49 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 6, `ui` 9) plus browser probes in `dev/` |
 
 ## Secrets
 
@@ -396,11 +396,16 @@ subscribed". A real boot log after the first flash shows `task watchdog armed
 ## GPS conditioning, 5 Hz and lap timing (screen-verified)
 
 The firmware changes are compiled and the dashboard side is verified against the
-dev simulator; the board itself has not been re-flashed because COM4 is absent.
+dev simulator; the board bring-up on 2026-11-12 reached the wiring limits: with
+the NEO-6M and MPU6050 mounted, the receiver reports `$GPTXT ... ANTENNA OK` and
+one satellite in view indoors (no fix, which is expected without sky view), and
+the UBX probe prints `no reply on GPIO 33 - wire module RX to it`, so the 5 Hz
+configuration cannot be exercised until that wire exists. Boot count advanced
+`#14 -> #19` across the flashes, and the IMU retry produced 0 error lines in 40 s.
 
 | Check | Result |
 |---|---|
-| Build | `SUCCESS`, RAM 16.3% (53,288 B), flash 40.7% (1,281,496 B), no format warnings |
+| Build | `SUCCESS`, RAM 16.3% (53,296 B), flash 40.8% (1,284,064 B), no format warnings |
 | ACS removal | grep over `src/`, `web/`, `test/`, `dev/` and the docs: no driver, pin, payload key, tab, pill or glossary entry left |
 | Publish gate | sats ≥ 5, HDOP ≤ 4, GSA mode 3 (2D rejected), over-200 km/h jump rejected |
 | Shadow gate | `GPS_STRICT_SATS 6` / `GPS_STRICT_HDOP 2.0` are counted per boot, never enforced: the POS line prints `tight n/N (%)`, the share of accepted fixes a stricter gate would have dropped. `test/gps.test.js` proves the strict values cannot reach `gpsFixUsable()` |
@@ -410,8 +415,10 @@ dev simulator; the board itself has not been re-flashed because COM4 is absent.
 | Lap persistence | `lap/n`, `lap/last`, `lap/best` written once per completed lap and restored by `gpsLoadGates()`; arming a new gate persists the zeroed counters; `l` clears the namespace. `lapCrossMs` is not restored (millis() restarts), so the line re-arms after a reboot |
 | UBX | probe at 9600/38400/115200 on GPIO 33; when a module answers: 38400, 5 Hz, automotive, static hold 0.5 m/s (mask 0x0105), SBAS, config saved in the module; with the pin unwired the link stays 9600 8N1 |
 | UBX masks | `CFG-NAV5` applies field by field: dynModel bit 0, fixMode bit 2, static-hold threshold bit 8. The previous 0x0041 mask left static hold off while the log claimed it was on |
+| UBX diagnostic | when the 38400 switch is not acknowledged, the firmware polls `UBX-MON-VER` on GPIO 33 and prints two different lines: `no reply on GPIO 33 - wire module RX to it` (no wire / wrong pin) versus `module answers on GPIO 33 but ignored 38400` (module refuses the rate). Measured on the mounted unit: **no reply**, which is why the link stayed at 9600 and 5 Hz never engaged |
+| IMU I2C | `mpuRead()` retries the 14-byte burst once after 200 µs, so one NACK on a patch cable no longer flips `mpu` to FAIL and back. Measured: 0 `MPU6050 stopped responding` lines in a 40 s capture, versus one pair every 5 s before |
 | Wi-Fi latency | `WiFi.setSleep(false)`; the scan matcher now builds one `String` per visible AP instead of one per (AP, candidate) pair, which removes N×M heap churn on every rescan |
-| Unit tests | 47/47 (`node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/ui.test.js`) |
+| Unit tests | 49/49 (`node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/ui.test.js`) |
 | Lap geometry | `test/lap.test.js` (15 tests) mirrors the firmware cross-product and asserts the source still matches; a 144 km/h crossing 37 ms after a fix is timed at 37 ms, where nearest-sample rounding costs up to 100 ms and next-sample up to 163 ms. Five further tests pin the NVS session: saved after `lapCount++`, all three keys written, counters restored at boot with `lapCrossMs = 0`, reset persisted when a gate is armed, namespace cleared by `l` |
 | `dev/check-live.mjs` local | PASS, no page/CSP/console errors; `mode 3D`, `ttff 27`, `rejected 3`, laps `15`, last `41.23`, best `39.87`, gate `armed` |
 | Gate layer | `queryRenderedFeatures(['gate-line'])` = 1, 3 features (line + 2 ends) |

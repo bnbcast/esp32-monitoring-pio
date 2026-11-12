@@ -68,3 +68,28 @@ test('a track-like fix set shows what tightening would cost', () => {
   assert.match(CPP, /\(100ULL \* gpsStrictReject\) \/ gpsFixesAccepted/);
   assert.match(CPP, /tight %lu\/%lu \(%u%%\)/);
 });
+
+// ---- hardware-fault reporting --------------------------------------------
+
+test('a single I2C NACK does not mark the IMU dead', () => {
+  const from = CPP.indexOf('if (mpuReadOnce(ax, ay, az, temp, gx, gy, gz)) return true;');
+  const body = CPP.slice(from, CPP.indexOf('\n}', from));
+  assert.match(body, /mpuReadOnce\(ax, ay, az, temp, gx, gy, gz\)/,
+    'mpuRead must retry the burst read once');
+  assert.strictEqual((body.match(/mpuReadOnce\(/g) || []).length, 2,
+    'exactly one retry: a transient is hidden, a real disconnect still fails both attempts');
+});
+
+test('the UBX failure says which fault it is', () => {
+  const from = CPP.indexOf('static bool gpsUbxConfigure()');
+  const body = CPP.slice(from, CPP.indexOf('\n}', from) > 0 ? CPP.indexOf('\n}', from) : from);
+  // The two outcomes must be distinguishable: no reply at all versus a module
+  // that answers but refuses 38400.
+  assert.match(CPP, /UBX: no reply on GPIO %d - wire module RX to it/);
+  assert.match(CPP, /UBX: module answers on GPIO %d but ignored 38400/);
+  // And the probe has to be an active UBX poll, not a wait for NMEA.
+  const ping = CPP.slice(CPP.indexOf('static bool ubxPing()'));
+  assert.match(ping.slice(0, ping.indexOf('\n}')), /ubxSend\(0x0A, 0x04, nullptr, 0\)/,
+    'ubxPing must poll MON-VER (0x0A 0x04) so a module that ignores CFG-PRT still answers');
+  assert.ok(body.length > 0);
+});
