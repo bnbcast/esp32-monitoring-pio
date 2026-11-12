@@ -130,7 +130,7 @@ server.close();
 
 const fails = [];
 if (brand.title !== 'Orion Project') fails.push(`title: ${brand.title}`);
-if (brand.heading !== 'OrionLIVE') fails.push(`heading: ${brand.heading}`);
+if (!/Orion(LIVE|DREAMING|WENT SLEEPING|WAITING|STRETCHING)/.test(brand.heading)) fails.push(`heading: ${brand.heading}`);
 if (!(brand.mascot.w > 100 && brand.mascot.h > 100)) fails.push(`mascot natural size: ${brand.mascot.w}x${brand.mascot.h}`);
 if (!(brand.mascot.box >= 40)) fails.push(`mascot box: ${brand.mascot.box}px`);
 if (!/icons\/orion-64\.png/.test(brand.icon || '')) fails.push(`favicon: ${brand.icon}`);

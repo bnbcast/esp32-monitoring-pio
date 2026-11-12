@@ -810,6 +810,15 @@ function renderBanner() {
   else if (live) setPill($('pDev'), "DEVICE LIVE", "ok");
   else setPill($('pDev'), last ? "NO SIGNAL" : "DEVICE ...", last ? "bad" : "wait");
 
+  // Brand state humor
+  const brandState = $('brandState');
+  if (brandState) {
+    if (linkState !== "connected") brandState.textContent = "DREAMING";
+    else if (deviceState === "offline") brandState.textContent = "WENT SLEEPING";
+    else if (!live) brandState.textContent = last ? "WAITING..." : "STRETCHING";
+    else brandState.textContent = "LIVE";
+  }
+
   if ($('lState')) $('lState').textContent = linkState.toUpperCase();
   if ($('sState')) $('sState').textContent = live ? "LIVE" : "NOT LIVE";
   if ($('sAge')) $('sAge').textContent = lastLiveAt ? Math.round(age / 1000) + " s ago" : "--";

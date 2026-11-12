@@ -153,7 +153,7 @@ test('the page, icons and manifest carry the Orion brand', () => {
   assert.match(HTML, /<title>Orion Project<\/title>/);
   assert.match(HTML, /class="brand-mascot"[^>]*src="assets\/orion\.png\?v=\d+"/,
     'the header mascot is missing');
-  assert.match(HTML, /<span>Orion<br>LIVE<\/span>/, 'the wordmark is missing');
+  assert.match(HTML, /<span>Orion<br><span id="brandState">LIVE<\/span><\/span>/, 'the wordmark is missing');
   assert.match(HTML, /<link rel="manifest" href="manifest\.webmanifest\?v=\d+">/);
   assert.match(HTML, /icons\/orion-64\.png\?v=\d+/, 'no 64 px favicon');
   assert.match(HTML, /icons\/orion-180\.png\?v=\d+/, 'no apple-touch icon');
