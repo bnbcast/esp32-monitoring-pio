@@ -111,8 +111,13 @@
 
 // Odometer gates: distance is only counted while the module itself reports
 // motion, and a single fix may not imply more than the frame limit allows.
-#define GPS_ODO_MIN_KMH   3.0f
-#define GPS_ODO_MAX_STEP_M 60.0f
+// The step floor is measured from an anchor fix, not from the previous fix, so
+// it keeps working at 5 Hz: at 1 Hz a 10 km/h car moves 2.8 m per fix, at 5 Hz
+// only 0.55 m, and a per-fix floor would have stopped counting below 36 km/h.
+#define GPS_ODO_MIN_KMH    3.0f
+#define GPS_ODO_MIN_STEP_M 2.0f   // anchor-to-fix distance that beats jitter
+#define GPS_ODO_SLACK_M    10.0f  // allowed beyond speed x time (position noise)
+#define GPS_ODO_MAX_STEP_M 60.0f  // hard ceiling, still 216 km/h at 1 Hz
 
 // Physical plausibility clamps
 #define GYRO_MAX_DPS  500.0f         // MPU6050 configured range is +-500 dps
@@ -204,10 +209,12 @@ int level = 0;
 
 float maxTilt = 0;
 
-// GPS odometer (device-side cumulative distance)
+// GPS odometer (device-side cumulative distance). The anchor is the last fix
+// whose distance was actually counted; it is what the 2 m jitter floor uses.
 float gpsDistTotalM = 0;
-bool gpsHasPrev = false;
-float gpsPrevLat = 0, gpsPrevLng = 0;
+bool gpsOdoHasAnchor = false;
+float gpsOdoLat = 0, gpsOdoLng = 0;
+uint32_t gpsOdoMs = 0;
 
 // ---- GPS position conditioning -----------------------------------------
 // last accepted fix (used by the jump gate and the lap interpolator)
@@ -1986,23 +1993,40 @@ void mqtt_simple_loop() {
   gpsWatch();
   updateGpsPositioning();
 
-  // GPS odometer: accumulate distance only while the module reports real
-  // motion. A parked receiver wanders 2-10 m per fix; counting that made the
-  // odometer creep upward for hours with the vehicle standing still.
+  // GPS odometer: only real displacement counts. The distance is measured from
+  // an anchor fix, not from the previous fix. A parked receiver wanders 2-10 m
+  // per fix; at 5 Hz a slow car moves less than that per fix, so the anchor is
+  // what separates "moved 2 m" from "jittered 2 m" at any fix rate.
   if (gps.location.isUpdated() && gps.location.isValid()) {
-    float newLat = gps.location.lat();
-    float newLng = gps.location.lng();
-    if (gpsHasPrev) {
-      float d = haversineM(gpsPrevLat, gpsPrevLng, newLat, newLng);
-      const bool rolling = gps.speed.isValid() && gps.speed.kmph() >= GPS_ODO_MIN_KMH;
-      const bool sane = d <= GPS_ODO_MAX_STEP_M;
-      if (rolling && sane && d > 2.0f) {
+    const float newLat = gps.location.lat();
+    const float newLng = gps.location.lng();
+    const uint32_t nowMs = millis();
+    const float kmh = gps.speed.isValid() ? gps.speed.kmph() : 0.0f;
+    const bool rolling = gps.speed.isValid() && kmh >= GPS_ODO_MIN_KMH;
+
+    if (!gpsOdoHasAnchor) {
+      gpsOdoLat = newLat; gpsOdoLng = newLng; gpsOdoMs = nowMs;
+      gpsOdoHasAnchor = true;
+    } else if (!rolling) {
+      // Parked: the anchor follows every fix, so wander can never accumulate.
+      gpsOdoLat = newLat; gpsOdoLng = newLng; gpsOdoMs = nowMs;
+    } else {
+      const float d = haversineM(gpsOdoLat, gpsOdoLng, newLat, newLng);
+      // The cap follows the real fix spacing: a fixed 60 m was 216 km/h at
+      // 1 Hz but 1080 km/h at 5 Hz, which is no gate at all.
+      float dt = (nowMs - gpsOdoMs) / 1000.0f;
+      if (dt <= 0.0f) dt = 1.0f / GPS_NAV_HZ;
+      float allowed = kmh * (1.0f / 3.6f) * dt * 1.5f + GPS_ODO_SLACK_M;
+      if (allowed > GPS_ODO_MAX_STEP_M) allowed = GPS_ODO_MAX_STEP_M;
+
+      if (d > allowed) {
+        // A teleport is not distance: move the anchor, count nothing.
+        gpsOdoLat = newLat; gpsOdoLng = newLng; gpsOdoMs = nowMs;
+      } else if (d >= GPS_ODO_MIN_STEP_M) {
         gpsDistTotalM += d;
+        gpsOdoLat = newLat; gpsOdoLng = newLng; gpsOdoMs = nowMs;
       }
     }
-    gpsPrevLat = newLat;
-    gpsPrevLng = newLng;
-    gpsHasPrev = true;
   }
 
   updateMotion();

@@ -542,12 +542,44 @@ publishes.
 | Live wiring | repo simulator (`dev/server.js`, topic `dev-test-1234`): roll -4.7 -> -4.8, pitch -1.0 -> 0.8, yaw 251.2 -> 285.5, canvas checksum changed between samples |
 | Full suite | 94/94 |
 
+## GPS: GPIO 33 wired, module at 5 Hz (2026-11-12)
+
+The second UART wire (ESP32 GPIO 33 -> module RX) was missing, so the UBX
+configuration was written into an unconnected pin. It is now wired and the
+module accepted the whole sequence.
+
+| Check | Result |
+|---|---|
+| Boot banner | `gps uart2 RX=25 TX=33 9600/38400/115200 8N1` |
+| Module answered | `info GPS module already at 38400 baud` - it had a saved rate from an earlier boot, so CFG-PRT was skipped |
+| Configuration | `OK GPS UBX: 5 Hz, 38400 baud, automotive, static hold 1.8 km/h, SBAS on (saved)` |
+| Rate proof, sentences | 34 s console capture: GGA 125, RMC 123, GSA 123, **GSV 24**. GSV is configured to 1 Hz while the rest run at nav rate, so 125/24 = 5.2 Hz |
+| Rate proof, bytes | MQTT `gps.chars` 132,706 -> 133,613 in 1.0 s = **907 B/s**; a 1 Hz stream of the same no-fix sentences is about 200 B/s |
+| Publish path | `LINK wifi OK mqtt OK tx 9 ok 9 fail 0 drop 0 q 0` |
+| Still no fix | `sats 0 view 0 hdop 25.50 mode 1` - antenna has no sky view indoors; the firmware says so itself rather than blaming the wire |
+| Build / flash | `esp32-mqtt-simple` SUCCESS, RAM 16.3%, Flash 40.9%, 794,072 bytes written, hash verified |
+
+### Odometer retuned for 5 Hz
+
+Two constants were 1 Hz assumptions and would have gone quiet or loose at the
+new rate. Both are in `mqtt_simple.cpp` and changed in the same commit as the
+wire.
+
+| Old | What it did at 5 Hz | Now |
+|---|---|---|
+| `d > 2.0f` per fix | a 10 km/h car moves 0.55 m per fix, so every step failed the floor: **no distance at all below ~36 km/h** | distance is measured from an anchor fix and the anchor advances once 2 m of real travel is confirmed, at any fix rate |
+| `GPS_ODO_MAX_STEP_M 60` fixed | 60 m was 216 km/h at 1 Hz but 1080 km/h at 5 Hz - no gate | allowed = `1.5 * v * dt + 10 m`, clamped to 60 m, with `dt` the real spacing between counted fixes |
+
 ## Still needs the board
 
 1. ~~Flash `0dd61cd` + watchdog commit; confirm the two `task_wdt` error lines
    are gone.~~ Done 2026-11-11: no `task_wdt` lines, watchdog armed.
 2. The 60-minute soak, on that binary. Running; the table above is updated when
    it finishes.
-3. Real parked wander radius (lat/lon spread over 10 minutes). Needs the GPS
-   module on UART2 RX=25; it is not attached yet (`gps.chars` stays 0).
-4. One drive capture (route, speed, odometer). Same blocker as (3).
+3. Real parked wander radius (lat/lon spread over 10 minutes). The module is
+   now wired on both UART2 pins and running 5 Hz; it still needs an open-sky
+   position (`sats` is 0 indoors), then 10 minutes parked with `dist_m`
+   watched for creep.
+4. One drive capture (route, speed, odometer). Same blocker as (3): sky, not
+   wiring. This is also the first real test of the 5 Hz lap interpolation and
+   of the retuned odometer gates.
