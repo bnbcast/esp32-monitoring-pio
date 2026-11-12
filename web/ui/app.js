@@ -1799,12 +1799,58 @@ if (!KEY) {
     btn.addEventListener('click', () => showTab(btn.dataset.tab));
   });
 
+  // ---- Custom tooltip for field labels --------------------------------------
+  // Replaces native `title` tooltip with a brutalist-styled one that matches
+  // the dashboard aesthetic. Shows on hover/focus, hides on leave/blur.
+  (function initFieldTooltips() {
+    const tooltip = document.createElement('div');
+    tooltip.className = 'field-tooltip';
+    tooltip.textContent = 'What does this mean? Tap to open INFO';
+    tooltip.setAttribute('role', 'tooltip');
+    document.body.appendChild(tooltip);
+
+    let currentEl = null;
+    let hideTimer = 0;
+
+    function show(el) {
+      clearTimeout(hideTimer);
+      currentEl = el;
+      const rect = el.getBoundingClientRect();
+      tooltip.style.left = (rect.left + rect.width / 2) + 'px';
+      tooltip.style.top = (rect.top - 8) + 'px';
+      tooltip.classList.add('show');
+    }
+
+    function hide() {
+      hideTimer = setTimeout(() => {
+        tooltip.classList.remove('show');
+        currentEl = null;
+      }, 120);
+    }
+
+    document.addEventListener('mouseover', (e) => {
+      const lbl = e.target.closest('.hud-item .lbl, .hud-label');
+      if (lbl && lbl.textContent.trim()) show(lbl);
+    }, true);
+
+    document.addEventListener('mouseout', (e) => {
+      const lbl = e.target.closest('.hud-item .lbl, .hud-label');
+      if (lbl === currentEl) hide();
+    }, true);
+
+    // Keyboard accessibility
+    document.addEventListener('focusin', (e) => {
+      const lbl = e.target.closest('.hud-item .lbl, .hud-label');
+      if (lbl && lbl.textContent.trim()) show(lbl);
+    }, true);
+
+    document.addEventListener('focusout', (e) => {
+      const lbl = e.target.closest('.hud-item .lbl, .hud-label');
+      if (lbl === currentEl) hide();
+    }, true);
+  })();
+
   // ---- Tap a field label to read what it means ----------------------------
-  // The wording lives only in ui/info-data.js, so a value and its explanation
-  // cannot drift apart. Unit captions are empty labels and are skipped.
-  document.querySelectorAll('.hud-item .lbl, .hud-label').forEach(el => {
-    if (el.textContent.trim()) el.title = 'What does this mean?';
-  });
   document.addEventListener('click', (e) => {
     const lbl = e.target.closest('.hud-item .lbl, .hud-label');
     if (!lbl || !window.INFO || !window.INFO.reveal) return;
