@@ -109,7 +109,7 @@ current sensor: `acs`, `peakA` and the ADC pin are gone.
 | Raster fallback | Esri World Street → Esri Topo → OSM tiles |
 | Geocoding | public Nominatim, min 8 s and 80 m between calls, 110 m cache cells |
 | CSP | present, `script-src 'self'`, no CDN |
-| Tests | 94 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 6, `led` 15, `mpu3d` 13, `sessions` 16, `ui` 10) plus browser probes in `dev/` |
+| Tests | 114 unit tests across nine files (`charts`, `gps`, `guard`, `info`, `lap`, `led`, `mpu3d`, `sessions`, `ui`) plus browser probes in `dev/` |
 
 ## Secrets
 
@@ -640,6 +640,43 @@ scoped to `.hist-btn[data-min]`, and a unit test pins that selector.
 | Worker suite | 17/17 pass (unchanged path) |
 | Playback probe | `dev/check-playback.mjs` PASS: transport enabled, chart 9112 painted pixels, Play advanced into the session with a travelled line matching the marker, Pause held position, scrub to end landed on the last point, Reset returned to the first, auto-stop at the end returned the button to Play |
 | Regression probes | `dev/check-laps-export.mjs` PASS, `dev/check-timeline.mjs` PASS |
+
+## Tab charts: LIVE, WIFI, MPU and HIST (2026-11-12)
+
+Four additions that needed no firmware change: every value was already in the
+1 Hz frame or in the stored history. They share `web/ui/charts.js`, so grids,
+gaps and two-scale labels behave the same in every panel.
+
+| Tab | Added | Source |
+|---|---|---|
+| LIVE | 180-frame speed chart with HDOP > 3 bands; average moving speed, stopped share, peak | `gps.kmh`, `gps.hdop` |
+| WIFI | RSSI + free-heap chart; link word, message rate over 15 s, largest gap over 60 s | `sys.rssi`, `sys.heap`, frame arrival time |
+| MPU | acceleration magnitude chart with a 1 g reference; current/peak \|a\|, peak tilt; the tilt chart now auto-scales from a 30 deg floor instead of 0–180 | `ax/ay/az`, tilt buffer |
+| HIST | chart view selector: speed + lean, HDOP with the 3.0 threshold, or lap deltas vs best; moving/stopped share, average moving speed, max speed | stored points and `laps` |
+
+Two deliberate choices:
+
+- **Percentages, not durations.** Wide history windows are sampled by the API,
+  so summing timestamps would report a shorter drive than really happened. The
+  share of points above 1 km/h and the average only over those points survive
+  sampling; the note under the card says so.
+- **One buffer, one meaning.** The live charts use arrival time, not the GPS
+  stamp, because `ts` is 0 until the first fix. A dropout therefore stays a gap
+  in the chart instead of being compressed into a continuous line.
+
+The lap-delta view draws each lap's gap to the best in seconds, with the best
+lap as a green stub on the zero line. Selecting a session narrows both the
+stats and the lap list to that session.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| JS suite | 114/114 pass, including 4 new chart-helper tests, session stats, and static checks for every new canvas/control |
+| Worker suite | 17/17 pass (unchanged path) |
+| Live-chart probe | `dev/check-live-charts.mjs` PASS: LIVE avg 22 km/h / stopped 0% / peak 25 / 2335 ink; WIFI `SIM-WIFI` −57 dBm strong, 2.7 msg/s, gap 1.6 s / 3124 ink; MPU 0.93 g now, peak 0.93 g, peak tilt 5.0 deg / 2461 ink |
+| HIST probe | `dev/check-playback.mjs` PASS: moving 100%, avg 23 km/h, max 26; HDOP view 4225 red pixels; lap view 3 chips and a green best-lap bar (204 pixels) |
+| Regression probes | `dev/check-timeline.mjs` PASS, `dev/check-laps-export.mjs` PASS |
 
 ## Still needs the board
 

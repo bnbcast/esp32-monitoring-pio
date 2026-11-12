@@ -205,6 +205,31 @@ const SESSIONS = (function () {
     return m;
   }
 
+  // Share of stored fixes that were moving, plus the average only over those
+  // samples. Counts are used instead of seconds because wide-window responses
+  // are sampled: a percentage survives that, a summed duration would not.
+  function stats(points) {
+    let count = 0, moving = 0, sum = 0, maxKmh = 0;
+    for (const p of (Array.isArray(points) ? points : [])) {
+      if (!Array.isArray(p)) continue;
+      const raw = p[3];
+      if (raw === null || raw === undefined || raw === "") continue;
+      const v = Number(raw);
+      if (!Number.isFinite(v)) continue;
+      count++;
+      if (v > maxKmh) maxKmh = v;
+      if (v >= 1) { moving++; sum += v; }
+    }
+    return {
+      count,
+      moving,
+      stopped: count - moving,
+      movingPct: count ? Math.round(moving * 100 / count) : 0,
+      avgMovingKmh: moving ? sum / moving : 0,
+      maxKmh
+    };
+  }
+
   // How much of this trail can be trusted: average HDOP and the share of
   // points worse than 3.0 (roughly "worse than 15 m"). Cheap and honest.
   function quality(points) {
@@ -309,7 +334,7 @@ const SESSIONS = (function () {
 
   return { DEFAULT_GAP_S, group, summarize, distanceKm,
            fmtClock, fmtDuration, dayKey, fmtDay, indexAt,
-           lapsIn, lapSummary, fmtLap, fmtDelta, maxLean, quality, events,
+           lapsIn, lapSummary, fmtLap, fmtDelta, maxLean, stats, quality, events,
            toGpx, toCsv };
 })();
 

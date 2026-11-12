@@ -258,6 +258,48 @@ test('events are empty for no points and no laps', () => {
   assert.deepStrictEqual(S.events(null, null), []);
 });
 
+// ---- session stats --------------------------------------------------------
+
+test('stats separates moving samples from stopped ones', () => {
+  const pts = [
+    at(0, 0, 0, 0),
+    at(1, 0, 0, 0.4),
+    at(2, 0, 0, 12),
+    at(3, 0, 0, 30),
+    at(4, 0, 0, null)
+  ];
+  const s = S.stats(pts);
+  assert.strictEqual(s.count, 4);
+  assert.strictEqual(s.moving, 2);
+  assert.strictEqual(s.stopped, 2);
+  assert.strictEqual(s.movingPct, 50);
+  assert.strictEqual(s.avgMovingKmh, 21);
+  assert.strictEqual(s.maxKmh, 30);
+});
+
+test('stats is empty-safe', () => {
+  assert.deepStrictEqual(S.stats([]), {
+    count: 0, moving: 0, stopped: 0, movingPct: 0, avgMovingKmh: 0, maxKmh: 0
+  });
+  assert.strictEqual(S.stats(null).count, 0);
+});
+
+test('the new tab charts and HIST views are present and ordered', () => {
+  for (const id of ['liveChart', 'wifiChart', 'accelChart', 'chartMode', 'chartNote',
+                    'liveAvg', 'liveStopped', 'livePeak', 'wifiQuality',
+                    'wifiRate', 'wifiGap', 'mpuAccel', 'mpuPeak',
+                    'mpuPeakTilt', 'histMoving', 'histStopped', 'histAvg',
+                    'histMax']) {
+    assert.ok(HTML.includes(`id="${id}"`), `missing #${id}`);
+  }
+  assert.ok(HTML.indexOf('ui/charts.js') < HTML.indexOf('ui/app.js'),
+    'charts.js must load before app.js');
+  assert.match(APP, /CHARTS\.drawSeries\(/);
+  assert.match(APP, /CHARTS\.drawBars\(/);
+  assert.match(APP, /histMode === 'hdop'/);
+  assert.match(APP, /renderHistStats\(pts\)/);
+});
+
 // ---- playback -------------------------------------------------------------
 
 test('playback finds the last point at or before a time', () => {

@@ -48,6 +48,7 @@ function drawTiltChart() {
 
   // Clear canvas
   ctx.clearRect(0, 0, width, height);
+  ctx.font = '10px "Courier New", Courier, monospace';
 
   // Draw grid
   ctx.strokeStyle = '#444';
@@ -60,20 +61,176 @@ function drawTiltChart() {
   }
   ctx.stroke();
 
-  // Draw tilt history
-  if (GPS.tiltHistory.length > 0) {
-    ctx.strokeStyle = C.blue;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const step = width / GPS.maxTiltHistory;
-    GPS.tiltHistory.forEach((tilt, i) => {
-      const x = i * step;
-      const y = height - (tilt / 180) * height;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+  if (!GPS.tiltHistory.length) {
+    ctx.fillStyle = '#666';
+    ctx.fillText('waiting for the MPU', 8, height / 2);
+    return;
   }
+
+  // A fixed 0-180 scale made normal driving (2-10 deg) a flat line on the
+  // bottom pixel. Use the buffer's own peak with a 30 deg floor, so a real
+  // lean is visible and a spike still fits.
+  let peak = 0;
+  for (const v of GPS.tiltHistory) {
+    const a = Number(v);
+    if (Number.isFinite(a) && a > peak) peak = a;
+  }
+  const maxDeg = Math.max(30, Math.ceil(peak / 10) * 10);
+
+  // Draw tilt history
+  ctx.strokeStyle = C.blue;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  const step = width / GPS.maxTiltHistory;
+  GPS.tiltHistory.forEach((tilt, i) => {
+    const x = i * step;
+    const y = height - (Math.min(1, tilt / maxDeg) * (height - 4)) - 2;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = '#000';
+  ctx.fillText(`tilt 0-${maxDeg} deg`, 4, 11);
+}
+
+// ---- live sample history ---------------------------------------------------
+// Kept in memory only; nothing here is a second upload path. The board sends
+// at 1 Hz (the dev simulator faster), so a sample cap is also a time window.
+const LIVE_HIST = { speed: [], max: 180 };   // [t, km/h, hdop]
+const WIFI_HIST = { rssi: [], heap: [], max: 300 };
+const MPU_HIST = { accel: [], max: 180 };
+const RX_TIMES = { pts: [], max: 240 };
+
+function pushSample(list, point, max) {
+  list.push(point);
+  if (list.length > max) list.splice(0, list.length - max);
+}
+
+const putText = (id, value) => {
+  const el = $(id);
+  if (el) el.textContent = value;
+};
+
+// Speed over the last few minutes, with the same HDOP > 3 shading as HIST so a
+// bad fix is never mistaken for a fast section.
+function renderLiveChart() {
+  const pts = LIVE_HIST.speed;
+  if (!pts.length) return;
+  const max = CHARTS.niceMax(CHARTS.autoMax(pts.map(p => p[1]), 20), 20);
+  CHARTS.drawSeries($('liveChart'), {
+    height: 120,
+    series: [{
+      pts: pts.map(p => [p[0], p[1]]),
+      min: 0,
+      max,
+      color: '#000',
+      width: 2
+    }],
+    bands: CHARTS.bands(pts, p => Number(p[2]) > 3, 0.6),
+    gapS: 6,
+    topText: `speed 0-${max} km/h`,
+    bottomText: 'red = HDOP above 3',
+    bottomColor: '#ff3b1f',
+    empty: 'waiting for a GPS fix'
+  });
+}
+
+function renderLiveSummary() {
+  let n = 0, moving = 0, sum = 0, peak = 0;
+  for (const p of LIVE_HIST.speed) {
+    const v = Number(p[1]);
+    if (!Number.isFinite(v)) continue;
+    n++;
+    if (v > peak) peak = v;
+    if (v >= 1) { moving++; sum += v; }
+  }
+  putText('liveAvg', moving ? (sum / moving).toFixed(0) : '--');
+  putText('liveStopped', n ? String(Math.round((n - moving) * 100 / n)) : '--');
+  putText('livePeak', n ? peak.toFixed(0) : '--');
+}
+
+// RSSI and free heap on independent scales: signal strength explains a dropout,
+// heap explains a slow leak. Both are already in every sys block.
+function renderWifiChart() {
+  if (!WIFI_HIST.rssi.length) return;
+  const heapMax = CHARTS.niceMax(
+    CHARTS.autoMax(WIFI_HIST.heap.map(p => p[1]), 200), 50);
+  CHARTS.drawSeries($('wifiChart'), {
+    height: 120,
+    series: [
+      { pts: WIFI_HIST.rssi, min: -100, max: -30, color: '#000', width: 2 },
+      { pts: WIFI_HIST.heap, min: 0, max: heapMax, color: '#ff3b1f', width: 1.5 }
+    ],
+    gapS: 6,
+    topText: 'RSSI -30 (top) to -100 dBm',
+    bottomText: `heap 0-${heapMax} KB`,
+    bottomColor: '#ff3b1f',
+    empty: 'waiting for a frame'
+  });
+}
+
+function renderWifiSummary() {
+  const rssi = WIFI_HIST.rssi;
+  const last = rssi.length ? Number(rssi[rssi.length - 1][1]) : null;
+  putText('wifiQuality', !Number.isFinite(last) ? '--'
+    : last >= -60 ? 'strong' : last >= -75 ? 'fair' : 'weak');
+
+  const now = Date.now() / 1000;
+  const recent = RX_TIMES.pts.filter(t => now - t <= 15);
+  let rate = '--';
+  if (recent.length > 1) {
+    const span = recent[recent.length - 1] - recent[0];
+    if (span > 0) rate = ((recent.length - 1) / span).toFixed(1);
+  }
+  putText('wifiRate', rate);
+
+  let gap = 0, prev = null;
+  for (const t of RX_TIMES.pts) {
+    if (now - t > 60) { prev = null; continue; }
+    if (prev !== null) gap = Math.max(gap, t - prev);
+    prev = t;
+  }
+  putText('wifiGap', gap > 0 ? gap.toFixed(1) : '--');
+}
+
+// |a| is about 1 g at rest, so the dashed reference makes a bump visible even
+// when the numeric X/Y/Z columns scroll past on a phone.
+function renderAccelChart() {
+  const pts = MPU_HIST.accel;
+  if (!pts.length) return;
+  const max = CHARTS.niceMax(CHARTS.autoMax(pts.map(p => p[1]), 2), 0.5);
+  CHARTS.drawSeries($('accelChart'), {
+    height: 120,
+    series: [{
+      pts,
+      min: 0,
+      max,
+      color: '#2447ff',
+      width: 2
+    }],
+    refLines: [{ v: 1, color: '#777', text: '1 g' }],
+    gapS: 6,
+    topText: `accel 0-${max} g`,
+    bottomText: 'dashed = 1 g (level)',
+    empty: 'waiting for the MPU'
+  });
+}
+
+function renderMpuSummary() {
+  let peak = 0;
+  for (const p of MPU_HIST.accel) {
+    const v = Number(p[1]);
+    if (Number.isFinite(v) && v > peak) peak = v;
+  }
+  putText('mpuPeak', peak ? peak.toFixed(2) : '--');
+
+  let tiltPeak = 0;
+  for (const v of GPS.tiltHistory) {
+    const a = Math.abs(Number(v));
+    if (Number.isFinite(a) && a > tiltPeak) tiltPeak = a;
+  }
+  putText('mpuPeakTilt', GPS.tiltHistory.length ? tiltPeak.toFixed(1) : '--');
 }
 
 // ---- MPU 3D attitude view ---------------------------------------------------
@@ -479,6 +636,38 @@ function renderData(d) {
     drawTiltChart();
   }
 
+  // Live chart buffers. Arrival time is used as the x axis because the GPS
+  // stamp is 0 until the first fix; a gap then still looks like a gap.
+  const nowS = Date.now() / 1000;
+  pushSample(RX_TIMES.pts, nowS, RX_TIMES.max);
+  if (gps.fix && num(gps.kmh)) {
+    pushSample(LIVE_HIST.speed, [
+      nowS,
+      parkedNow ? 0 : Number(gps.kmh),
+      num(gps.hdop) ? Number(gps.hdop) : null
+    ], LIVE_HIST.max);
+    renderLiveChart();
+    renderLiveSummary();
+  }
+  if (num(sys.rssi)) {
+    pushSample(WIFI_HIST.rssi, [nowS, Number(sys.rssi)], WIFI_HIST.max);
+  }
+  if (num(sys.heap)) {
+    pushSample(WIFI_HIST.heap, [nowS, Math.round(Number(sys.heap) / 1024)],
+      WIFI_HIST.max);
+  }
+  if (WIFI_HIST.rssi.length) renderWifiChart();
+  renderWifiSummary();
+
+  const amag = (num(d.ax) && num(d.ay) && num(d.az))
+    ? Math.sqrt(d.ax * d.ax + d.ay * d.ay + d.az * d.az) : null;
+  if (amag !== null) {
+    pushSample(MPU_HIST.accel, [nowS, amag], MPU_HIST.max);
+    putText('mpuAccel', amag.toFixed(2));
+    renderAccelChart();
+    renderMpuSummary();
+  }
+
   // Motion panel values (kept for reference)
   set('vRoll', fmt(d.roll)); set('vPitch', fmt(d.pitch)); set('vYaw', fmt(d.yaw));
   set('vTilt', fmt(d.tilt) + ' deg');
@@ -846,6 +1035,7 @@ if (!KEY) {
   let histSessions = [];     // SESSIONS.group(histAll)
   let histLaps = [];         // [[ts, n, dur_ms, best_ms], ...] from /history
   let histSelected = -1;     // index into histSessions, -1 = whole window
+  let histMode = 'speed';    // chart view: speed | hdop | laps
   let histRequest = 0;       // token: only the newest load may touch the panel
 
   // Playback state. The chart always shows the current window; the transport
@@ -936,6 +1126,7 @@ if (!KEY) {
     renderTimeline();
     renderLaps();
     renderEvents();
+    renderHistStats(pts);
     setPlaybackData(pts, false);
 
     const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
@@ -967,6 +1158,27 @@ if (!KEY) {
       windowText,
       status
     );
+  }
+
+  // A compact read on what the stored points mean: how much of the window was
+  // moving, the average only while moving, and the peak. Percentages are used
+  // because wide windows are sampled by the API.
+  function renderHistStats(pts) {
+    const s = SESSIONS.stats(pts);
+    putText('histMoving', s.count ? String(s.movingPct) : '--');
+    putText('histStopped', s.count ? String(100 - s.movingPct) : '--');
+    putText('histAvg', s.moving ? s.avgMovingKmh.toFixed(0) : '--');
+    putText('histMax', s.count ? s.maxKmh.toFixed(0) : '--');
+  }
+
+  const CHART_NOTES = {
+    speed: 'speed (black), lean (red), red bands = HDOP above 3',
+    hdop: 'HDOP (black), dashed = 3.0, red band = above 3',
+    laps: 'bar height = seconds behind best · green = best lap'
+  };
+
+  function updateChartNote() {
+    putText('chartNote', CHART_NOTES[histMode] || CHART_NOTES.speed);
   }
 
   // Rows are real buttons so they are keyboard-reachable; the text is set with
@@ -1156,28 +1368,107 @@ if (!KEY) {
       return;
     }
 
+    // Lap deltas are bars, not a time series, so this view does not need the
+    // x scale below. Best lap is the zero line; a green stub marks it.
+    if (histMode === 'laps') {
+      const s = histSelected >= 0 ? histSessions[histSelected] : null;
+      const list = s ? SESSIONS.lapsIn(histLaps, s.start, s.end) : histLaps;
+      const durs = list.map(l => Number(l[2])).filter(v => Number.isFinite(v) && v > 0);
+      const best = durs.length ? Math.min(...durs) : 0;
+      const deltas = list.map(l => Math.max(0, (Number(l[2]) - best) / 1000));
+      CHARTS.drawBars(canvas, {
+        height: 120,
+        values: deltas,
+        labels: list.map(l => 'L' + Number(l[1])),
+        colors: deltas.map(v => v === 0 ? '#0a7d32' : '#000'),
+        max: Math.max(1, Math.ceil(CHARTS.autoMax(deltas, 1))),
+        topText: list.length
+          ? `lap deltas vs best · ${list.length} lap${list.length === 1 ? '' : 's'}`
+          : 'lap deltas',
+        empty: s ? 'no laps in this session' : 'no laps in this window'
+      });
+      return;
+    }
+
     const t0 = Number(pts[0][0]);
     const t1 = Number(pts[pts.length - 1][0]);
     const span = Math.max(1, t1 - t0);
     const x = ts => ((Number(ts) - t0) / span) * (w - 2) + 1;
 
-    // Quality bands first, under everything else.
-    ctx.fillStyle = 'rgba(255,59,31,0.13)';
-    for (let i = 1; i < pts.length; i++) {
-      const hd = Number(pts[i][5]);
-      if (Number.isFinite(hd) && hd > 3) {
-        const xa = x(pts[i - 1][0]), xb = x(pts[i][0]);
-        ctx.fillRect(xa, 0, Math.max(1, xb - xa), h);
+    const grid = () => {
+      ctx.strokeStyle = '#e2ded2';
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        const y = Math.round(i * h / 4) + 0.5;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
       }
+    };
+
+    // Playhead, only when transport is live, so a static window is not marked
+    // as if it were paused at t=0.
+    const playhead = () => {
+      if (!pbCanPlay || pbIndex < 0 || pbIndex >= pts.length) return;
+      const px = x(pts[pbIndex][0]);
+      ctx.strokeStyle = '#2447ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
+    };
+
+    // Poor fixes first, under everything else.
+    const poorBands = () => {
+      ctx.fillStyle = 'rgba(255,59,31,0.13)';
+      for (let i = 1; i < pts.length; i++) {
+        const hd = Number(pts[i][5]);
+        if (Number.isFinite(hd) && hd > 3) {
+          const xa = x(pts[i - 1][0]), xb = x(pts[i][0]);
+          ctx.fillRect(xa, 0, Math.max(1, xb - xa), h);
+        }
+      }
+    };
+
+    if (histMode === 'hdop') {
+      poorBands();
+      grid();
+      let maxH = 0;
+      for (const p of pts) {
+        const v = Number(p[5]);
+        if (Number.isFinite(v) && v > maxH) maxH = v;
+      }
+      maxH = Math.max(5, Math.ceil(maxH / 2) * 2);
+
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      let started = false;
+      for (const p of pts) {
+        const v = Number(p[5]);
+        if (!Number.isFinite(v)) { started = false; continue; }
+        const px = x(p[0]);
+        const py = h - Math.min(1, v / maxH) * (h - 4) - 2;
+        if (!started) { ctx.moveTo(px, py); started = true; }
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      // The same 3.0 threshold the overlay and the quality line use.
+      const y3 = h - Math.min(1, 3 / maxH) * (h - 4) - 2;
+      ctx.strokeStyle = '#ff3b1f';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(0, y3); ctx.lineTo(w, y3); ctx.stroke();
+      ctx.setLineDash([]);
+
+      playhead();
+      ctx.fillStyle = '#000';
+      ctx.fillText(`HDOP 0-${maxH}`, 4, 11);
+      ctx.fillStyle = '#ff3b1f';
+      ctx.fillText('red band / line = above 3', 4, h - 4);
+      return;
     }
 
-    // Four horizontal guides: speed uses the full box, lean gets its own scale.
-    ctx.strokeStyle = '#e2ded2';
-    ctx.lineWidth = 1;
-    for (let i = 1; i < 4; i++) {
-      const y = Math.round(i * h / 4) + 0.5;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-    }
+    // Speed and lean: two independent scales share the box.
+    poorBands();
+    grid();
 
     let maxKmh = 0, maxLean = 0, hasLean = false;
     for (const p of pts) {
@@ -1226,14 +1517,7 @@ if (!KEY) {
       ctx.globalAlpha = 1;
     }
 
-    // Playhead, only when transport is live, so a static window is not marked
-    // as if it were paused at t=0.
-    if (pbCanPlay && pbIndex >= 0 && pbIndex < pts.length) {
-      const px = x(pts[pbIndex][0]);
-      ctx.strokeStyle = '#2447ff';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
-    }
+    playhead();
 
     ctx.fillStyle = '#000';
     ctx.fillText(`0-${maxKmh} km/h`, 4, 11);
@@ -1353,6 +1637,13 @@ if (!KEY) {
   if ($('pbSpeed')) {
     $('pbSpeed').addEventListener('change', () => { pbLastTick = performance.now(); });
   }
+  if ($('chartMode')) {
+    $('chartMode').addEventListener('change', () => {
+      histMode = $('chartMode').value;
+      updateChartNote();
+      drawHistChart();
+    });
+  }
   // A hidden tab must not keep a timer alive, and neither must a backgrounded
   // phone: replay is cheap but pointless when nobody is looking.
   document.addEventListener('visibilitychange', () => {
@@ -1426,6 +1717,7 @@ if (!KEY) {
 
     const s = histSelected >= 0 ? histSessions[histSelected] : null;
     const pts = s ? s.points : histAll;
+    renderHistStats(pts);
     setPlaybackData(pts, !!s);
     const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
     if (s && typeof MAP !== 'undefined' && MAP.fitPoints) MAP.fitPoints(pts);
@@ -1476,9 +1768,23 @@ if (!KEY) {
     if (sidePanel && sidePanel.classList.contains('collapsed')) setCollapsed(false);
     // History is fetched on demand: opening the tab is the request.
     if (name === 'history') loadHistory(histMinutes);
+    // A canvas has no width while its panel is hidden, so the charts are
+    // repainted when the tab actually opens.
+    if (name === 'live') {
+      renderLiveChart();
+      renderLiveSummary();
+    }
+    if (name === 'wifi') {
+      renderWifiChart();
+      renderWifiSummary();
+    }
     // The 3D canvas has no size while its panel is hidden, so it is painted
     // when the tab is actually opened, using the last frame received.
-    if (name === 'mpu') drawMpu3d(true);
+    if (name === 'mpu') {
+      drawMpu3d(true);
+      drawTiltChart();
+      renderAccelChart();
+    }
   }
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => showTab(btn.dataset.tab));

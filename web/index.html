@@ -7,12 +7,12 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23ffe600' stroke='%23000' stroke-width='5'/%3E%3Ccircle cx='21' cy='25' r='6.5' fill='%23000'/%3E%3Ccircle cx='43' cy='25' r='6.5' fill='%23000'/%3E%3Cpath d='M17 41q15 13 30 0' fill='none' stroke='%23000' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/tokens.css?v=40">
-<link rel="stylesheet" href="css/base.css?v=40">
-<link rel="stylesheet" href="css/components.css?v=40">
-<link rel="stylesheet" href="css/layout.css?v=40">
-<link rel="stylesheet" href="css/map.css?v=40">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=40">
+<link rel="stylesheet" href="css/tokens.css?v=41">
+<link rel="stylesheet" href="css/base.css?v=41">
+<link rel="stylesheet" href="css/components.css?v=41">
+<link rel="stylesheet" href="css/layout.css?v=41">
+<link rel="stylesheet" href="css/map.css?v=41">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=41">
 <title>ESP32 // LIVE SENSORS</title>
 </head>
 <body class="locked">
@@ -161,6 +161,20 @@
         </div>
 
         <div class="hud-card">
+          <h3>Motion &amp; signal</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">Avg moving</div><div class="val" id="liveAvg">--</div><div class="lbl">km/h</div></div>
+            <div class="hud-item"><div class="lbl">Stopped</div><div class="val" id="liveStopped">--</div><div class="lbl">%</div></div>
+            <div class="hud-item"><div class="lbl">Peak</div><div class="val" id="livePeak">--</div><div class="lbl">km/h</div></div>
+          </div>
+          <div class="chart-box">
+            <canvas id="liveChart" height="120" role="img"
+                    aria-label="Recent speed with poor GPS quality bands"></canvas>
+          </div>
+          <p class="chart-note">last 180 frames · red bands = HDOP above 3</p>
+        </div>
+
+        <div class="hud-card">
           <h3>Lap timing</h3>
           <div class="hud-grid">
             <div class="hud-item"><div class="lbl">Laps</div><div class="val" id="lapCount">--</div><div class="lbl"></div></div>
@@ -205,6 +219,19 @@
             <div class="hud-item"><div class="lbl">MAC</div><div class="val" id="wifiMac">--</div><div class="lbl"></div></div>
           </div>
         </div>
+        <div class="hud-card">
+          <h3>Link history</h3>
+          <div class="hud-grid">
+            <div class="hud-item"><div class="lbl">Link</div><div class="val" id="wifiQuality">--</div><div class="lbl"></div></div>
+            <div class="hud-item"><div class="lbl">Msg rate</div><div class="val" id="wifiRate">--</div><div class="lbl">/s</div></div>
+            <div class="hud-item"><div class="lbl">Largest gap</div><div class="val" id="wifiGap">--</div><div class="lbl">s</div></div>
+          </div>
+          <div class="chart-box">
+            <canvas id="wifiChart" height="120" role="img"
+                    aria-label="WiFi signal strength and free heap over time"></canvas>
+          </div>
+          <p class="chart-note">last 300 frames · RSSI (black, top) and free heap (red)</p>
+        </div>
       </div>
 
       <!-- MPU6050 tab -->
@@ -227,11 +254,19 @@
             <div class="hud-item"><div class="lbl">Tilt</div><div class="val" id="mpuTilt">--</div><div class="lbl">deg</div></div>
             <div class="hud-item"><div class="lbl">Warn at</div><div class="val" id="mpuWarn">--</div><div class="lbl">deg</div></div>
             <div class="hud-item"><div class="lbl">Danger at</div><div class="val" id="mpuDanger">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item"><div class="lbl">Accel |a|</div><div class="val" id="mpuAccel">--</div><div class="lbl">g</div></div>
+            <div class="hud-item"><div class="lbl">Peak |a|</div><div class="val" id="mpuPeak">--</div><div class="lbl">g</div></div>
+            <div class="hud-item"><div class="lbl">Peak tilt</div><div class="val" id="mpuPeakTilt">--</div><div class="lbl">deg</div></div>
           </div>
           <div class="mpu-chart" style="margin-top:12px;">
             <div style="font-family:var(--font-mono);font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">tilt history</div>
             <canvas id="tiltChart"></canvas>
           </div>
+          <div class="chart-box" style="margin-top:12px;">
+            <canvas id="accelChart" height="120" role="img"
+                    aria-label="Acceleration magnitude with a one g reference"></canvas>
+          </div>
+          <p class="chart-note">accel |a| · dashed line = 1 g (level) · last 180 frames</p>
         </div>
       </div>
 
@@ -245,6 +280,13 @@
             <button class="hist-btn active" data-min="1440">24 h</button>
           </div>
           <div class="hist-summary" id="histSummary">tap a range to load</div>
+          <div class="hud-grid hist-stats">
+            <div class="hud-item"><div class="lbl">Moving</div><div class="val" id="histMoving">--</div><div class="lbl">%</div></div>
+            <div class="hud-item"><div class="lbl">Stopped</div><div class="val" id="histStopped">--</div><div class="lbl">%</div></div>
+            <div class="hud-item"><div class="lbl">Avg moving</div><div class="val" id="histAvg">--</div><div class="lbl">km/h</div></div>
+            <div class="hud-item"><div class="lbl">Max</div><div class="val" id="histMax">--</div><div class="lbl">km/h</div></div>
+          </div>
+          <p class="chart-note">share of stored points · the board samples at 1 Hz</p>
           <div class="hist-list" id="histList" role="list">
             <p class="hist-empty">no sessions loaded</p>
           </div>
@@ -284,9 +326,16 @@
             <span id="pbClock">--:--</span>
             <span id="pbRead">select a session to play</span>
           </div>
+          <div class="pb-row">
+            <select class="pb-speed" id="chartMode" aria-label="Chart view">
+              <option value="speed">Speed + lean</option>
+              <option value="hdop">GPS quality</option>
+              <option value="laps">Lap deltas</option>
+            </select>
+          </div>
           <canvas id="histChart" class="hist-chart" height="120" role="img"
-                  aria-label="Speed and lean over the selected session"></canvas>
-          <p class="hist-note">speed (black), lean (red), red bands = HDOP above 3</p>
+                  aria-label="Speed, lean, GPS quality or lap deltas for the selected session"></canvas>
+          <p class="hist-note" id="chartNote">speed (black), lean (red), red bands = HDOP above 3</p>
         </div>
         <div class="hud-card">
           <h3>Window</h3>
@@ -341,14 +390,15 @@
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=40"></script>
-<script src="ui/guard.js?v=40"></script>
-<script src="ui/map.js?v=40"></script>
-<script src="ui/mqtt-mini.js?v=40"></script>
-<script src="ui/info-data.js?v=40"></script>
-<script src="ui/info.js?v=40"></script>
-<script src="ui/sessions.js?v=40"></script>
-<script src="ui/mpu3d.js?v=40"></script>
-<script src="ui/app.js?v=40"></script>
+<script src="vendor/maplibre-gl-csp.js?v=41"></script>
+<script src="ui/guard.js?v=41"></script>
+<script src="ui/map.js?v=41"></script>
+<script src="ui/mqtt-mini.js?v=41"></script>
+<script src="ui/info-data.js?v=41"></script>
+<script src="ui/info.js?v=41"></script>
+<script src="ui/sessions.js?v=41"></script>
+<script src="ui/charts.js?v=41"></script>
+<script src="ui/mpu3d.js?v=41"></script>
+<script src="ui/app.js?v=41"></script>
 </body>
 </html>

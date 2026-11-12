@@ -27,6 +27,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 | W8 | **MPU 3D attitude** - software-projected board on the MPU tab | **done 2026-11-12** | `test/mpu3d.test.js` 13/13, `dev/check-mpu3d.mjs` PASS |
 | W9 | **Session log** - lap rows, GPX/CSV export, lean trace, HDOP overlay, derived event log, lifetime odometer | **done 2026-11-12**, migration applied | `npm test` 105/105, `worker/test` 17/17, `dev/check-laps-export.mjs` PASS, `pio run` SUCCESS |
 | W10 | **Replay and chart** - select a session, scrub or play it on the map, speed/lean chart with HDOP bands | **done 2026-11-12**, live `?v=40` | `npm test` 107/107, `worker/test` 17/17, `dev/check-playback.mjs` PASS |
+| W11 | **Tab charts** - LIVE speed/quality, WIFI link history, MPU acceleration, HIST chart modes and stats | **done 2026-11-12**, live `?v=41` | `npm test` 114/114, `worker/test` 17/17, `dev/check-live-charts.mjs` PASS |
 
 ## W1 — Stabilize (this branch)
 
@@ -230,6 +231,26 @@ Order of release: apply `worker/migrations/2026-11-laps-lean.sql` **first**,
 then deploy the worker, then publish the page. The worker tolerates a database
 without the lap table (positions still store, `/history` still answers), but the
 migration itself is not idempotent and must not be re-run.
+
+## W11 — Tab charts (2026-11-12)
+
+Every chart below reads a field the board already publishes or a column the
+worker already stores. No firmware change, no new endpoint, no new host.
+
+| Tab | Decision |
+|---|---|
+| LIVE | a 180-frame speed line shaded red where HDOP > 3, plus average moving speed, stopped share and peak from the same buffer |
+| WIFI | RSSI (black) and free heap (red) on independent scales; `strong/fair/weak` from the current RSSI; message rate over 15 s and largest gap over 60 s from arrival times |
+| MPU | acceleration magnitude with a dashed 1 g reference, current and peak \|a\|, peak tilt; the existing tilt chart now scales from a 30 deg floor so 3 deg is visible |
+| HIST | a chart-view selector: speed + lean, HDOP with the 3.0 line, or lap deltas vs best with a green best-lap stub; moving/stopped share, average moving speed and max speed in the Timeline card |
+
+`web/ui/charts.js` holds the shared line/bar drawing and the pure `autoMax`,
+`niceMax` and `bands` helpers. It loads before `app.js` and is unit-tested under
+node, like `sessions.js`.
+
+The live buffers use arrival time, not `gps.ts`, because the timestamp is 0
+until the first fix; a dropout stays a visible gap. History stats use point
+shares rather than summed seconds because wide windows are sampled by the API.
 
 ## Still open
 

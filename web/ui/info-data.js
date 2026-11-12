@@ -54,6 +54,9 @@ window.INFO_GROUPS = [
       { "t": "Trail", "d": "Distance in km of the breadcrumb line on the map. Browser-side only: reload clears it." },
       { "t": "Address", "d": "Nearest street to the last fix, as resolved above. It lags the coordinates slightly because the lookup is rate-limited." },
       { "t": "Max Speed", "d": "Fastest speed this page has seen since it opened, not the device's all-time record." },
+      { "t": "Avg moving", "d": "Average speed over the last 180 frames that were at or above 1 km/h, so time spent parked does not drag it down." },
+      { "t": "Stopped", "d": "Share of the last 180 frames below 1 km/h. Receivers report 1&ndash;2 km/h of noise while parked, so the threshold is one, not zero." },
+      { "t": "Peak", "d": "Fastest single sample in the same 180-frame live buffer, in km/h. It can be one noisy fix; compare it with Max Speed." },
       { "t": "Seq", "d": "The device's frame counter. It rises by about 1 per second; a jump means frames were lost in transit." },
       { "t": "Gaps", "d": "How many frames went missing between Seq jumps since this page opened. A few after a Wi-Fi hiccup is normal (live MQTT is best-effort); stored history is unaffected because the board uploads it separately from flash." },
       { "t": "Age", "d": "Seconds since the last frame reached <b>this browser</b>. About 1 s is normal; over 6 s and DEVICE turns to NO SIGNAL." },
@@ -97,7 +100,10 @@ window.INFO_GROUPS = [
       { "t": "Channel", "d": "Wi-Fi channel in use. 1/6/11 are the non-overlapping 2.4 GHz ones." },
       { "t": "Status (WIFI)", "d": "Association state reported by the board." },
       { "t": "IP Address", "d": "The board's address on the local network." },
-      { "t": "MAC", "d": "The board's own Wi-Fi MAC. Use it in a DHCP reservation so the address never changes." }
+      { "t": "MAC", "d": "The board's own Wi-Fi MAC. Use it in a DHCP reservation so the address never changes." },
+      { "t": "Link", "d": "A plain-language summary of the current RSSI: <b>strong</b> at &minus;60 dBm or better, <b>fair</b> down to &minus;75, <b>weak</b> below that." },
+      { "t": "Msg rate", "d": "Frames per second this browser received over the last 15 seconds. The board sends about 1/s; a much lower number means frames are arriving late, not that the sensor slowed down." },
+      { "t": "Largest gap", "d": "Longest silence between two frames in the last minute. A few seconds is a normal Wi-Fi hiccup; tens of seconds means the link or the broker went away." }
     ]
   },
   {
@@ -112,7 +118,10 @@ window.INFO_GROUPS = [
       { "t": "Accel X / Accel Y / Accel Z", "d": "Acceleration in g (1 g = gravity). Sitting still, one axis reads about &plusmn;1 and the others near 0. Cornering and bumps show up here." },
       { "t": "Tilt (MPU)", "d": "Current combined tilt: the angle that drives the danger lights." },
       { "t": "Warn at / Danger at", "d": "The thresholds in force, in degrees. The board uses the same values to pick the LED level." },
-      { "t": "tilt history", "d": "The last 120 samples (about two minutes at one frame per second) drawn as a line, so a spike is visible even after it passed." }
+      { "t": "tilt history", "d": "The last 120 samples (about two minutes at one frame per second) drawn as a line, so a spike is visible even after it passed." },
+      { "t": "Accel |a|", "d": "Length of the acceleration vector, in g: sqrt(x&sup2; + y&sup2; + z&sup2;). About 1 g at rest; a bump or a hard corner pushes it up." },
+      { "t": "Peak |a|", "d": "Largest acceleration magnitude in the current chart buffer (about 180 frames). Use it to spot a pothole or a kerb strike after the fact." },
+      { "t": "Peak tilt", "d": "Largest tilt in the same 120-sample buffer, in degrees. It is a short-term window, not the all-time Max Tilt." }
     ]
   },
   {
@@ -128,7 +137,9 @@ window.INFO_GROUPS = [
       { "t": "Quality", "d": "Average HDOP in the window and the share of fixes worse than 3.0, drawn as red on the map. About 1.0 is a good sky view, 3.0 is roughly 15 m of position error, 6.0 or more means the trail can wander." },
       { "t": "Lap log", "d": "Lap rows the tracker logged when its finish-line counter moved. Each chip shows the lap number, its time in seconds, and how far it was off the best lap. Restarting the board resets the counter, so the log groups by session." },
       { "t": "Window", "d": "The exact UTC start and end the API answered with." },
-      { "t": "Status (HIST)", "d": "What happened: loaded, sampled, truncated at the row cap, empty, or an error such as the API being unreachable." }
+      { "t": "Status (HIST)", "d": "What happened: loaded, sampled, truncated at the row cap, empty, or an error such as the API being unreachable." },
+      { "t": "Moving / Stopped", "d": "Share of stored points at or above 1 km/h, and the rest. Wide windows are sampled by the API, so this is a share of points, not a measured duration; the board records about one point per second while moving." },
+      { "t": "Chart view", "d": "<b>Speed + lean</b> shows ground speed and the bigger of roll/pitch. <b>GPS quality</b> plots HDOP with the 3.0 threshold. <b>Lap deltas</b> draws each lap's gap to the best lap, with the best as a green zero bar." }
     ]
   },
   {

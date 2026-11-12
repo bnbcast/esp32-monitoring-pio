@@ -383,7 +383,7 @@ function startSimulator() {
         pitch: 3 * Math.cos(angle),
         yaw: angle * 180 / Math.PI,
         tilt: Math.abs(5 * Math.sin(angle)),
-        ax: 0.1, ay: 0.2, az: 0.9, temp: 25,
+        ax: 0.1 * Math.sin(angle * 2), ay: 0.2, az: 0.9, temp: 25,
         lvl: 0, warn: 30, danger: 50, maxTilt: 8,
         gps,
         lap: {
@@ -394,7 +394,20 @@ function startSimulator() {
           la: [centerLat, centerLng - 0.001],
           lb: [centerLat, centerLng + 0.001]
         },
-        sys: { heap: 200000, heap_min: 180000, boot: 1, rssi: -50 },
+        sys: {
+          heap: 200000 - Math.round(25000 * (0.5 + 0.5 * Math.sin(angle))),
+          heap_min: 180000,
+          boot: 1,
+          rssi: Math.round(-52 - 14 * Math.abs(Math.sin(angle * 2))),
+          wifi: {
+            ssid: 'SIM-WIFI',
+            bssid: 'aa:bb:cc:dd:ee:ff',
+            channel: 6,
+            status: 'connected',
+            ip: '192.168.1.50',
+            mac: '24:6f:28:11:22:33'
+          }
+        },
       });
 
       publish(TOPIC_DATA, msg, true);

@@ -114,7 +114,7 @@ test('the MPU tab has a canvas with a fixed height', () => {
 test('the dashboard feeds the last frame in and repaints on demand', () => {
   assert.match(APP, /MPU3D\.draw\(canvas, mpuAtt\)/);
   assert.match(APP, /mpuAtt\s*=\s*{[\s\S]{0,160}valid:/);
-  assert.match(APP, /if \(name === 'mpu'\) drawMpu3d\(true\)/,
+  assert.match(APP, /if \(name === 'mpu'\) \{[\s\S]*?drawMpu3d\(true\);/,
     'opening the tab must paint it: the canvas has no size while hidden');
   assert.match(APP, /drawMpu3d\(true\);/, 'a window resize must repaint it');
   // 1 Hz telemetry does not need a 60 Hz canvas.

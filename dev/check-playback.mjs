@@ -48,7 +48,12 @@ for (let i = 0; i < 40; i++) {
 const body = {
   ok: true, device: 'esp32-01', from: now - 86400, to: now,
   count: points.length, total: points.length, step: 1, sampled: false,
-  maxGap: 2, truncated: false, points, laps: []
+  maxGap: 2, truncated: false, points,
+  laps: [
+    [now - 110, 1, 63500, 60000],
+    [now - 90, 2, 60000, 60000],
+    [now - 60, 3, 61200, 60000]
+  ]
 };
 
 const server = http.createServer((req, res) => {
@@ -109,6 +114,13 @@ const ink = await page.evaluate(() => {
   return n;
 });
 const startRead = (await page.textContent('#pbRead')).trim();
+const stats = {
+  moving: (await page.textContent('#histMoving')).trim(),
+  stopped: (await page.textContent('#histStopped')).trim(),
+  avg: (await page.textContent('#histAvg')).trim(),
+  maxKmh: (await page.textContent('#histMax')).trim(),
+  laps: (await page.textContent('#histLaps')).trim()
+};
 
 await page.selectOption('#pbSpeed', '30');
 await page.click('#btnPlay');
@@ -168,6 +180,31 @@ await page.waitForTimeout(1200);
 const autoStopValue = await page.$eval('#pbSlider', el => Number(el.value));
 const autoStopText = (await page.textContent('#btnPlay')).trim();
 
+// ---- chart modes ---------------------------------------------------------
+const colored = kind => page.evaluate(k => {
+  const c = document.getElementById('histChart');
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
+    if (!a) continue;
+    if (k === 'red' && r > 180 && g < 110 && b < 110) n++;
+    if (k === 'green' && g > 90 && r < 110 && b < 110) n++;
+  }
+  return n;
+}, kind);
+
+await page.selectOption('#chartMode', 'hdop');
+await page.waitForTimeout(300);
+const hdopRed = await colored('red');
+const hdopNote = (await page.textContent('#chartNote')).trim();
+
+await page.selectOption('#chartMode', 'laps');
+await page.waitForTimeout(300);
+const lapsGreen = await colored('green');
+const lapsNote = (await page.textContent('#chartNote')).trim();
+await page.screenshot({ path: path.join(os.tmpdir(), 'hist-laps.png') });
+
 await browser.close();
 server.close();
 
@@ -178,7 +215,8 @@ if (!enabled) fails.push('Play stayed disabled after selecting a session');
 if (max !== points.length - 1) fails.push(`slider max ${max}, expected ${points.length - 1}`);
 if (!(ink > 500)) fails.push(`chart looks empty: ${ink} painted pixels`);
 if (playingValue < 5) fails.push(`Play did not advance the scrubber: ${playingValue}`);
-if (!/pause/i.test(playingText)) fails.push(`Play button says ${JSON.stringify(playingText)} while running`);if (!dot || !near(dot[0], points[playingValue][2], 1e-6) || !near(dot[1], points[playingValue][1], 1e-6)) {
+if (!/pause/i.test(playingText)) fails.push(`Play button says ${JSON.stringify(playingText)} while running`);
+if (!dot || !near(dot[0], points[playingValue][2], 1e-6) || !near(dot[1], points[playingValue][1], 1e-6)) {
   fails.push(`marker at ${JSON.stringify(dot)} does not match point ${playingValue}`);
 }
 if (linePts < 3) fails.push(`travelled line has ${linePts} points`);
@@ -194,6 +232,15 @@ if (!resetDot || !near(resetDot[0], first[2], 1e-6) || !near(resetDot[1], first[
 }
 if (autoStopValue !== points.length - 1) fails.push(`replay ran past the end: ${autoStopValue}`);
 if (!/^play$/i.test(autoStopText)) fails.push(`button after auto-stop: ${JSON.stringify(autoStopText)}`);
+if (!(Number(stats.moving) >= 0 && Number(stats.moving) <= 100)) fails.push(`moving share: ${JSON.stringify(stats.moving)}`);
+if (Number(stats.stopped) !== 100 - Number(stats.moving)) fails.push(`stopped share: ${JSON.stringify(stats.stopped)}`);
+if (!(Number(stats.avg) > 0)) fails.push(`avg moving: ${JSON.stringify(stats.avg)}`);
+if (Number(stats.maxKmh) !== 26) fails.push(`max speed: ${JSON.stringify(stats.maxKmh)}, expected 26`);
+if (!/3 laps/.test(stats.laps)) fails.push(`lap chips: ${JSON.stringify(stats.laps)}`);
+if (!(hdopRed > 10)) fails.push(`HDOP view has no red: ${hdopRed} pixels`);
+if (!/HDOP/.test(hdopNote)) fails.push(`HDOP note: ${JSON.stringify(hdopNote)}`);
+if (!(lapsGreen > 5)) fails.push(`lap view has no best-lap bar: ${lapsGreen} green pixels`);
+if (!/best lap/.test(lapsNote)) fails.push(`lap note: ${JSON.stringify(lapsNote)}`);
 if (errors.length) fails.push(...errors);
 
 console.log(`enabled   ${enabled}, max index ${max}`);
@@ -204,7 +251,11 @@ console.log(`paused    ${pausedA} -> ${pausedB}`);
 console.log(`end       index ${endValue}, read ${endRead}, marker ${JSON.stringify(endDot)}`);
 console.log(`reset     index ${resetValue}, marker ${JSON.stringify(resetDot)}`);
 console.log(`auto-stop index ${autoStopValue}, button ${autoStopText}`);
+console.log(`stats     moving ${stats.moving}%, stopped ${stats.stopped}%, avg ${stats.avg} km/h, max ${stats.maxKmh} km/h`);
+console.log(`laps      ${stats.laps}`);
+console.log(`modes     HDOP red ${hdopRed} px, lap best green ${lapsGreen} px`);
 console.log(`shots     ${path.join(os.tmpdir(), 'playback.png')}`);
+console.log(`          ${path.join(os.tmpdir(), 'hist-laps.png')}`);
 
 if (fails.length) {
   console.error('FAIL ' + fails.join('\nFAIL '));
