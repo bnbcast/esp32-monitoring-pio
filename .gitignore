@@ -15,3 +15,13 @@ worker/pages/.wrangler/
 .claude/
 .pi/
 browser-automation/
+debug-dev.png
+supabase-*.png
+include/README
+lib/README
+test/README
+dev/README.md
+AGENTS.md
+docs/client_email_ble.md
+docs/BLE_PLAN_DETAILED.md
+docs/PLAN_B_ESPHOME_DETAILED.md
