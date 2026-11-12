@@ -190,6 +190,18 @@ The tracker now treats the receiver as a racing sensor rather than a map toy.
    gate state; the map draws the gate as a red dashed line. The emoji marker was
    replaced by an inline SVG arrow.
 
+**HDOP 2.0 or 4.0?** An HDOP gate is a geometry filter, not an accuracy promise:
+position error ≈ UERE × HDOP, and multipath under a gantry or tree biases the
+solution *without* moving HDOP. Tightening to 2.0/6 therefore buys a modest
+per-fix improvement and costs dropped fixes exactly where the track is worst,
+which lengthens the chord the lap interpolator has to draw and can skip a
+crossing altogether. Rather than guess, the firmware counts what a 6/2.0 gate
+*would* reject (`GPS_STRICT_SATS`, `GPS_STRICT_HDOP`) and prints it in the POS
+line as `tight n/N (%)`; the strict values are never applied to publishing
+(`test/gps.test.js` enforces that). Decision rule: if `tight` stays in the low
+single digits on a real session, switch the live gate to 6/2.0; if it is double
+digits, the current 5/4.0 is the faster and more continuous choice.
+
 Every ACS712 reference is gone: ADC pin, calibration, `amps`/`peakA`, the payload
 block, the console line, the `z` key, the tab, the pill, the graph, the glossary
 and the tests.
@@ -200,6 +212,7 @@ and the tests.
 |---|---|
 | Flash + outdoor check | firmware compiled but the board is not on USB; needs `boot #n` increment, a 3D fix, TTFF and hold verification |
 | GPS TX wire | 5 Hz and the UBX options need one wire from the module RX to GPIO 33 |
+| HDOP 2.0 vs 4.0 | the live gate stays 5/4.0 until one track session reports `tight n/N (%)`; near 0 on a clean track means the strict gate is free, double digits means it costs segments |
 | 60-minute soak | restarted after the GPS/lap change so the window describes the final binary; needs the board idle on USB |
 | Parked + drive captures | needs the vehicle outdoors; the Worker rules are covered by 15 tests, but real wander radius is unmeasured |
 | Power path (MT3608 + pack) | owner is still describing the pack and the USB board; not started on purpose |

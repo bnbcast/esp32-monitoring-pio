@@ -90,6 +90,13 @@
 #define GPS_MAX_HDOP  4.0
 #define GPS_MAX_KMH   200.0          // anything faster is a bad frame, not a vehicle
 
+// Shadow gate for the "tighten to HDOP 2 / 6 sats" proposal. It never decides
+// what is published: it only counts the fixes the stricter threshold would
+// drop, so one track session can answer the question with numbers instead of
+// opinion. See the POS line and the 2.0-vs-4.0 note in docs/PLAN.md.
+#define GPS_STRICT_SATS 6
+#define GPS_STRICT_HDOP 2.0
+
 // A 2D fix (no altitude) has no vertical constraint, so its horizontal error
 // is several times worse than HDOP suggests. Only 3D fixes are published.
 #define GPS_REQUIRE_3D 1
@@ -213,6 +220,8 @@ bool  holdValid = false;
 float holdLat = 0, holdLng = 0;
 
 uint32_t gpsRejected = 0;       // fixes dropped by the jump gate
+uint32_t gpsFixesAccepted = 0;  // fixes that passed the 5/4.0 gate
+uint32_t gpsStrictReject = 0;   // of those, how many fail a 6/2.0 gate (diagnostic only)
 uint32_t gpsTtffMs = 0;         // time to first usable fix after boot
 
 // ---- finish line --------------------------------------------------------
@@ -674,6 +683,13 @@ bool gpsIsParked() {
   return gps.speed.isValid() && gps.speed.kmph() < GPS_STILL_KMH;
 }
 
+// Would this fix survive a 6-satellite / HDOP 2.0 gate? Counted, never enforced.
+static bool gpsFixStrict() {
+  if (!gps.satellites.isValid() || gps.satellites.value() < GPS_STRICT_SATS) return false;
+  if (gps.hdop.isValid() && gps.hdop.hdop() > GPS_STRICT_HDOP) return false;
+  return true;
+}
+
 // The coordinate the rest of the world (map, history, odometer) must see.
 bool gpsPublishPos(float* outLat, float* outLng) {
   if (!gpsFixUsable()) return false;
@@ -700,6 +716,11 @@ void updateGpsPositioning() {
   const float lat = gps.location.lat();
   const float lng = gps.location.lng();
   const bool usable = gpsFixUsable();
+
+  if (usable) {
+    gpsFixesAccepted++;
+    if (!gpsFixStrict()) gpsStrictReject++;   // diagnostic: cost of tightening the gate
+  }
 
   if (usable && gpsTtffMs == 0) gpsTtffMs = now;
 
@@ -767,10 +788,16 @@ void updateGpsPositioning() {
     }
   }
 
-  fixPrevLat = lat;
-  fixPrevLng = lng;
-  fixPrevMs = now;
-  fixHasPrev = true;
+  // Only an accepted fix becomes the reference for the jump gate and for the
+  // lap segment. A fix that failed the gate can be 20 m out; using it as the
+  // chord endpoint would time a crossing against a position we already know is
+  // wrong (or invent a crossing that never happened).
+  if (usable) {
+    fixPrevLat = lat;
+    fixPrevLng = lng;
+    fixPrevMs = now;
+    fixHasPrev = true;
+  }
 }
 
 // ============ UBX CONFIGURATION ============
@@ -1444,11 +1471,17 @@ static void printStatus() {
                 roll, pitch, yaw,
                 A(mpuValid ? ANSI_GRN : ANSI_RED), mpuValid ? "OK" : "FAIL", A(ANSI_RESET));
 
-  Serial.printf("%s|%s POS   fix %-4s  ttff %-4s  rejected %-3lu  hold %-3s  lap %lu  last %s  best %s\n",
+  // "tight" is the shadow gate: fixes that pass today but would fail 6/2.0.
+  // If it stays near 0 on track, tightening is free; if it is double digits,
+  // the strict gate is dropping track segments for no real accuracy gain.
+  const unsigned tightPct = gpsFixesAccepted
+      ? (unsigned)((100ULL * gpsStrictReject) / gpsFixesAccepted) : 0;
+  Serial.printf("%s|%s POS   fix %-4s  ttff %-4s  rejected %-3lu  tight %lu/%lu (%u%%)  hold %-3s  lap %lu  last %s  best %s\n",
                 A(ANSI_DIM), A(ANSI_RESET),
                 gm.fixMode == 3 ? "3D" : gm.fixMode == 2 ? "2D" : "--",
                 gpsTtffMs ? (spTtff[0] ? spTtff : "--") : "--",
                 (unsigned long)gpsRejected,
+                (unsigned long)gpsStrictReject, (unsigned long)gpsFixesAccepted, tightPct,
                 holdValid ? "yes" : "no",
                 (unsigned long)lapCount,
                 lapLastMs ? spLast : "--",
