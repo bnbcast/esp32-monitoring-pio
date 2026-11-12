@@ -612,6 +612,35 @@ every ingest would make the board retry the same batch forever.
 | Worker suite | 17/17 pass against the in-memory D1, including lap de-duplication and 9-column history |
 | Browser probe | `dev/check-laps-export.mjs` PASS: 2 chips, `hdop 1.47 · 17% poor`, max lean 14.4, 1 red overlay line, 5 derived events (lap, gap, poor, recovery), GPX 24 points / 2370 B, CSV 24 rows / 1831 B, session selection narrows to 1 lap and 1 event |
 
+## W10 — Session replay and chart (2026-11-12)
+
+The stored points already carry speed, course, HDOP and lean, so replay is a
+drawing problem, not a data one. It uses the same `/history` response as the
+timeline: no new endpoint, table or board change.
+
+| Piece | Decision |
+|---|---|
+| Transport | Play / Pause / Reset plus a scrubber and 1x–30x speed, enabled only for a selected session (near 1:1 points) |
+| Time model | playback advances by wall-clock × speed and looks the position up with `SESSIONS.indexAt`, so a real gap in the data is a pause, not a teleport |
+| Map overlay | two separate sources (`playbackLine`, `playbackDot`) so replay never mutates the session line it is replaying |
+| Chart | speed (black) and lean (red) share one canvas with independent scales; HDOP > 3 bands are shaded behind both |
+| Lifetime | leaving HIST or hiding the tab stops the timer; pressing Play at the end restarts from the first point |
+| Load safety | a request token (`histRequest`) lets only the newest `/history` answer touch the panel, so a slow older window cannot clear a fresh selection |
+
+One bug fell out of the probe: the range buttons, Export and Play all share
+`.hist-btn`, and every one of them was wired to `loadHistory`. Pressing Export or
+Play therefore reloaded history and disabled the transport. The handler is now
+scoped to `.hist-btn[data-min]`, and a unit test pins that selector.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| JS suite | 107/107 pass, including `indexAt` boundaries and the playback controls/hooks |
+| Worker suite | 17/17 pass (unchanged path) |
+| Playback probe | `dev/check-playback.mjs` PASS: transport enabled, chart 9112 painted pixels, Play advanced to index 13 with a 14-point travelled line, Pause held 13, scrub to end 39, Reset 0, auto-stop at 39 and the button returned to Play |
+| Regression probes | `dev/check-laps-export.mjs` PASS, `dev/check-timeline.mjs` PASS |
+
 ## Still needs the board
 
 1. ~~Flash `0dd61cd` + watchdog commit; confirm the two `task_wdt` error lines

@@ -7,12 +7,12 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23ffe600' stroke='%23000' stroke-width='5'/%3E%3Ccircle cx='21' cy='25' r='6.5' fill='%23000'/%3E%3Ccircle cx='43' cy='25' r='6.5' fill='%23000'/%3E%3Cpath d='M17 41q15 13 30 0' fill='none' stroke='%23000' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/tokens.css?v=39">
-<link rel="stylesheet" href="css/base.css?v=39">
-<link rel="stylesheet" href="css/components.css?v=39">
-<link rel="stylesheet" href="css/layout.css?v=39">
-<link rel="stylesheet" href="css/map.css?v=39">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=39">
+<link rel="stylesheet" href="css/tokens.css?v=40">
+<link rel="stylesheet" href="css/base.css?v=40">
+<link rel="stylesheet" href="css/components.css?v=40">
+<link rel="stylesheet" href="css/layout.css?v=40">
+<link rel="stylesheet" href="css/map.css?v=40">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=40">
 <title>ESP32 // LIVE SENSORS</title>
 </head>
 <body class="locked">
@@ -267,6 +267,28 @@
           <p class="hist-note">derived from stored fixes: reboots, gaps, GPS quality, laps</p>
         </div>
         <div class="hud-card">
+          <h3>Playback</h3>
+          <div class="pb-row">
+            <button class="hist-btn" id="btnPlay" type="button" disabled aria-pressed="false">Play</button>
+            <button class="hist-btn" id="btnPlayReset" type="button" disabled>Reset</button>
+            <select class="pb-speed" id="pbSpeed" aria-label="Playback speed">
+              <option value="1">1x</option>
+              <option value="4" selected>4x</option>
+              <option value="10">10x</option>
+              <option value="30">30x</option>
+            </select>
+          </div>
+          <input class="pb-slider" id="pbSlider" type="range" min="0" max="0" value="0"
+                 step="1" disabled aria-label="Playback position">
+          <div class="pb-meta">
+            <span id="pbClock">--:--</span>
+            <span id="pbRead">select a session to play</span>
+          </div>
+          <canvas id="histChart" class="hist-chart" height="120" role="img"
+                  aria-label="Speed and lean over the selected session"></canvas>
+          <p class="hist-note">speed (black), lean (red), red bands = HDOP above 3</p>
+        </div>
+        <div class="hud-card">
           <h3>Window</h3>
           <div class="hud-grid">
             <div class="hud-item"><div class="lbl">Points</div><div class="val" id="histPoints">--</div><div class="lbl"></div></div>
@@ -319,14 +341,14 @@
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=39"></script>
-<script src="ui/guard.js?v=39"></script>
-<script src="ui/map.js?v=39"></script>
-<script src="ui/mqtt-mini.js?v=39"></script>
-<script src="ui/info-data.js?v=39"></script>
-<script src="ui/info.js?v=39"></script>
-<script src="ui/sessions.js?v=39"></script>
-<script src="ui/mpu3d.js?v=39"></script>
-<script src="ui/app.js?v=39"></script>
+<script src="vendor/maplibre-gl-csp.js?v=40"></script>
+<script src="ui/guard.js?v=40"></script>
+<script src="ui/map.js?v=40"></script>
+<script src="ui/mqtt-mini.js?v=40"></script>
+<script src="ui/info-data.js?v=40"></script>
+<script src="ui/info.js?v=40"></script>
+<script src="ui/sessions.js?v=40"></script>
+<script src="ui/mpu3d.js?v=40"></script>
+<script src="ui/app.js?v=40"></script>
 </body>
 </html>

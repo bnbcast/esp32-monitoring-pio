@@ -846,6 +846,19 @@ if (!KEY) {
   let histSessions = [];     // SESSIONS.group(histAll)
   let histLaps = [];         // [[ts, n, dur_ms, best_ms], ...] from /history
   let histSelected = -1;     // index into histSessions, -1 = whole window
+  let histRequest = 0;       // token: only the newest load may touch the panel
+
+  // Playback state. The chart always shows the current window; the transport
+  // (play/scrub) is enabled only for a selected session, where the points are
+  // close to 1:1 instead of a sampled whole-day view.
+  let pbPoints = [];         // points the chart and playback are looking at
+  let pbCoords = [];         // same, as [lng, lat] for the map overlay
+  let pbIndex = 0;
+  let pbPlayTs = 0;
+  let pbPlaying = false;
+  let pbTimer = 0;
+  let pbLastTick = 0;
+  let pbCanPlay = false;
 
   function setHistFields(points, km, gap, windowText, statusText) {
     if ($('histPoints')) $('histPoints').textContent = points;
@@ -856,6 +869,9 @@ if (!KEY) {
   }
 
   async function loadHistory(minutes) {
+    // A slower earlier request must never overwrite a newer window: tapping
+    // 1 h then 6 h could otherwise end with the 1 h response landing last.
+    const req = ++histRequest;
     histMinutes = minutes;
     document.querySelectorAll('.hist-btn').forEach(b => {
       const on = Number(b.dataset.min) === minutes;
@@ -873,12 +889,16 @@ if (!KEY) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       body = await res.json();
     } catch (err) {
+      if (req !== histRequest) return;
       // Offline, blocked or the host is down: the panel says so and the live
       // data keeps rendering. Deliberately not console.error().
       if (typeof MAP !== 'undefined' && MAP.clearHistory) MAP.clearHistory();
+      setPlaybackData([], false);
       setHistFields('--', '--', '--', '--', 'history host unreachable (' + err.message + ')');
       return;
     }
+
+    if (req !== histRequest) return;
 
     const pts = Array.isArray(body && body.points) ? body.points : [];
 
@@ -916,6 +936,7 @@ if (!KEY) {
     renderTimeline();
     renderLaps();
     renderEvents();
+    setPlaybackData(pts, false);
 
     const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
     let status = 'nothing stored in this window';
@@ -1110,6 +1131,234 @@ if (!KEY) {
     }
   }
 
+  // ---- playback and session chart ------------------------------------------
+  // Speed and lean are already columns on every stored point, so this is a
+  // drawing problem, not a data one. Two independent scales share one box: the
+  // labels say which line is which, and the red bands mark HDOP above 3 so a
+  // spike is not mistaken for a corner.
+  function drawHistChart() {
+    const canvas = $('histChart');
+    if (!canvas || !canvas.parentElement) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const cw = Math.max(rect.width, 300);
+    if (canvas.width !== cw) canvas.width = cw;
+    if (canvas.height !== 120) canvas.height = 120;
+    const w = canvas.width, h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = '10px "Courier New", Courier, monospace';
+
+    const pts = pbPoints;
+    if (!pts.length) {
+      ctx.fillStyle = '#666';
+      ctx.fillText('select a range to chart', 8, h / 2);
+      return;
+    }
+
+    const t0 = Number(pts[0][0]);
+    const t1 = Number(pts[pts.length - 1][0]);
+    const span = Math.max(1, t1 - t0);
+    const x = ts => ((Number(ts) - t0) / span) * (w - 2) + 1;
+
+    // Quality bands first, under everything else.
+    ctx.fillStyle = 'rgba(255,59,31,0.13)';
+    for (let i = 1; i < pts.length; i++) {
+      const hd = Number(pts[i][5]);
+      if (Number.isFinite(hd) && hd > 3) {
+        const xa = x(pts[i - 1][0]), xb = x(pts[i][0]);
+        ctx.fillRect(xa, 0, Math.max(1, xb - xa), h);
+      }
+    }
+
+    // Four horizontal guides: speed uses the full box, lean gets its own scale.
+    ctx.strokeStyle = '#e2ded2';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      const y = Math.round(i * h / 4) + 0.5;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    let maxKmh = 0, maxLean = 0, hasLean = false;
+    for (const p of pts) {
+      const v = Number(p[3]);
+      if (Number.isFinite(v) && v > maxKmh) maxKmh = v;
+      for (const k of [6, 7]) {
+        const raw = p[k];
+        if (raw === null || raw === undefined || raw === "") continue;
+        const a = Math.abs(Number(raw));
+        if (!Number.isFinite(a)) continue;
+        hasLean = true;
+        if (a > maxLean) maxLean = a;
+      }
+    }
+    maxKmh = Math.max(20, Math.ceil(maxKmh / 10) * 10);
+    maxLean = Math.max(15, Math.ceil(maxLean / 5) * 5);
+
+    const polyline = (pick, max, color, width) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      let started = false;
+      for (const p of pts) {
+        const v = pick(p);
+        if (v === null) { started = false; continue; }
+        const px = x(p[0]);
+        const py = h - Math.min(1, v / max) * (h - 4) - 2;
+        if (!started) { ctx.moveTo(px, py); started = true; }
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    };
+
+    polyline(p => {
+      const v = Number(p[3]);
+      return Number.isFinite(v) ? v : null;
+    }, maxKmh, '#000', 2);
+
+    if (hasLean) {
+      ctx.globalAlpha = 0.8;
+      polyline(p => {
+        const a = Math.abs(Number(p[6]) || 0);
+        const b = Math.abs(Number(p[7]) || 0);
+        return Math.max(a, b);
+      }, maxLean, '#ff3b1f', 1.5);
+      ctx.globalAlpha = 1;
+    }
+
+    // Playhead, only when transport is live, so a static window is not marked
+    // as if it were paused at t=0.
+    if (pbCanPlay && pbIndex >= 0 && pbIndex < pts.length) {
+      const px = x(pts[pbIndex][0]);
+      ctx.strokeStyle = '#2447ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
+    }
+
+    ctx.fillStyle = '#000';
+    ctx.fillText(`0-${maxKmh} km/h`, 4, 11);
+    ctx.fillStyle = hasLean ? '#ff3b1f' : '#666';
+    ctx.fillText(hasLean ? `0-${maxLean} deg` : 'lean: no data', 4, h - 4);
+  }
+
+  // Point the chart at a range and (when allowed) arm the transport.
+  function setPlaybackData(pts, canPlay) {
+    pbStop();
+    pbPoints = Array.isArray(pts) ? pts : [];
+    pbCoords = pbPoints.map(p => [Number(p[2]), Number(p[1])]);
+    pbCanPlay = !!canPlay && pbPoints.length > 1;
+    pbIndex = 0;
+    pbPlayTs = pbPoints.length ? Number(pbPoints[0][0]) : 0;
+
+    for (const id of ['btnPlay', 'btnPlayReset']) {
+      if ($(id)) $(id).disabled = !pbCanPlay;
+    }
+    if ($('pbSlider')) {
+      $('pbSlider').disabled = !pbCanPlay;
+      $('pbSlider').max = String(Math.max(0, pbPoints.length - 1));
+      $('pbSlider').value = '0';
+    }
+
+    if (!pbCanPlay) {
+      if ($('pbClock')) $('pbClock').textContent = pbPoints.length
+        ? SESSIONS.fmtClock(pbPoints[0][0]) : '--:--';
+      if ($('pbRead')) $('pbRead').textContent = pbPoints.length
+        ? 'select a session to play' : 'no stored range';
+      if (typeof MAP !== 'undefined' && MAP.clearPlayback) MAP.clearPlayback();
+    } else {
+      pbApply(pbPlayTs);
+    }
+    drawHistChart();
+  }
+
+  function pbApply(ts) {
+    if (!pbPoints.length) return;
+    pbIndex = SESSIONS.indexAt(pbPoints, ts);
+    const p = pbPoints[pbIndex];
+    pbPlayTs = Number(p[0]);
+
+    if ($('pbSlider')) $('pbSlider').value = String(pbIndex);
+    if ($('pbClock')) $('pbClock').textContent = SESSIONS.fmtClock(p[0]);
+    if ($('pbRead')) {
+      const kmh = Number(p[3]);
+      const noLean = (p[6] === null || p[6] === undefined) &&
+                     (p[7] === null || p[7] === undefined);
+      const lean = Math.max(Math.abs(Number(p[6]) || 0), Math.abs(Number(p[7]) || 0));
+      $('pbRead').textContent =
+        (Number.isFinite(kmh) ? kmh.toFixed(0) + ' km/h' : '-- km/h') +
+        ' · ' + (noLean ? '--' : lean.toFixed(1) + ' deg');
+    }
+    if (typeof MAP !== 'undefined' && MAP.setPlayback) {
+      MAP.setPlayback(Number(p[1]), Number(p[2]), pbCoords.slice(0, pbIndex + 1));
+    }
+    drawHistChart();
+  }
+
+  function pbPlay() {
+    if (!pbCanPlay) return;
+    // Pressing play at the end restarts from the beginning rather than doing
+    // nothing, which looks broken.
+    if (pbIndex >= pbPoints.length - 1) pbApply(Number(pbPoints[0][0]));
+    pbPlaying = true;
+    pbLastTick = performance.now();
+    if (!pbTimer) pbTimer = setInterval(pbTick, 80);
+    if ($('btnPlay')) {
+      $('btnPlay').textContent = 'Pause';
+      $('btnPlay').setAttribute('aria-pressed', 'true');
+    }
+  }
+
+  function pbStop() {
+    pbPlaying = false;
+    if (pbTimer) { clearInterval(pbTimer); pbTimer = 0; }
+    if ($('btnPlay')) {
+      $('btnPlay').textContent = 'Play';
+      $('btnPlay').setAttribute('aria-pressed', 'false');
+    }
+  }
+
+  function pbTick() {
+    if (!pbPlaying || !pbCanPlay || !pbPoints.length) return;
+    const now = performance.now();
+    const dt = Math.min(500, now - pbLastTick) / 1000;
+    pbLastTick = now;
+    const speed = Number(($('pbSpeed') && $('pbSpeed').value) || 4);
+    const t1 = Number(pbPoints[pbPoints.length - 1][0]);
+    pbPlayTs += dt * speed;
+    if (pbPlayTs >= t1) {
+      pbPlayTs = t1;
+      pbApply(t1);
+      pbStop();
+      return;
+    }
+    pbApply(pbPlayTs);
+  }
+
+  function pbReset() {
+    pbStop();
+    if (pbPoints.length) pbApply(Number(pbPoints[0][0]));
+  }
+
+  if ($('btnPlay')) {
+    $('btnPlay').addEventListener('click', () => (pbPlaying ? pbStop() : pbPlay()));
+  }
+  if ($('btnPlayReset')) $('btnPlayReset').addEventListener('click', pbReset);
+  if ($('pbSlider')) {
+    $('pbSlider').addEventListener('input', () => {
+      pbStop();
+      const i = Number($('pbSlider').value);
+      if (pbPoints[i]) pbApply(Number(pbPoints[i][0]));
+    });
+  }
+  if ($('pbSpeed')) {
+    $('pbSpeed').addEventListener('change', () => { pbLastTick = performance.now(); });
+  }
+  // A hidden tab must not keep a timer alive, and neither must a backgrounded
+  // phone: replay is cheap but pointless when nobody is looking.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pbStop();
+  });
+
   // ---- export --------------------------------------------------------------
   // Built from the points already in memory. Exporting must not depend on the
   // history host still being reachable seconds after the fetch that loaded it.
@@ -1177,6 +1426,7 @@ if (!KEY) {
 
     const s = histSelected >= 0 ? histSessions[histSelected] : null;
     const pts = s ? s.points : histAll;
+    setPlaybackData(pts, !!s);
     const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
     if (s && typeof MAP !== 'undefined' && MAP.fitPoints) MAP.fitPoints(pts);
 
@@ -1215,6 +1465,9 @@ if (!KEY) {
   function showTab(name) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+    // Leaving HIST stops replay: a timer running behind another tab only burns
+    // battery and would resume mid-session when the tab is opened again.
+    if (name !== 'history') pbStop();
     // Each tab starts at its own top. Without this, a long panel left the next
     // one scrolled halfway down (or clamped to its end), which read as the page
     // jumping around on a phone.
@@ -1248,7 +1501,10 @@ if (!KEY) {
     window.INFO.reveal(text, group);
   });
 
-  document.querySelectorAll('.hist-btn').forEach(btn => {
+  // Range buttons only. Export and playback share the .hist-btn look but must
+  // not reload history: doing so would clear the selection and disable replay
+  // the moment Play was pressed.
+  document.querySelectorAll('.hist-btn[data-min]').forEach(btn => {
     btn.addEventListener('click', () => loadHistory(Number(btn.dataset.min) || 1440));
   });
 

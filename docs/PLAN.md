@@ -26,6 +26,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 | W7 | **Trackpad camera** - horizontal two-finger swipe rotates, every press releases the camera lock | **done 2026-11-12** | `dev/check-camera.mjs` PASS |
 | W8 | **MPU 3D attitude** - software-projected board on the MPU tab | **done 2026-11-12** | `test/mpu3d.test.js` 13/13, `dev/check-mpu3d.mjs` PASS |
 | W9 | **Session log** - lap rows, GPX/CSV export, lean trace, HDOP overlay, derived event log, lifetime odometer | **done 2026-11-12**, migration applied | `npm test` 105/105, `worker/test` 17/17, `dev/check-laps-export.mjs` PASS, `pio run` SUCCESS |
+| W10 | **Replay and chart** - select a session, scrub or play it on the map, speed/lean chart with HDOP bands | **done 2026-11-12**, live `?v=40` | `npm test` 107/107, `worker/test` 17/17, `dev/check-playback.mjs` PASS |
 
 ## W1 — Stabilize (this branch)
 

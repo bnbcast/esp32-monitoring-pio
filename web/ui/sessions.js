@@ -125,6 +125,26 @@ const SESSIONS = (function () {
     return d.getDate() + " " + MONTHS[d.getMonth()];
   }
 
+  // ---- playback ------------------------------------------------------------
+  // Index of the last point at or before ts. /history points are time ordered,
+  // so a binary search is enough. Before the window returns 0, after it the
+  // last index; that is exactly what a scrubber wants at both ends.
+  function indexAt(points, ts) {
+    const list = Array.isArray(points) ? points : [];
+    if (!list.length) return -1;
+    const target = Number(ts);
+    if (!Number.isFinite(target) || target <= Number(list[0][0])) return 0;
+    const last = list.length - 1;
+    if (target >= Number(list[last][0])) return last;
+    let lo = 0, hi = last;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (Number(list[mid][0]) <= target) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  }
+
   // ---- laps ----------------------------------------------------------------
   // /history returns laps as [[ts, n, dur_ms, best_ms], ...]. A lap belongs to
   // the session whose time window contains it: the timestamp is the fix that
@@ -288,7 +308,7 @@ const SESSIONS = (function () {
   }
 
   return { DEFAULT_GAP_S, group, summarize, distanceKm,
-           fmtClock, fmtDuration, dayKey, fmtDay,
+           fmtClock, fmtDuration, dayKey, fmtDay, indexAt,
            lapsIn, lapSummary, fmtLap, fmtDelta, maxLean, quality, events,
            toGpx, toCsv };
 })();

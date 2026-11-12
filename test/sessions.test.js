@@ -258,6 +258,35 @@ test('events are empty for no points and no laps', () => {
   assert.deepStrictEqual(S.events(null, null), []);
 });
 
+// ---- playback -------------------------------------------------------------
+
+test('playback finds the last point at or before a time', () => {
+  const pts = [at(0, 0, 0, 0), at(2, 0, 0, 0), at(10, 0, 0, 0), at(11, 0, 0, 0)];
+  assert.strictEqual(S.indexAt(pts, BASE - 5), 0);
+  assert.strictEqual(S.indexAt(pts, BASE), 0);
+  assert.strictEqual(S.indexAt(pts, BASE + 1), 0);
+  assert.strictEqual(S.indexAt(pts, BASE + 2), 1);
+  assert.strictEqual(S.indexAt(pts, BASE + 9), 1);
+  assert.strictEqual(S.indexAt(pts, BASE + 10), 2);
+  assert.strictEqual(S.indexAt(pts, BASE + 999), 3);
+  assert.strictEqual(S.indexAt([], 0), -1);
+  assert.strictEqual(S.indexAt(null, 0), -1);
+});
+
+test('playback controls and map hooks are present', () => {
+  for (const id of ['btnPlay', 'btnPlayReset', 'pbSlider', 'pbClock',
+                    'pbRead', 'histChart']) {
+    assert.ok(HTML.includes(`id="${id}"`), `missing #${id}`);
+  }
+  assert.match(MAPJS, /function setPlayback\(/);
+  assert.match(MAPJS, /function clearPlayback\(/);
+  assert.match(MAPJS, /\bsetPlayback,/);
+  assert.match(APP, /setInterval\(pbTick, 80\)/);
+  assert.match(APP, /SESSIONS\.indexAt\(pbPoints, ts\)/);
+  // Only the range buttons may reload history; Export/Play share the class.
+  assert.match(APP, /querySelectorAll\('\.hist-btn\[data-min\]'\)/);
+});
+
 // ---- export ---------------------------------------------------------------
 
 test('GPX is 1.1, escapes the name and keeps every usable point', () => {

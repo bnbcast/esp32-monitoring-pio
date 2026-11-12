@@ -627,6 +627,41 @@ const MAP = (function () {
       }
     });
 
+    // ---- Playback overlay (history replay) ----
+    // Two sources, so the dot and the travelled line can be updated without a
+    // geometry filter. Kept separate from the history line: replay must not
+    // change what the session itself looks like.
+    map.addSource("playbackLine", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] }
+    });
+    map.addLayer({
+      id: "playback-line",
+      type: "line",
+      source: "playbackLine",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#2447ff",
+        "line-width": 3,
+        "line-opacity": 0.9
+      }
+    });
+    map.addSource("playbackDot", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] }
+    });
+    map.addLayer({
+      id: "playback-dot",
+      type: "circle",
+      source: "playbackDot",
+      paint: {
+        "circle-radius": 6,
+        "circle-color": "#ffe600",
+        "circle-stroke-color": "#000000",
+        "circle-stroke-width": 3
+      }
+    });
+
     // A style swap threw the old data away; put the current state back. The
     // redraw caches have to be reset first, or they would suppress the upload
     // that is needed precisely because the sources are now empty.
@@ -1292,6 +1327,45 @@ const MAP = (function () {
     if (poor) poor.setData({ type: "FeatureCollection", features: [] });
   }
 
+  // ---- playback ------------------------------------------------------------
+  // coords is the travelled part of the session, newest last, already as
+  // [lng, lat] pairs so replay does not rebuild them on every tick.
+  function setPlayback(lat, lng, coords) {
+    if (!map || !mapReady) return;
+    const line = map.getSource("playbackLine");
+    const dot = map.getSource("playbackDot");
+    if (line) {
+      const usable = Array.isArray(coords) && coords.length > 1;
+      line.setData({
+        type: "FeatureCollection",
+        features: usable ? [{
+          type: "Feature",
+          properties: {},
+          geometry: { type: "LineString", coordinates: coords }
+        }] : []
+      });
+    }
+    if (dot) {
+      const ok = isFinite(lat) && isFinite(lng);
+      dot.setData({
+        type: "FeatureCollection",
+        features: ok ? [{
+          type: "Feature",
+          properties: {},
+          geometry: { type: "Point", coordinates: [lng, lat] }
+        }] : []
+      });
+    }
+  }
+
+  function clearPlayback() {
+    if (!map || !mapReady) return;
+    for (const id of ["playbackLine", "playbackDot"]) {
+      const src = map.getSource(id);
+      if (src) src.setData({ type: "FeatureCollection", features: [] });
+    }
+  }
+
   // Frames the selected session. Without this, picking a 400 m stint out of a
   // 24 h window leaves the camera where it was and the line is a dash in the
   // corner, which reads as "nothing happened".
@@ -1339,6 +1413,8 @@ const MAP = (function () {
     clearTrail,
     setHistory,
     clearHistory,
+    setPlayback,
+    clearPlayback,
     fitPoints,
     getTrailDistance: () => trailDistM,
     getTrailPoints: () => trailCoords.length,

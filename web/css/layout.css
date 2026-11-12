@@ -521,6 +521,51 @@ body.map-full .map-hud .hud-addr { display: none; }
 }
 
 /* ---------------------------------------------------------------------------
+   Playback: transport controls, scrubber and a two-scale chart. The chart has
+   no fixed width (the canvas is sized to its parent each draw), so it fills the
+   side panel on desktop and the phone sheet without a media query.
+--------------------------------------------------------------------------- */
+.pb-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.pb-row .hist-btn { flex: 1; }
+.pb-row .hist-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pb-speed {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 4px 6px;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.pb-slider {
+  width: 100%;
+  margin: 0 0 6px;
+  accent-color: var(--ink);
+}
+.pb-slider:disabled { opacity: 0.4; }
+.pb-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+.pb-meta span:last-child { opacity: 0.75; text-align: right; }
+.hist-chart {
+  display: block;
+  width: 100%;
+  height: 120px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+}
+
+/* ---------------------------------------------------------------------------
    INFO tab: interactive glossary. A long list of paragraphs is unreadable in a
    narrow panel, so this is search + chips + one open term at a time.
 --------------------------------------------------------------------------- */
