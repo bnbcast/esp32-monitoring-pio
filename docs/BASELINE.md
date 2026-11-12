@@ -109,7 +109,7 @@ current sensor: `acs`, `peakA` and the ADC pin are gone.
 | Raster fallback | Esri World Street → Esri Topo → OSM tiles |
 | Geocoding | public Nominatim, min 8 s and 80 m between calls, 110 m cache cells |
 | CSP | present, `script-src 'self'`, no CDN |
-| Tests | 64 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 6, `led` 15, `ui` 9) plus browser probes in `dev/` |
+| Tests | 80 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 6, `led` 15, `sessions` 16, `ui` 9) plus browser probes in `dev/` |
 
 ## Secrets
 
@@ -418,7 +418,7 @@ configuration cannot be exercised until that wire exists. Boot count advanced
 | UBX diagnostic | when the 38400 switch is not acknowledged, the firmware polls `UBX-MON-VER` on GPIO 33 and prints two different lines: `no reply on GPIO 33 - wire module RX to it` (no wire / wrong pin) versus `module answers on GPIO 33 but ignored 38400` (module refuses the rate). Measured on the mounted unit: **no reply**, which is why the link stayed at 9600 and 5 Hz never engaged |
 | IMU I2C | `mpuRead()` retries the 14-byte burst once after 200 µs, so one NACK on a patch cable no longer flips `mpu` to FAIL and back. Measured: 0 `MPU6050 stopped responding` lines in a 40 s capture, versus one pair every 5 s before |
 | Wi-Fi latency | `WiFi.setSleep(false)`; the scan matcher now builds one `String` per visible AP instead of one per (AP, candidate) pair, which removes N×M heap churn on every rescan |
-| Unit tests | 64/64 (`node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/ui.test.js`) |
+| Unit tests | 80/80 (`node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/sessions.test.js test/ui.test.js`) |
 | Lap geometry | `test/lap.test.js` (15 tests) mirrors the firmware cross-product and asserts the source still matches; a 144 km/h crossing 37 ms after a fix is timed at 37 ms, where nearest-sample rounding costs up to 100 ms and next-sample up to 163 ms. Five further tests pin the NVS session: saved after `lapCount++`, all three keys written, counters restored at boot with `lapCrossMs = 0`, reset persisted when a gate is armed, namespace cleared by `l` |
 | `dev/check-live.mjs` local | PASS, no page/CSP/console errors; `mode 3D`, `ttff 27`, `rejected 3`, laps `15`, last `41.23`, best `39.87`, gate `armed` |
 | Gate layer | `queryRenderedFeatures(['gate-line'])` = 1, 3 features (line + 2 ends) |
@@ -472,6 +472,37 @@ The three outcomes of the self-test map to three fixes, which is why it exists:
 Still open: the physical observation of `only BLUE` on this unit, which selects
 one of those three rows. Until then the firmware is correct under both polarities
 and the boot test says which one it is using.
+
+## HIST tab as a timeline (2026-11-12)
+
+The HIST tab used to be one summary card over the whole window. It is now a list
+of sessions: one row per run of stored fixes, with a day header, the local clock
+range, duration, distance, top speed and point count. Tapping a row draws only
+that stint and frames it; tapping again returns to the whole window.
+
+No backend or firmware change: `boot` is not in `/history`, so a session is
+defined by a gap, which the stored telemetry already provides.
+
+| Check | Result |
+|---|---|
+| Grouping | `web/ui/sessions.js`; a gap strictly greater than 120 s starts a new session, so exactly 120 s stays in one |
+| Grouping is pure | no DOM, no map, no fetch; loaded as a classic script and `require()`-able from node, so the tests run the same code the page runs |
+| Row content | day header (`Today` / `Yesterday` / `12 Nov`), `HH:MM - HH:MM`, duration, `km`, `km/h max`, `pts` |
+| Selection | reuses the points already in memory, calls `MAP.setHistory(session.points)` and `MAP.fitPoints`; no extra request per row |
+| Text safety | rows are built with `createElement` + `textContent`; stored device data is never parsed as HTML |
+| Kept contract | `#histPoints`, `#histDist`, `#histGap`, `#histWindow`, `#histStatus` still exist and `histStatus` still says `drawn as N line(s)`, so `dev/check-history.mjs` keeps working |
+| Browser probe | `dev/check-timeline.mjs` (local static server + stubbed `/history`, three synthetic sessions): 3 rows, `3 sessions · 1.59 km · 3m 04s`, select → `session 2 of 3`, zoom 5 → 16.67, 3 → 1 drawn lines, deselect → 3 lines, 0 CSP/page errors |
+| Screenshots | desktop 1280×900 and phone 390×844, both reviewed: rows readable in the sheet, no overlap with the telemetry cards |
+| Unit tests | `test/sessions.test.js` 16: gap split at 121 vs 120 s, single point, junk rows, distance, max/avg speed, missing km/h, summary, duration and local clock/day formatting, page contract |
+| Full suite | 80/80 |
+
+Two defects the probe caught before the commit:
+
+| Defect | Symptom | Fix |
+|---|---|---|
+| Cross-gap distance | window said **6.13 km** for **1.59 km** of driving, because it summed the straight line from the last fix of one stint to the first of the next | total is `SESSIONS.summarize(...).distKm`; the chord code was removed |
+| UTC day headers | fixtures near midnight landed under the wrong day for a UTC+7 owner, while the rest of the page is local | `fmtClock`/`fmtDay`/`dayKey` use local time; the window line says `local` |
+
 
 ## Still needs the board
 

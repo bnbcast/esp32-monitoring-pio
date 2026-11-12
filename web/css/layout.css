@@ -373,6 +373,57 @@ body.map-full .map-hud .hud-addr { display: none; }
 .hist-btn:active { transform: translate(1px, 1px); box-shadow: none; }
 
 /* ---------------------------------------------------------------------------
+   Timeline rows (HIST tab). Same hard-edged language as the picker above: a
+   row is a real button, so it needs the hover / pressed / selected states the
+   rest of the panel already has. The meta line is dimmed with opacity rather
+   than a new colour token, so the theme keeps one palette.
+--------------------------------------------------------------------------- */
+.hist-summary {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.hist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.hist-day {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  opacity: 0.65;
+}
+.hist-session {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+}
+.hist-session:hover { background: var(--yellow); }
+.hist-session.active { background: var(--yellow); box-shadow: var(--shadow-ac); }
+.hist-session:active { transform: translate(1px, 1px); box-shadow: none; }
+.hs-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.hs-dur { text-align: right; font-variant-numeric: tabular-nums; }
+.hs-meta { grid-column: 1 / -1; font-size: 0.66rem; opacity: 0.75; }
+.hist-empty { font-size: 0.72rem; margin: 2px 0 6px; opacity: 0.7; }
+
+/* ---------------------------------------------------------------------------
    INFO tab: interactive glossary. A long list of paragraphs is unreadable in a
    narrow panel, so this is search + chips + one open term at a time.
 --------------------------------------------------------------------------- */

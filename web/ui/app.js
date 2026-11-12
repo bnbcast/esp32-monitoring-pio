@@ -818,14 +818,9 @@ if (!KEY) {
   // On demand only. A failure here leaves the live map completely untouched:
   // no console error, no rejected promise, just a status line in the panel.
   let histMinutes = 1440;
-
-  function kmBetween(a, b) {
-    const R = 6371, rad = Math.PI / 180;
-    const dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
-    const s = Math.sin(dLat / 2) ** 2 +
-      Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) ** 2;
-    return 2 * R * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
-  }
+  let histAll = [];          // every point in the loaded window
+  let histSessions = [];     // SESSIONS.group(histAll)
+  let histSelected = -1;     // index into histSessions, -1 = whole window
 
   function setHistFields(points, km, gap, windowText, statusText) {
     if ($('histPoints')) $('histPoints').textContent = points;
@@ -861,11 +856,23 @@ if (!KEY) {
     }
 
     const pts = Array.isArray(body && body.points) ? body.points : [];
-    let km = 0, maxGap = 0;
+
+    // Timeline: one row per run of fixes with no gap longer than
+    // SESSIONS.DEFAULT_GAP_S. The whole window stays the default drawing, so
+    // pressing 1 h / 6 h / 24 h behaves exactly as before.
+    histAll = pts;
+    histSessions = SESSIONS.group(pts);
+    histSelected = -1;
+
+    // Distance is the sum of the sessions, not the straight line between them:
+    // joining two stints five hours apart would invent kilometres the vehicle
+    // never drove (6.13 km instead of 1.59 km on the probe fixture).
+    const km = SESSIONS.summarize(histSessions).distKm;
+
+    let maxGap = 0;
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1], b = pts[i];
       if (!a || !b) continue;
-      km += kmBetween([a[1], a[2]], [b[1], b[2]]);
       const gap = b[0] - a[0];
       if (gap > maxGap) maxGap = gap;
     }
@@ -873,12 +880,14 @@ if (!KEY) {
     // report its own sample interval as an outage.
     if (typeof body.maxGap === 'number') maxGap = body.maxGap;
 
+    // Local, matching the timeline rows and the footer clock.
     let windowText = '--';
     if (pts.length) {
-      const t0 = new Date(pts[0][0] * 1000).toISOString().slice(11, 16);
-      const t1 = new Date(pts[pts.length - 1][0] * 1000).toISOString().slice(11, 16);
-      windowText = `${t0} - ${t1} UTC`;
+      windowText = `${SESSIONS.fmtClock(pts[0][0])} - ` +
+                   `${SESSIONS.fmtClock(pts[pts.length - 1][0])} local`;
     }
+
+    renderTimeline();
 
     const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
     let status = 'nothing stored in this window';
@@ -896,6 +905,94 @@ if (!KEY) {
       windowText,
       status
     );
+  }
+
+  // Rows are real buttons so they are keyboard-reachable; the text is set with
+  // textContent, never innerHTML, because it comes from stored device data.
+  function renderTimeline() {
+    const list = $('histList');
+    if (!list) return;
+    const nowTs = Math.floor(Date.now() / 1000);
+    list.textContent = '';
+
+    if (!histSessions.length) {
+      const empty = document.createElement('p');
+      empty.className = 'hist-empty';
+      empty.textContent = 'no stored sessions in this window';
+      list.appendChild(empty);
+    } else {
+      let day = '';
+      histSessions.forEach((s, i) => {
+        const key = SESSIONS.dayKey(s.start);
+        if (key !== day) {
+          day = key;
+          const head = document.createElement('div');
+          head.className = 'hist-day';
+          head.textContent = SESSIONS.fmtDay(s.start, nowTs);
+          list.appendChild(head);
+        }
+
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'hist-session' + (i === histSelected ? ' active' : '');
+        row.dataset.i = String(i);
+        row.setAttribute('aria-pressed', i === histSelected ? 'true' : 'false');
+
+        const time = document.createElement('span');
+        time.className = 'hs-time';
+        time.textContent = SESSIONS.fmtClock(s.start) + ' - ' + SESSIONS.fmtClock(s.end);
+
+        const dur = document.createElement('span');
+        dur.className = 'hs-dur';
+        dur.textContent = SESSIONS.fmtDuration(s.seconds);
+
+        const meta = document.createElement('span');
+        meta.className = 'hs-meta';
+        meta.textContent = `${s.distKm.toFixed(2)} km · ${Math.round(s.maxKmh)} km/h max · ${s.count} pts`;
+
+        row.append(time, dur, meta);
+        list.appendChild(row);
+      });
+    }
+
+    const sum = $('histSummary');
+    if (sum) {
+      if (!histSessions.length) {
+        sum.textContent = 'nothing stored in this window';
+      } else {
+        const t = SESSIONS.summarize(histSessions);
+        sum.textContent = `${t.count} session${t.count === 1 ? '' : 's'} · ` +
+          `${t.distKm.toFixed(2)} km · ${SESSIONS.fmtDuration(t.seconds)}`;
+      }
+    }
+  }
+
+  // Tap a row to draw just that stint; tap it again to go back to the full
+  // window. The map is only touched here, so a bad row can never blank the live
+  // trail or the current view.
+  function selectSession(i) {
+    if (!(i >= 0 && i < histSessions.length)) return;
+    histSelected = (i === histSelected) ? -1 : i;
+    renderTimeline();
+
+    const s = histSelected >= 0 ? histSessions[histSelected] : null;
+    const pts = s ? s.points : histAll;
+    const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
+    if (s && typeof MAP !== 'undefined' && MAP.fitPoints) MAP.fitPoints(pts);
+
+    if ($('histStatus')) {
+      $('histStatus').textContent = s
+        ? `session ${histSelected + 1} of ${histSessions.length}, drawn as ${drawn} line(s)`
+        : `whole window, drawn as ${drawn} line(s)`;
+    }
+  }
+
+  // Delegated: the rows are rebuilt on every load and every selection.
+  if ($('histList')) {
+    $('histList').addEventListener('click', ev => {
+      const row = ev.target && ev.target.closest ? ev.target.closest('.hist-session') : null;
+      if (row) selectSession(Number(row.dataset.i));
+    });
   }
 
   // ---- Init map -----------------------------------------------------------

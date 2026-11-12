@@ -49,7 +49,7 @@ jobs:
             node --check "$f"
           done
       - name: Unit tests
-        run: node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/ui.test.js
+        run: node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/sessions.test.js test/ui.test.js
 
   worker:
     name: History API checks

@@ -4,7 +4,7 @@
   "description": "ESP32 EV distance tracker with MQTT dashboard",
   "scripts": {
     "dev": "cd dev && node server.js",
-    "test": "node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/ui.test.js",
+    "test": "node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/sessions.test.js test/ui.test.js",
     "watch": "node dev/mqtt-watch.mjs",
     "capture": "node dev/mqtt-watch.mjs --out test/fixtures/capture.jsonl --dur 600000",
     "prod": "pio run -e esp32-mqtt-simple -t upload && git add web/ && git commit -m \"Deploy frontend\" && git push origin HEAD"

@@ -1195,6 +1195,37 @@ const MAP = (function () {
     if (src) src.setData({ type: "FeatureCollection", features: [] });
   }
 
+  // Frames the selected session. Without this, picking a 400 m stint out of a
+  // 24 h window leaves the camera where it was and the line is a dash in the
+  // corner, which reads as "nothing happened".
+  function fitPoints(points, opts) {
+    if (!map || !mapReady || !Array.isArray(points) || !points.length) return false;
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, n = 0;
+    for (const p of points) {
+      const lat = Number(p && p[1]), lng = Number(p && p[2]);
+      if (!isFinite(lat) || !isFinite(lng)) continue;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+      n++;
+    }
+    if (n === 0) return false;
+
+    const pad = (opts && opts.padding) || 60;
+    const maxZoom = (opts && opts.maxZoom) || 17;
+    if (n === 1) {
+      map.easeTo({ center: [maxLng, maxLat], zoom: 16, duration: 600 });
+      return true;
+    }
+    // A single point (parked, or a 1-fix session) has no extent: fitBounds on
+    // identical corners zooms to the max, so that case is handled above.
+    map.fitBounds([[minLng, minLat], [maxLng, maxLat]],
+      { padding: pad, maxZoom, duration: 700 });
+    return true;
+  }
+
   // ---- public API ---------------------------------------------------------
   return {
     create,
@@ -1211,6 +1242,7 @@ const MAP = (function () {
     clearTrail,
     setHistory,
     clearHistory,
+    fitPoints,
     getTrailDistance: () => trailDistM,
     getTrailPoints: () => trailCoords.length,
     isStopped: () => stopped,
