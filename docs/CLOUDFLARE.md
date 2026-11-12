@@ -51,12 +51,19 @@ than 365 days and records the timestamp in the `meta` table (key `retention`).
 That is two small statements plus one indexed `DELETE` per day, and a failed
 purge resets the marker instead of failing the ingest.
 
-Upgrading an existing database needs the new table once:
+Upgrading an existing database is a migration, not a schema re-run: `schema.sql`
+uses `CREATE TABLE IF NOT EXISTS`, so on a live table it silently keeps the old
+columns. Apply `migrations/2026-11-laps-lean.sql` once, **before** deploying the
+worker that reads the new ones:
 
 ```powershell
 cd worker
-npx wrangler@4 d1 execute race-tracker --remote --file=schema.sql
+npx wrangler@4 d1 execute race-tracker --remote --file=migrations/2026-11-laps-lean.sql
 ```
+
+That file adds `fixes.roll`, `fixes.pitch` and the `laps` table. It is not
+idempotent on purpose: `ALTER TABLE ADD COLUMN` fails on a second run, which is
+a clearer signal than a migration that silently does nothing.
 
 Verified in production: seeded a 400-day-old row, posted one batch, got
 `"retention":1`, the old row disappeared from `/history`, and the next batch

@@ -844,6 +844,7 @@ if (!KEY) {
   let histMinutes = 1440;
   let histAll = [];          // every point in the loaded window
   let histSessions = [];     // SESSIONS.group(histAll)
+  let histLaps = [];         // [[ts, n, dur_ms, best_ms], ...] from /history
   let histSelected = -1;     // index into histSessions, -1 = whole window
 
   function setHistFields(points, km, gap, windowText, statusText) {
@@ -886,6 +887,7 @@ if (!KEY) {
     // pressing 1 h / 6 h / 24 h behaves exactly as before.
     histAll = pts;
     histSessions = SESSIONS.group(pts);
+    histLaps = Array.isArray(body.laps) ? body.laps : [];
     histSelected = -1;
 
     // Distance is the sum of the sessions, not the straight line between them:
@@ -912,6 +914,7 @@ if (!KEY) {
     }
 
     renderTimeline();
+    renderLaps();
 
     const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
     let status = 'nothing stored in this window';
@@ -921,6 +924,18 @@ if (!KEY) {
       // points, so say so: "24 h" that only covers two hours would be a lie.
       if (body.sampled) status += ` (1 of ${body.step} points, ${body.total} total)`;
       if (body.truncated) status += ', truncated at 5000';
+    }
+
+    // Quality and lean are per window, not per session: they describe what the
+    // trail above is worth, and stay visible while a session is selected.
+    const q = SESSIONS.quality(pts);
+    if ($('histQuality')) {
+      $('histQuality').textContent = pts.length
+        ? `hdop ${q.avg.toFixed(2)} · ${q.badPct.toFixed(0)}% poor`
+        : '--';
+    }
+    if ($('histLean')) {
+      $('histLean').textContent = pts.length ? SESSIONS.maxLean(pts).toFixed(1) : '--';
     }
     setHistFields(
       String(body.count != null ? body.count : pts.length),
@@ -991,6 +1006,114 @@ if (!KEY) {
     }
   }
 
+  // One chip per lap the device logged. The counter comes from the tracker, so
+  // this is "laps the board saw", not a shape guessed from the trail. Selecting
+  // a session narrows the list to that stint.
+  function renderLaps() {
+    const box = $('histLaps');
+    if (!box) return;
+    box.textContent = '';
+
+    const s = histSelected >= 0 ? histSessions[histSelected] : null;
+    const list = s ? SESSIONS.lapsIn(histLaps, s.start, s.end) : histLaps;
+    const t = SESSIONS.lapSummary(list);
+
+    if (!t.count) {
+      const empty = document.createElement('span');
+      empty.className = 'lap-empty';
+      empty.textContent = s ? 'no laps logged in this session'
+                            : 'no laps logged in this window';
+      box.appendChild(empty);
+      return;
+    }
+
+    const head = document.createElement('span');
+    head.className = 'lap-head';
+    head.textContent = `${t.count} lap${t.count === 1 ? '' : 's'} · ` +
+      `best ${SESSIONS.fmtLap(t.bestMs)} s · last ${SESSIONS.fmtLap(t.lastMs)} s`;
+    box.appendChild(head);
+
+    for (const l of list) {
+      const dur = Number(l[2]);
+      const chip = document.createElement('span');
+      chip.className = 'lap-chip';
+
+      const n = document.createElement('b');
+      n.textContent = 'L' + Number(l[1]);
+      const v = document.createElement('span');
+      v.textContent = SESSIONS.fmtLap(dur) + ' s';
+      chip.append(n, v);
+
+      const d = SESSIONS.fmtDelta(dur - t.bestMs);
+      if (d) {
+        const dd = document.createElement('i');
+        dd.className = dur > t.bestMs ? 'slow' : 'fast';
+        dd.textContent = d;
+        chip.appendChild(dd);
+      }
+
+      // The device timestamps a lap with the fix that carried the new counter,
+      // so local time here matches the timeline rows.
+      chip.title = new Date(Number(l[0]) * 1000).toLocaleTimeString();
+      box.appendChild(chip);
+    }
+  }
+
+  // ---- export --------------------------------------------------------------
+  // Built from the points already in memory. Exporting must not depend on the
+  // history host still being reachable seconds after the fetch that loaded it.
+  function exportPoints() {
+    const s = histSelected >= 0 ? histSessions[histSelected] : null;
+    return s ? s.points : histAll;
+  }
+
+  function stampName(ext) {
+    const pts = exportPoints();
+    const first = pts.length ? pts[0][0] : Math.floor(Date.now() / 1000);
+    const d = new Date(Number(first) * 1000);
+    const p = n => String(n).padStart(2, '0');
+    return `race-tracker-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+           `-${p(d.getHours())}${p(d.getMinutes())}.${ext}`;
+  }
+
+  function download(text, name, type) {
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoking straight away cancels the save in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  function exportHistory(kind) {
+    const pts = exportPoints();
+    if (!pts.length) {
+      if ($('histStatus')) $('histStatus').textContent = 'nothing to export in this window';
+      return;
+    }
+    const name = stampName(kind === 'gpx' ? 'gpx' : 'csv');
+    if (kind === 'gpx') {
+      // The track name inside the file is the label, not the file name.
+      download(SESSIONS.toGpx(pts, name.replace(/\.gpx$/, '')), name, 'application/gpx+xml');
+    } else {
+      download(SESSIONS.toCsv(pts), name, 'text/csv');
+    }
+    if ($('histStatus')) {
+      $('histStatus').textContent = `exported ${pts.length} points as ${name}`;
+    }
+  }
+
+  if ($('btnExportGpx')) {
+    $('btnExportGpx').addEventListener('click', () => exportHistory('gpx'));
+  }
+  if ($('btnExportCsv')) {
+    $('btnExportCsv').addEventListener('click', () => exportHistory('csv'));
+  }
+
   // Tap a row to draw just that stint; tap it again to go back to the full
   // window. The map is only touched here, so a bad row can never blank the live
   // trail or the current view.
@@ -998,6 +1121,7 @@ if (!KEY) {
     if (!(i >= 0 && i < histSessions.length)) return;
     histSelected = (i === histSelected) ? -1 : i;
     renderTimeline();
+    renderLaps();
 
     const s = histSelected >= 0 ? histSessions[histSelected] : null;
     const pts = s ? s.points : histAll;

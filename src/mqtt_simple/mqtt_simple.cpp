@@ -118,6 +118,10 @@
 #define GPS_ODO_MIN_STEP_M 2.0f   // anchor-to-fix distance that beats jitter
 #define GPS_ODO_SLACK_M    10.0f  // allowed beyond speed x time (position noise)
 #define GPS_ODO_MAX_STEP_M 60.0f  // hard ceiling, still 216 km/h at 1 Hz
+// Lifetime total: gpsDistTotalM lives in RAM, so a reboot used to reset the
+// number the dashboard calls dist_m. One NVS write per 500 m costs nothing
+// (a 100 km day is 200 writes) and bounds the loss to half a kilometre.
+#define ODO_SAVE_STEP_M    500.0f
 
 // Physical plausibility clamps
 #define GYRO_MAX_DPS  500.0f         // MPU6050 configured range is +-500 dps
@@ -255,6 +259,33 @@ static uint32_t bootCountInit() {
   prefs.putUInt("boot", bootCount);
   prefs.end();
   return bootCount;
+}
+
+// Lifetime odometer. gpsDistTotalM is RAM only, so every reboot used to reset
+// the number the dashboard shows as dist_m. Restore it at boot and write it
+// back every ODO_SAVE_STEP_M; a half kilometre of loss per reboot is worth not
+// burning flash cycles on every fix.
+float odoSavedM = 0.0f;
+
+static void odoLoad() {
+  Preferences prefs;
+  if (!prefs.begin("odo", true)) return;
+  const float m = prefs.getFloat("m", 0.0f);
+  prefs.end();
+  // Reject junk rather than publish a 4-million-kilometre lifetime.
+  if (m > 0.0f && m < 1.0e7f) {
+    gpsDistTotalM = m;
+    odoSavedM = m;
+  }
+}
+
+static void odoSaveIfNeeded() {
+  if (fabsf(gpsDistTotalM - odoSavedM) < ODO_SAVE_STEP_M) return;
+  Preferences prefs;
+  if (!prefs.begin("odo", false)) return;
+  prefs.putFloat("m", gpsDistTotalM);
+  prefs.end();
+  odoSavedM = gpsDistTotalM;
 }
 
 // A hang in Wi-Fi/MQTT used to be silent: the board stayed powered, published
@@ -1362,6 +1393,13 @@ void publishData() {
     hf.hdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.0f;
     hf.sats = (uint8_t)gps.satellites.value();
     hf.dist_m = gpsDistTotalM;
+    // Lap and attitude travel with the fix: the server logs a lap row when
+    // lap_n changes and keeps a lean trace per point.
+    hf.roll = roll;
+    hf.pitch = pitch;
+    hf.lap_n = lapCount;
+    hf.lap_last_ms = lapLastMs;
+    hf.lap_best_ms = lapBestMs;
     historyEnqueue(hf);
   }
 #endif
@@ -1720,6 +1758,7 @@ void mqtt_simple_setup() {
   // the power-on defaults when nothing answers on the TX pin.
   gpsUbxConfigure();
   gpsLoadGates();
+  odoLoad();
   gm.lastMs = millis();
 
 #if VIEWER_MODE == 0
@@ -2028,6 +2067,7 @@ void mqtt_simple_loop() {
       }
     }
   }
+  odoSaveIfNeeded();
 
   updateMotion();
 

@@ -25,6 +25,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 | W6 | **HIST tab as a timeline** - sessions grouped from stored fixes, tap to draw and frame one stint | **done 2026-11-12** | `test/sessions.test.js` 16/16, `dev/check-timeline.mjs` PASS |
 | W7 | **Trackpad camera** - horizontal two-finger swipe rotates, every press releases the camera lock | **done 2026-11-12** | `dev/check-camera.mjs` PASS |
 | W8 | **MPU 3D attitude** - software-projected board on the MPU tab | **done 2026-11-12** | `test/mpu3d.test.js` 13/13, `dev/check-mpu3d.mjs` PASS |
+| W9 | **Session log** - lap rows, GPX/CSV export, lean trace, HDOP overlay, lifetime odometer | **done 2026-11-12**, migration before deploy | `npm test` 103/103, `worker/test` 17/17, `dev/check-laps-export.mjs` PASS, `pio run` SUCCESS |
 
 ## W1 — Stabilize (this branch)
 
@@ -210,13 +211,31 @@ Every ACS712 reference is gone: ADC pin, calibration, `amps`/`peakA`, the payloa
 block, the console line, the `z` key, the tab, the pill, the graph, the glossary
 and the tests.
 
+## W9 — Session log, laps, lean, export (2026-11-12)
+
+One frame already travels from the board to D1, so all six requested items ride
+on it instead of adding a second stream.
+
+| Item | Decision |
+|---|---|
+| Lap log | the frame carries `lap_n` / `lap_last_ms` / `lap_best_ms`; ingest writes one `laps` row per counter change, keyed `(device, boot, n)` so a retry is free |
+| GPX / CSV | built in the browser from the points already fetched; no endpoint, no host, works offline once the panel is loaded |
+| Lean in history | `roll` and `pitch` are columns on `fixes`; `/history` points grow to `[ts, lat, lon, kmh, cog, hdop, roll, pitch, boot]` |
+| Quality overlay | `hdop > 3` pairs are a red line over the grey trail, and the panel reports average HDOP plus `% poor` |
+| Lifetime odometer | NVS `odo/m`, restored at boot, written every 500 m; a reboot loses at most half a kilometre |
+| Event log | no duplicate stream: laps are the events, derived from stored frames |
+
+Order of release: apply `worker/migrations/2026-11-laps-lean.sql` **first**,
+then deploy the worker, then publish the page. The worker tolerates a database
+without the lap table (positions still store, `/history` still answers), but the
+migration itself is not idempotent and must not be re-run.
+
 ## Still open
 
 | Item | Why it is open |
 |---|---|
 | LED wiring | firmware now handles both polarities (`y`, saved) and `d` names each LED, but nobody has watched `only BLUE` yet; the answer picks rewire vs `y`: blue only = correct, white+red = inverted, all three = shorted signal legs |
 | Flash + outdoor check | firmware compiled but the board is not on USB; needs `boot #n` increment, a 3D fix, TTFF and hold verification |
-| GPS TX wire | confirmed missing by the new probe: boot prints `UBX: no reply on GPIO 33 - wire module RX to it`; 5 Hz and the UBX options need that wire |
 | HDOP 2.0 vs 4.0 | the live gate stays 5/4.0 until one track session reports `tight n/N (%)`; near 0 on a clean track means the strict gate is free, double digits means it costs segments |
 | 60-minute soak | restarted after the GPS/lap change so the window describes the final binary; needs the board idle on USB |
 | Parked + drive captures | needs the vehicle outdoors; the Worker rules are covered by 15 tests, but real wander radius is unmeasured |

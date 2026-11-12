@@ -15,11 +15,13 @@ const KEY = 'test-key-0123456789abcdef0123456789abcdef';
 
 function fakeD1() {
   const rows = [];
+  const laps = [];
   const meta = new Map();
   let lastId = 0;
 
   const db = {
     rows,
+    laps,
     meta,
     prepare(sql) {
       // Mirror real D1: bind() returns a NEW statement; mutating one and
@@ -75,6 +77,15 @@ function fakeD1() {
           throw new Error('run: ' + sql);
         },
         async all() {
+          if (sql.includes('FROM laps')) {
+            const [device, from, to] = args;
+            const out = laps
+              .filter(l => l.device === device && l.ts >= from && l.ts <= to)
+              .sort((a, b) => a.ts - b.ts)
+              .slice(0, 500)
+              .map(l => ({ ts: l.ts, n: l.n, dur_ms: l.dur_ms, best_ms: l.best_ms }));
+            return { results: out };
+          }
           if (sql.includes('ROW_NUMBER() OVER')) {
             const [device, from, to, step, limit] = args;
             const mine = rows
@@ -84,22 +95,29 @@ function fakeD1() {
             for (let i = 0; i < mine.length && kept.length < limit; i++) {
               if (i % step === 0) kept.push(mine[i]);
             }
-            return { results: kept.map(r => ({ ts: r.ts, lat: r.lat, lon: r.lon, kmh: r.kmh, cog: r.cog, hdop: r.hdop })) };
+            return { results: kept.map(r => ({ ts: r.ts, lat: r.lat, lon: r.lon, kmh: r.kmh, cog: r.cog, hdop: r.hdop, roll: r.roll, pitch: r.pitch, boot: r.boot })) };
           }
-          if (!sql.includes('SELECT ts, lat, lon, kmh, cog, hdop FROM fixes')) throw new Error('all: ' + sql);
+          if (!sql.includes('FROM fixes')) throw new Error('all: ' + sql);
           const [device, from, to, limit] = args;
           const out = rows
             .filter(r => r.device === device && r.ts >= from && r.ts <= to)
             .sort((a, b) => a.ts - b.ts)
             .slice(0, limit)
-            .map(r => ({ ts: r.ts, lat: r.lat, lon: r.lon, kmh: r.kmh, cog: r.cog, hdop: r.hdop }));
+            .map(r => ({ ts: r.ts, lat: r.lat, lon: r.lon, kmh: r.kmh, cog: r.cog, hdop: r.hdop, roll: r.roll, pitch: r.pitch, boot: r.boot }));
           return { results: out };
         },
         _insert() {
-          // device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, received
-          const [device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, received] = args;
+          if (sql.includes('INSERT OR IGNORE INTO laps')) {
+            // device, boot, n, ts, dur_ms, best_ms, received
+            const [device, boot, n, ts, dur, best, received] = args;
+            if (laps.some(l => l.device === device && l.boot === boot && l.n === n)) return { meta: { changes: 0 } };
+            laps.push({ device, boot, n, ts, dur_ms: dur, best_ms: best, received });
+            return { meta: { changes: 1 } };
+          }
+          // device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, roll, pitch, received
+          const [device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, roll, pitch, received] = args;
           if (rows.some(r => r.device === device && r.boot === boot && r.seq === seq)) return { meta: { changes: 0 } };
-          rows.push({ id: ++lastId, device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, received });
+          rows.push({ id: ++lastId, device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, roll, pitch, received });
           return { meta: { changes: 1 } };
         }
       });

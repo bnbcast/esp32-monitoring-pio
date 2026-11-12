@@ -178,3 +178,98 @@ test('the window distance is the session total, not the gaps between them', () =
   // 1.59 km of driving before this.
   assert.ok(!/kmBetween/.test(APP), 'no cross-gap chord may be added to the total');
 });
+
+// ---- laps, quality, lean --------------------------------------------------
+
+test('laps are filtered to the session window', () => {
+  const laps = [[BASE + 10, 1, 60000, 60000], [BASE + 70, 2, 59000, 59000],
+                [BASE + 500, 3, 61000, 59000]];
+  assert.deepStrictEqual(S.lapsIn(laps, BASE, BASE + 100).map(l => l[1]), [1, 2]);
+  assert.deepStrictEqual(S.lapsIn(null, 0, 1), []);
+  assert.deepStrictEqual(S.lapsIn([[BASE, 1, 0, 0], [BASE, 'x', 5, 5]], BASE, BASE + 1), []);
+});
+
+test('lap summary counts laps, best and last, with a delta', () => {
+  const list = [[BASE, 1, 61000, 61000], [BASE + 50, 2, 59000, 59000],
+                [BASE + 99, 3, 60500, 59000]];
+  assert.deepStrictEqual(S.lapSummary(list),
+    { count: 3, bestMs: 59000, lastMs: 60500, deltaMs: 1500 });
+  assert.deepStrictEqual(S.lapSummary([]),
+    { count: 0, bestMs: 0, lastMs: 0, deltaMs: 0 });
+  assert.strictEqual(S.fmtLap(61234), '61.23');
+  assert.strictEqual(S.fmtLap(0), '--');
+});
+
+test('delta is signed, and empty on the best lap', () => {
+  assert.strictEqual(S.fmtDelta(1500), '+1.50');
+  assert.strictEqual(S.fmtDelta(-500), '-0.50');
+  assert.strictEqual(S.fmtDelta(0), '');
+  assert.strictEqual(S.fmtDelta(NaN), '');
+});
+
+test('quality uses hdop at index 5 and ignores missing values', () => {
+  const pts = [
+    [BASE, 0, 0, 10, 0, 0.8],
+    [BASE + 1, 0, 0, 10, 0, 2.2],
+    [BASE + 2, 0, 0, 10, 0, 5.0],
+    [BASE + 3, 0, 0, 10, 0, null],
+    [BASE + 4, 0, 0, 10]
+  ];
+  const q = S.quality(pts);
+  assert.strictEqual(q.n, 3, 'only finite positive hdop counts');
+  assert.ok(Math.abs(q.avg - 8 / 3) < 1e-9);
+  assert.strictEqual(q.bad, 1);
+  assert.ok(Math.abs(q.badPct - 100 / 3) < 1e-9);
+  assert.deepStrictEqual(S.quality(null), { n: 0, bad: 0, avg: 0, badPct: 0 });
+});
+
+test('max lean reads roll and pitch at 6 and 7', () => {
+  const pts = [[BASE, 0, 0, 0, 0, 0.9, -4.5, 1.0],
+               [BASE, 0, 0, 0, 0, 0.9, 2.0, -12.25]];
+  assert.strictEqual(S.maxLean(pts), 12.25);
+  assert.strictEqual(S.maxLean([[BASE, 0, 0, 0, 0, 1]]), 0);
+  assert.strictEqual(S.maxLean(null), 0);
+});
+
+// ---- export ---------------------------------------------------------------
+
+test('GPX is 1.1, escapes the name and keeps every usable point', () => {
+  const gpx = S.toGpx([
+    [BASE, -6.9, 107.6, 30, 90, 0.8, 1, 2],
+    [BASE + 1, -6.9001, 107.6001, 31, 91, 0.9, 3, 4],
+    ['x', 0, 0]
+  ], 'a & b <c>');
+  assert.match(gpx, /^<\?xml version="1.0" encoding="UTF-8"\?>/);
+  assert.match(gpx, /<gpx version="1.1"/);
+  assert.match(gpx, /a &amp; b &lt;c&gt;/);
+  assert.match(gpx, /<trkpt lat="-6\.900000" lon="107\.600000">/);
+  assert.strictEqual((gpx.match(/<trkpt /g) || []).length, 2);
+  assert.ok(!/<speed>/.test(gpx), 'speed is not a GPX 1.1 trkpt element');
+});
+
+test('CSV has a header, one row per point and blank for missing fields', () => {
+  const csv = S.toCsv([
+    [BASE, -6.9, 107.6, 30, 90, 0.8, 1.5, null],
+    [BASE + 1, -6.9001, 107.6001, 31]
+  ]);
+  const lines = csv.trim().split('\n');
+  assert.strictEqual(lines[0], 'ts,iso,lat,lon,kmh,cog,hdop,roll,pitch');
+  assert.strictEqual(lines.length, 3);
+  assert.match(lines[1], /^1700000000,\d{4}-\d{2}-\d{2}T/);
+  assert.match(lines[1], /,-6\.900000,107\.600000,30,90,0\.8,1\.5,$/);
+  assert.match(lines[2], /,31,,,,$/, 'missing samples are empty, not 0');
+});
+
+test('laps, quality, lean and export controls exist in the panel', () => {
+  for (const id of ['histLaps', 'histQuality', 'histLean',
+                    'btnExportGpx', 'btnExportCsv']) {
+    assert.ok(HTML.includes(`id="${id}"`), `missing #${id}`);
+  }
+});
+
+test('the map draws a poor-fix overlay and clears it too', () => {
+  assert.match(MAPJS, /addSource\("historyPoor"/);
+  assert.match(MAPJS, /id: "history-poor"/);
+  const clear = MAPJS.slice(MAPJS.indexOf('function clearHistory('));
+  assert.match(clear.slice(0, 500), /getSource\("historyPoor"\)/);
+});

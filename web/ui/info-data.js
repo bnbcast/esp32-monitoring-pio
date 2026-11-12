@@ -124,6 +124,9 @@ window.INFO_GROUPS = [
       { "t": "Points", "d": "How many stored fixes are drawn for the window. The board records one per second while moving and one per 10 s while parked, and only when it has a fix. Wide windows are sampled by the server so they still cover the whole window; Status then says <b>1 of N points, T total</b>, where T is what is really stored." },
       { "t": "Distance", "d": "Sum of the straight lines between the drawn points, in km. Sampling cuts corners, so a sampled window can read slightly low." },
       { "t": "Max gap", "d": "The longest wait between two stored fixes in that window, measured on the raw data so sampling never fakes a gap. About 1 s while moving and about 10 s while parked are normal. Bigger means data was missing: no GPS, no internet, a reboot, or the board was off." },
+      { "t": "Max lean", "d": "The largest body tilt seen in the window: the bigger of roll and pitch reported by the MPU at any stored fix. Degrees. It is a bound, not a cornering limit; a pothole can spike one or two samples." },
+      { "t": "Quality", "d": "Average HDOP in the window and the share of fixes worse than 3.0, drawn as red on the map. About 1.0 is a good sky view, 3.0 is roughly 15 m of position error, 6.0 or more means the trail can wander." },
+      { "t": "Lap log", "d": "Lap rows the tracker logged when its finish-line counter moved. Each chip shows the lap number, its time in seconds, and how far it was off the best lap. Restarting the board resets the counter, so the log groups by session." },
       { "t": "Window", "d": "The exact UTC start and end the API answered with." },
       { "t": "Status (HIST)", "d": "What happened: loaded, sampled, truncated at the row cap, empty, or an error such as the API being unreachable." }
     ]

@@ -491,6 +491,28 @@ const MAP = (function () {
       }
     });
 
+    // Companion overlay for fixes the GPS itself did not trust (HDOP > 3,
+    // roughly worse than 15 m). Same geometry, red and thin, drawn just above
+    // the grey line so a shaky stretch is visible without hiding the route.
+    map.addSource("historyPoor", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] }
+    });
+    map.addLayer({
+      id: "history-poor",
+      type: "line",
+      source: "historyPoor",
+      layout: {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      paint: {
+        "line-color": "#ff3b1f",
+        "line-width": 2,
+        "line-opacity": 0.75
+      }
+    });
+
     // ---- Trail source (geojson) ----
     map.addSource("trail", {
       type: "geojson",
@@ -1195,11 +1217,17 @@ const MAP = (function () {
   function setHistory(points) {
     if (!map || !mapReady) return 0;
     const src = map.getSource("history");
+    const poor = map.getSource("historyPoor");
     if (!src) return 0;
 
     const feats = [];
+    const bad = [];
     let run = [];
+    let poorRun = [];
     let prev = null;
+    let prevPoor = false;
+    let prevCoord = null;
+
     const flush = () => {
       if (run.length > 1) feats.push({
         type: "Feature",
@@ -1208,20 +1236,51 @@ const MAP = (function () {
       });
       run = [];
     };
+    // The overlay is a set of short red runs, not the whole trail: only pairs
+    // that touch a fix with HDOP > 3 are flagged, so a good line stays grey.
+    const flushPoor = () => {
+      if (poorRun.length > 1) bad.push({
+        type: "Feature",
+        properties: {},
+        geometry: { type: "LineString", coordinates: poorRun }
+      });
+      poorRun = [];
+    };
 
     for (const p of points) {
       if (!Array.isArray(p) || p.length < 3) continue;
       const ts = Number(p[0]), lat = Number(p[1]), lng = Number(p[2]);
       if (!isFinite(ts) || !isFinite(lat) || !isFinite(lng)) continue;
       if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+      const hdop = Number(p[5]);
+      const isPoor = isFinite(hdop) && hdop > 3;
+
       if (prev && (ts - prev[0] > 600 ||
                    Math.abs(lat - prev[1]) > 0.02 ||
-                   Math.abs(lng - prev[2]) > 0.02)) flush();
+                   Math.abs(lng - prev[2]) > 0.02)) {
+        flush();
+        flushPoor();
+        prev = null;
+        prevPoor = false;
+        prevCoord = null;
+      }
       run.push([lng, lat]);
+      if (prev) {
+        if (prevPoor || isPoor) {
+          if (!poorRun.length) poorRun.push(prevCoord);
+          poorRun.push([lng, lat]);
+        } else {
+          flushPoor();
+        }
+      }
       prev = [ts, lat, lng];
+      prevPoor = isPoor;
+      prevCoord = [lng, lat];
     }
     flush();
+    flushPoor();
     src.setData({ type: "FeatureCollection", features: feats });
+    if (poor) poor.setData({ type: "FeatureCollection", features: bad });
     return feats.length;
   }
 
@@ -1229,6 +1288,8 @@ const MAP = (function () {
     if (!map || !mapReady) return;
     const src = map.getSource("history");
     if (src) src.setData({ type: "FeatureCollection", features: [] });
+    const poor = map.getSource("historyPoor");
+    if (poor) poor.setData({ type: "FeatureCollection", features: [] });
   }
 
   // Frames the selected session. Without this, picking a 400 m stint out of a

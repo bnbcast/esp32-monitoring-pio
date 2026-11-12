@@ -442,6 +442,42 @@ body.map-full .map-hud .hud-addr { display: none; }
 .hist-empty { font-size: 0.72rem; margin: 2px 0 6px; opacity: 0.7; }
 
 /* ---------------------------------------------------------------------------
+   Lap chips and the export row. A chip is a label, not a button: it reports
+   what the tracker logged, so it must not look pressable.
+--------------------------------------------------------------------------- */
+.hist-laps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.lap-head {
+  flex-basis: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+.lap-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 7px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.lap-chip b { font-weight: 700; }
+.lap-chip i { font-style: normal; font-size: 0.62rem; opacity: 0.75; }
+.lap-chip i.fast { color: #0a7d32; }
+.lap-chip i.slow { opacity: 0.6; }
+.lap-empty { font-size: 0.72rem; opacity: 0.7; }
+.hist-export { display: flex; gap: 6px; }
+
+/* ---------------------------------------------------------------------------
    INFO tab: interactive glossary. A long list of paragraphs is unreadable in a
    narrow panel, so this is search + chips + one open term at a time.
 --------------------------------------------------------------------------- */

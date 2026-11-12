@@ -29,6 +29,10 @@ struct HistoryFix {
   float lat, lng;
   float alt, kmh, cog, hdop, dist_m;
   uint8_t sats;
+  // Finish-line and IMU state at this fix. They travel with the frame so the
+  // server can log a lap row and a lean trace without a second request.
+  float    roll, pitch;
+  uint32_t lap_n, lap_last_ms, lap_best_ms;
 };
 
 struct HistoryStats {

@@ -125,8 +125,118 @@ const SESSIONS = (function () {
     return d.getDate() + " " + MONTHS[d.getMonth()];
   }
 
+  // ---- laps ----------------------------------------------------------------
+  // /history returns laps as [[ts, n, dur_ms, best_ms], ...]. A lap belongs to
+  // the session whose time window contains it: the timestamp is the fix that
+  // carried the new counter, so it is inside that session by construction.
+  function lapsIn(laps, startTs, endTs) {
+    const a = Number(startTs), b = Number(endTs);
+    return (Array.isArray(laps) ? laps : []).filter(l => {
+      if (!Array.isArray(l) || l.length < 3) return false;
+      const ts = Number(l[0]), n = Number(l[1]), dur = Number(l[2]);
+      return Number.isFinite(ts) && Number.isFinite(n) && Number.isFinite(dur) &&
+        dur > 0 && ts >= a && ts <= b;
+    });
+  }
+
+  // count, best, last and how far the last lap is off the best. Kept separate
+  // from rendering so node can check the arithmetic without a DOM.
+  function lapSummary(list) {
+    const out = { count: 0, bestMs: 0, lastMs: 0, deltaMs: 0 };
+    for (const l of (Array.isArray(list) ? list : [])) {
+      const dur = Number(l[2]);
+      if (!Number.isFinite(dur) || dur <= 0) continue;
+      out.count++;
+      out.lastMs = dur;
+      if (!out.bestMs || dur < out.bestMs) out.bestMs = dur;
+    }
+    out.deltaMs = out.count > 1 && out.bestMs ? out.lastMs - out.bestMs : 0;
+    return out;
+  }
+
+  function fmtLap(ms) {
+    const v = Number(ms);
+    if (!Number.isFinite(v) || v <= 0) return "--";
+    return (v / 1000).toFixed(2);
+  }
+
+  function fmtDelta(ms) {
+    const v = Number(ms);
+    if (!Number.isFinite(v) || v === 0) return "";
+    return (v > 0 ? "+" : "") + (v / 1000).toFixed(2);
+  }
+
+  // Largest |roll| or |pitch| in a point list. Points carry the attitude at
+  // index 6 and 7 (see /history); missing columns simply score 0.
+  function maxLean(points) {
+    let m = 0;
+    for (const p of (Array.isArray(points) ? points : [])) {
+      if (!Array.isArray(p)) continue;
+      for (const i of [6, 7]) {
+        const v = Math.abs(Number(p[i]));
+        if (Number.isFinite(v) && v > m) m = v;
+      }
+    }
+    return m;
+  }
+
+  // How much of this trail can be trusted: average HDOP and the share of
+  // points worse than 3.0 (roughly "worse than 15 m"). Cheap and honest.
+  function quality(points) {
+    let n = 0, bad = 0, sum = 0;
+    for (const p of (Array.isArray(points) ? points : [])) {
+      if (!Array.isArray(p)) continue;
+      const h = Number(p[5]);
+      if (!Number.isFinite(h) || h <= 0) continue;
+      n++; sum += h;
+      if (h > 3) bad++;
+    }
+    return { n, bad, avg: n ? sum / n : 0, badPct: n ? (bad / n) * 100 : 0 };
+  }
+
+  // ---- export --------------------------------------------------------------
+  // Built in the browser from points already fetched: no backend, no new host.
+  const isoUtc = ts => new Date(Number(ts) * 1000).toISOString();
+
+  const xmlEsc = s => String(s).replace(/[<>&"']/g,
+    c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" }[c]));
+
+  // GPX 1.1. Speed is not a trkpt element in 1.1 (it was in 1.0), so it is
+  // left out rather than written in the wrong namespace: a file that opens in
+  // QGIS and Google Earth is worth more than one carrying a rejected field.
+  function toGpx(points, name) {
+    const pts = (Array.isArray(points) ? points : []).filter(usable);
+    let out = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<gpx version="1.1" creator="esp32-race-tracker" ' +
+      'xmlns="http://www.topografix.com/GPX/1/1">\n' +
+      '  <trk><name>' + xmlEsc(name || "session") + '</name><trkseg>\n';
+    for (const p of pts) {
+      out += '    <trkpt lat="' + Number(p[1]).toFixed(6) +
+             '" lon="' + Number(p[2]).toFixed(6) + '">' +
+             '<time>' + isoUtc(p[0]) + '</time></trkpt>\n';
+    }
+    return out + '  </trkseg></trk>\n</gpx>\n';
+  }
+
+  function toCsv(points) {
+    const rows = ["ts,iso,lat,lon,kmh,cog,hdop,roll,pitch"];
+    const f = v => {
+      const n = Number(v);
+      return (v === null || v === undefined || v === "" || !Number.isFinite(n)) ? "" : n;
+    };
+    for (const p of (Array.isArray(points) ? points : [])) {
+      if (!usable(p)) continue;
+      rows.push([f(p[0]), isoUtc(p[0]),
+                 Number(p[1]).toFixed(6), Number(p[2]).toFixed(6),
+                 f(p[3]), f(p[4]), f(p[5]), f(p[6]), f(p[7])].join(","));
+    }
+    return rows.join("\n") + "\n";
+  }
+
   return { DEFAULT_GAP_S, group, summarize, distanceKm,
-           fmtClock, fmtDuration, dayKey, fmtDay };
+           fmtClock, fmtDuration, dayKey, fmtDay,
+           lapsIn, lapSummary, fmtLap, fmtDelta, maxLean, quality,
+           toGpx, toCsv };
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = SESSIONS;

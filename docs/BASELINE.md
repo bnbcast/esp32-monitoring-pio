@@ -570,6 +570,48 @@ wire.
 | `d > 2.0f` per fix | a 10 km/h car moves 0.55 m per fix, so every step failed the floor: **no distance at all below ~36 km/h** | distance is measured from an anchor fix and the anchor advances once 2 m of real travel is confirmed, at any fix rate |
 | `GPS_ODO_MAX_STEP_M 60` fixed | 60 m was 216 km/h at 1 Hz but 1080 km/h at 5 Hz - no gate | allowed = `1.5 * v * dt + 10 m`, clamped to 60 m, with `dt` the real spacing between counted fixes |
 
+## Session log, laps, lean and export (2026-11-12)
+
+Six things that were discussed were built together because they share one data
+path: the stored frame.
+
+| Feature | Where it lives | Contract |
+|---|---|---|
+| Lap log | worker + HIST tab | device sends `lap_n`, `lap_last_ms`, `lap_best_ms`; ingest writes one `laps` row when the counter changes; `/history` returns `laps: [[ts, n, dur_ms, best_ms], ...]` |
+| GPX / CSV export | browser only | built from the points already in memory, no backend and no new host |
+| Lean in history | firmware + worker + tab | `roll`, `pitch` added to `fixes`; `/history` points are now `[ts, lat, lon, kmh, cog, hdop, roll, pitch, boot]` |
+| Quality overlay | map + HIST | points with `hdop > 3` are drawn red on top of the grey history line; the panel shows average HDOP and `% poor` |
+| Lifetime odometer | firmware NVS | namespace `odo`, key `m`, written every 500 m (`ODO_SAVE_STEP_M`), restored at boot |
+| Event log | `laps` + existing history | no second event stream: laps are the events worth replaying, and they are derived from frames already stored |
+
+The `/history` point list grew from 6 to 9 elements. This is additive on
+purpose: every existing consumer indexes 0-5 and keeps working if the worker and
+the page are deployed out of step.
+
+### Migration order matters
+
+`worker/migrations/2026-11-laps-lean.sql` uses `ALTER TABLE ... ADD COLUMN`,
+which is not idempotent. Apply it **before** deploying the new worker:
+
+```
+npx wrangler@latest d1 execute race-tracker --remote \
+  --file=migrations/2026-11-laps-lean.sql
+```
+
+The worker is defensive anyway: the lap insert is wrapped in try/catch and the
+`/history` lap query too, so a database without the table still stores and
+serves positions. Losing the lap log is better than losing fixes, and a 503 on
+every ingest would make the board retry the same batch forever.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| Firmware build | `esp32-mqtt-simple` SUCCESS, RAM 16.3%, Flash 40.9% |
+| JS suite | 103/103 pass, including lap summary, quality, lean, GPX and CSV |
+| Worker suite | 17/17 pass against the in-memory D1, including lap de-duplication and 9-column history |
+| Browser probe | `dev/check-laps-export.mjs` PASS: 2 chips, `hdop 1.47 · 17% poor`, max lean 14.4, 1 red overlay line, GPX 24 points / 2374 B, CSV 24 rows / 1831 B, session selection narrows to 1 lap |
+
 ## Still needs the board
 
 1. ~~Flash `0dd61cd` + watchdog commit; confirm the two `task_wdt` error lines

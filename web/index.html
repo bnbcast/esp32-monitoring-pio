@@ -7,12 +7,12 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23ffe600' stroke='%23000' stroke-width='5'/%3E%3Ccircle cx='21' cy='25' r='6.5' fill='%23000'/%3E%3Ccircle cx='43' cy='25' r='6.5' fill='%23000'/%3E%3Cpath d='M17 41q15 13 30 0' fill='none' stroke='%23000' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/tokens.css?v=36">
-<link rel="stylesheet" href="css/base.css?v=36">
-<link rel="stylesheet" href="css/components.css?v=36">
-<link rel="stylesheet" href="css/layout.css?v=36">
-<link rel="stylesheet" href="css/map.css?v=36">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=36">
+<link rel="stylesheet" href="css/tokens.css?v=37">
+<link rel="stylesheet" href="css/base.css?v=37">
+<link rel="stylesheet" href="css/components.css?v=37">
+<link rel="stylesheet" href="css/layout.css?v=37">
+<link rel="stylesheet" href="css/map.css?v=37">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=37">
 <title>ESP32 // LIVE SENSORS</title>
 </head>
 <body class="locked">
@@ -250,11 +250,23 @@
           </div>
         </div>
         <div class="hud-card">
+          <h3>Laps</h3>
+          <div class="hist-laps" id="histLaps">
+            <span class="lap-empty">no laps loaded</span>
+          </div>
+          <div class="hist-export">
+            <button class="hist-btn" id="btnExportGpx" type="button">Export GPX</button>
+            <button class="hist-btn" id="btnExportCsv" type="button">Export CSV</button>
+          </div>
+        </div>
+        <div class="hud-card">
           <h3>Window</h3>
           <div class="hud-grid">
             <div class="hud-item"><div class="lbl">Points</div><div class="val" id="histPoints">--</div><div class="lbl"></div></div>
             <div class="hud-item"><div class="lbl">Distance</div><div class="val" id="histDist">--</div><div class="lbl">km</div></div>
             <div class="hud-item"><div class="lbl">Max gap</div><div class="val" id="histGap">--</div><div class="lbl">s</div></div>
+            <div class="hud-item"><div class="lbl">Max lean</div><div class="val" id="histLean">--</div><div class="lbl">deg</div></div>
+            <div class="hud-item wide"><div class="lbl">Quality</div><div class="val small" id="histQuality">--</div><div class="lbl"></div></div>
             <div class="hud-item wide"><div class="lbl">Window</div><div class="val small" id="histWindow">--</div><div class="lbl"></div></div>
             <div class="hud-item wide"><div class="lbl">Status</div><div class="val small" id="histStatus">tap HIST to load</div><div class="lbl"></div></div>
           </div>
@@ -300,14 +312,14 @@
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=36"></script>
-<script src="ui/guard.js?v=36"></script>
-<script src="ui/map.js?v=36"></script>
-<script src="ui/mqtt-mini.js?v=36"></script>
-<script src="ui/info-data.js?v=36"></script>
-<script src="ui/info.js?v=36"></script>
-<script src="ui/sessions.js?v=36"></script>
-<script src="ui/mpu3d.js?v=36"></script>
-<script src="ui/app.js?v=36"></script>
+<script src="vendor/maplibre-gl-csp.js?v=37"></script>
+<script src="ui/guard.js?v=37"></script>
+<script src="ui/map.js?v=37"></script>
+<script src="ui/mqtt-mini.js?v=37"></script>
+<script src="ui/info-data.js?v=37"></script>
+<script src="ui/info.js?v=37"></script>
+<script src="ui/sessions.js?v=37"></script>
+<script src="ui/mpu3d.js?v=37"></script>
+<script src="ui/app.js?v=37"></script>
 </body>
 </html>

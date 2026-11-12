@@ -87,6 +87,8 @@ async function ingest(request, env) {
   let lastStoredTs = anchor ? anchor.ts : null;
 
   const rows = [];
+  const lapRows = [];
+  const lapSeen = new Set();
   const rejected = [];
   let duplicates = 0;
 
@@ -102,6 +104,20 @@ async function ingest(request, env) {
         rows.push(f);
         lastStoredTs = f.ts;
       }
+
+      // A lap is a state change carried by the frame, not a stored point. Log
+      // one row the first time this lap number appears: the per-batch Set stops
+      // the 40 frames of the same lap from writing 40 rows, and INSERT OR
+      // IGNORE makes a retried batch harmless.
+      const ln = intOrNull(f.lap_n);
+      if (ln && ln > 0 && !lapSeen.has(ln)) {
+        lapSeen.add(ln);
+        const dur = intOrNull(f.lap_last_ms);
+        if (dur && dur > 0) {
+          lapRows.push({ n: ln, ts: f.ts, dur, best: intOrNull(f.lap_best_ms), boot: bootOf(f) });
+        }
+      }
+
       prev = { boot: bootOf(f), seq: f.seq, ts: f.ts, lat: g.lat, lon: g.lng };
     }
   }
@@ -109,17 +125,35 @@ async function ingest(request, env) {
   if (rows.length) {
     const stmt = env.DB.prepare(
       `INSERT OR IGNORE INTO fixes
-       (device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, received)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, roll, pitch, received)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     await env.DB.batch(rows.map(f => {
       const g = gpsOf(f);
       return stmt.bind(
         device, bootOf(f), f.seq, f.ts, f.up, g.lat, g.lng,
         numOrNull(g.alt), numOrNull(g.kmh), numOrNull(g.cog),
-        numOrNull(g.hdop), intOrNull(g.sats), numOrNull(g.dist_m), nowS
+        numOrNull(g.hdop), intOrNull(g.sats), numOrNull(g.dist_m),
+        numOrNull(f.roll), numOrNull(f.pitch), nowS
       );
     }));
+  }
+
+  // Laps are written separately so a database that has not run the migration
+  // yet still stores positions: losing the lap log is better than losing fixes
+  // (and the device would otherwise retry the same batch forever).
+  let laps = 0;
+  if (lapRows.length) {
+    try {
+      const stmt = env.DB.prepare(
+        `INSERT OR IGNORE INTO laps (device, boot, n, ts, dur_ms, best_ms, received)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      );
+      await env.DB.batch(lapRows.map(l => stmt.bind(device, l.boot, l.n, l.ts, l.dur, l.best, nowS)));
+      laps = lapRows.length;
+    } catch (e) {
+      laps = -1;                      // migration not applied yet
+    }
   }
 
   let retention = 'skipped';
@@ -136,6 +170,7 @@ async function ingest(request, env) {
     ok: true,
     received: frames.length,
     stored: rows.length,
+    laps,
     duplicates,
     rejected,
     retention
@@ -204,19 +239,31 @@ async function history(url, env) {
   let results;
   if (step === 1) {
     ({ results } = await env.DB.prepare(
-      `SELECT ts, lat, lon, kmh, cog, hdop FROM fixes
+      `SELECT ts, lat, lon, kmh, cog, hdop, roll, pitch, boot FROM fixes
        WHERE device = ? AND ts >= ? AND ts <= ? ORDER BY ts LIMIT ?`
     ).bind(device, from, to, limit).all());
   } else {
     // Every step-th row in time order. Keeps the shape (one real fix, not an
     // average of coordinates) and always includes the oldest point.
     ({ results } = await env.DB.prepare(
-      `SELECT ts, lat, lon, kmh, cog, hdop FROM (
-         SELECT ts, lat, lon, kmh, cog, hdop,
+      `SELECT ts, lat, lon, kmh, cog, hdop, roll, pitch, boot FROM (
+         SELECT ts, lat, lon, kmh, cog, hdop, roll, pitch, boot,
                 ROW_NUMBER() OVER (ORDER BY ts) AS rn
          FROM fixes WHERE device = ? AND ts >= ? AND ts <= ?
        ) WHERE rn % ? = 1 ORDER BY ts LIMIT ?`
     ).bind(device, from, to, step, limit).all());
+  }
+
+  // Laps in the same window. A missing table (migration not applied) must not
+  // break the map, so the whole query is optional.
+  let lapRows = [];
+  try {
+    ({ results: lapRows } = await env.DB.prepare(
+      `SELECT ts, n, dur_ms, best_ms FROM laps
+       WHERE device = ? AND ts >= ? AND ts <= ? ORDER BY ts LIMIT 500`
+    ).bind(device, from, to).all());
+  } catch (e) {
+    lapRows = [];
   }
 
   return json({
@@ -230,7 +277,9 @@ async function history(url, env) {
     sampled: step > 1,
     maxGap,
     truncated: step === 1 && results.length === limit,
-    points: results.map(r => [r.ts, r.lat, r.lon, r.kmh, r.cog, r.hdop])
+    points: results.map(r => [r.ts, r.lat, r.lon, r.kmh, r.cog, r.hdop,
+                              r.roll, r.pitch, r.boot]),
+    laps: lapRows.map(r => [r.ts, r.n, r.dur_ms, r.best_ms])
   });
 }
 
