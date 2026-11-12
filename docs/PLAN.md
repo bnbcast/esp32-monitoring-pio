@@ -25,7 +25,7 @@ version keeps four workstreams, each one shippable and testable on its own.
 | W6 | **HIST tab as a timeline** - sessions grouped from stored fixes, tap to draw and frame one stint | **done 2026-11-12** | `test/sessions.test.js` 16/16, `dev/check-timeline.mjs` PASS |
 | W7 | **Trackpad camera** - horizontal two-finger swipe rotates, every press releases the camera lock | **done 2026-11-12** | `dev/check-camera.mjs` PASS |
 | W8 | **MPU 3D attitude** - software-projected board on the MPU tab | **done 2026-11-12** | `test/mpu3d.test.js` 13/13, `dev/check-mpu3d.mjs` PASS |
-| W9 | **Session log** - lap rows, GPX/CSV export, lean trace, HDOP overlay, lifetime odometer | **done 2026-11-12**, migration before deploy | `npm test` 103/103, `worker/test` 17/17, `dev/check-laps-export.mjs` PASS, `pio run` SUCCESS |
+| W9 | **Session log** - lap rows, GPX/CSV export, lean trace, HDOP overlay, derived event log, lifetime odometer | **done 2026-11-12**, migration applied | `npm test` 105/105, `worker/test` 17/17, `dev/check-laps-export.mjs` PASS, `pio run` SUCCESS |
 
 ## W1 — Stabilize (this branch)
 
@@ -223,7 +223,7 @@ on it instead of adding a second stream.
 | Lean in history | `roll` and `pitch` are columns on `fixes`; `/history` points grow to `[ts, lat, lon, kmh, cog, hdop, roll, pitch, boot]` |
 | Quality overlay | `hdop > 3` pairs are a red line over the grey trail, and the panel reports average HDOP plus `% poor` |
 | Lifetime odometer | NVS `odo/m`, restored at boot, written every 500 m; a reboot loses at most half a kilometre |
-| Event log | no duplicate stream: laps are the events, derived from stored frames |
+| Event log | a chronological list in the tab, derived from stored fixes: reboots (boot changes), data gaps, HDOP transitions and laps. No second upload path or table to keep in sync |
 
 Order of release: apply `worker/migrations/2026-11-laps-lean.sql` **first**,
 then deploy the worker, then publish the page. The worker tolerates a database

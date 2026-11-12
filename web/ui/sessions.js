@@ -199,6 +199,55 @@ const SESSIONS = (function () {
     return { n, bad, avg: n ? sum / n : 0, badPct: n ? (bad / n) * 100 : 0 };
   }
 
+  // ---- event log -----------------------------------------------------------
+  // A chronological list of the things worth knowing when reading a window,
+  // derived from rows already stored. Nothing extra is recorded on the board:
+  // a reboot shows as a boot change, a hole in the data as a gap, a shaky
+  // stretch as an HDOP transition, and the laps arrive in their own array.
+  // That keeps one source of truth and no second upload path to keep in sync.
+  function isPoor(p) {
+    const h = Number(p && p[5]);
+    return Number.isFinite(h) && h > 3;
+  }
+
+  function events(points, laps) {
+    const out = [];
+    let prev = null;
+    for (const p of (Array.isArray(points) ? points : [])) {
+      if (!usable(p)) continue;
+      if (prev) {
+        const gap = Number(p[0]) - Number(prev[0]);
+        if (gap > DEFAULT_GAP_S) {
+          out.push({ ts: Number(prev[0]) + 1, kind: "gap",
+                     text: "no data for " + fmtDuration(gap) });
+        }
+        const b = p[8], pb = prev[8];
+        if (b !== null && b !== undefined && pb !== null && pb !== undefined &&
+            Number(b) !== Number(pb)) {
+          out.push({ ts: Number(p[0]), kind: "boot", text: "boot #" + b });
+        }
+        const poor = isPoor(p), wasPoor = isPoor(prev);
+        if (poor && !wasPoor) {
+          out.push({ ts: Number(p[0]), kind: "poor",
+                     text: "GPS quality poor, hdop " + Number(p[5]).toFixed(1) });
+        } else if (!poor && wasPoor) {
+          out.push({ ts: Number(p[0]), kind: "good", text: "GPS quality back under 3" });
+        }
+      }
+      prev = p;
+    }
+    for (const l of (Array.isArray(laps) ? laps : [])) {
+      if (!Array.isArray(l) || l.length < 3) continue;
+      const dur = Number(l[2]);
+      if (!Number.isFinite(dur) || dur <= 0) continue;
+      out.push({ ts: Number(l[0]), kind: "lap",
+                 text: "lap " + Number(l[1]) + " · " + fmtLap(dur) + " s" });
+    }
+    // Stable for events sharing a timestamp: the sort is on time only.
+    out.sort((a, b) => a.ts - b.ts);
+    return out;
+  }
+
   // ---- export --------------------------------------------------------------
   // Built in the browser from points already fetched: no backend, no new host.
   const isoUtc = ts => new Date(Number(ts) * 1000).toISOString();
@@ -240,7 +289,7 @@ const SESSIONS = (function () {
 
   return { DEFAULT_GAP_S, group, summarize, distanceKm,
            fmtClock, fmtDuration, dayKey, fmtDay,
-           lapsIn, lapSummary, fmtLap, fmtDelta, maxLean, quality,
+           lapsIn, lapSummary, fmtLap, fmtDelta, maxLean, quality, events,
            toGpx, toCsv };
 })();
 

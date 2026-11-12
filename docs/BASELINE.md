@@ -582,7 +582,7 @@ path: the stored frame.
 | Lean in history | firmware + worker + tab | `roll`, `pitch` added to `fixes`; `/history` points are now `[ts, lat, lon, kmh, cog, hdop, roll, pitch, boot]` |
 | Quality overlay | map + HIST | points with `hdop > 3` are drawn red on top of the grey history line; the panel shows average HDOP and `% poor` |
 | Lifetime odometer | firmware NVS | namespace `odo`, key `m`, written every 500 m (`ODO_SAVE_STEP_M`), restored at boot |
-| Event log | `laps` + existing history | no second event stream: laps are the events worth replaying, and they are derived from frames already stored |
+| Event log | HIST tab, derived from stored fixes | chronological reboots, data gaps, HDOP transitions and laps, merged by time; no extra board path, table or upload |
 
 The `/history` point list grew from 6 to 9 elements. This is additive on
 purpose: every existing consumer indexes 0-5 and keeps working if the worker and
@@ -608,9 +608,9 @@ every ingest would make the board retry the same batch forever.
 | Check | Result |
 |---|---|
 | Firmware build | `esp32-mqtt-simple` SUCCESS, RAM 16.3%, Flash 40.9% |
-| JS suite | 103/103 pass, including lap summary, quality, lean, GPX and CSV |
+| JS suite | 105/105 pass, including lap summary, quality, lean, events, GPX and CSV |
 | Worker suite | 17/17 pass against the in-memory D1, including lap de-duplication and 9-column history |
-| Browser probe | `dev/check-laps-export.mjs` PASS: 2 chips, `hdop 1.47 · 17% poor`, max lean 14.4, 1 red overlay line, GPX 24 points / 2374 B, CSV 24 rows / 1831 B, session selection narrows to 1 lap |
+| Browser probe | `dev/check-laps-export.mjs` PASS: 2 chips, `hdop 1.47 · 17% poor`, max lean 14.4, 1 red overlay line, 5 derived events (lap, gap, poor, recovery), GPX 24 points / 2370 B, CSV 24 rows / 1831 B, session selection narrows to 1 lap and 1 event |
 
 ## Still needs the board
 

@@ -233,6 +233,31 @@ test('max lean reads roll and pitch at 6 and 7', () => {
   assert.strictEqual(S.maxLean(null), null);
 });
 
+// ---- event log ------------------------------------------------------------
+
+test('the event log derives reboots, gaps, quality changes and laps', () => {
+  const pts = [
+    [BASE, 0, 0, 10, 0, 0.8, 1, 1, 7],
+    [BASE + 2, 0, 0, 10, 0, 0.9, 1, 1, 7],
+    [BASE + 200, 0, 0, 10, 0, 4.5, 1, 1, 7],   // 198 s hole, then poor
+    [BASE + 202, 0, 0, 10, 0, 5.0, 1, 1, 7],
+    [BASE + 204, 0, 0, 10, 0, 0.7, 1, 1, 8],   // recovered and rebooted
+    ['x', 0, 0]
+  ];
+  const ev = S.events(pts, [[BASE + 100, 1, 61000, 61000]]);
+  assert.deepStrictEqual(ev.map(e => e.kind),
+    ['gap', 'lap', 'poor', 'boot', 'good']);
+  assert.strictEqual(ev[0].ts, BASE + 3);
+  assert.match(ev[0].text, /no data for 3m 18s/);
+  assert.match(ev[2].text, /hdop 4\.5/);
+  assert.strictEqual(ev[1].ts, BASE + 100, 'laps are merged into the same log');
+});
+
+test('events are empty for no points and no laps', () => {
+  assert.deepStrictEqual(S.events([], []), []);
+  assert.deepStrictEqual(S.events(null, null), []);
+});
+
 // ---- export ---------------------------------------------------------------
 
 test('GPX is 1.1, escapes the name and keeps every usable point', () => {
@@ -263,7 +288,7 @@ test('CSV has a header, one row per point and blank for missing fields', () => {
 });
 
 test('laps, quality, lean and export controls exist in the panel', () => {
-  for (const id of ['histLaps', 'histQuality', 'histLean',
+  for (const id of ['histLaps', 'histQuality', 'histLean', 'histEvents',
                     'btnExportGpx', 'btnExportCsv']) {
     assert.ok(HTML.includes(`id="${id}"`), `missing #${id}`);
   }

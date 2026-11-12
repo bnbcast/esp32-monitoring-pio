@@ -113,6 +113,7 @@ await page.waitForFunction(() => {
 
 const chips = await page.$$eval('#histLaps .lap-chip', els => els.map(el => el.textContent.replace(/\s+/g, ' ').trim()));
 const head = (await page.textContent('#histLaps .lap-head')).trim();
+const evKinds = await page.$$eval('#histEvents .ev-row .ev-kind', els => els.map(el => el.textContent.trim()));
 const quality = (await page.textContent('#histQuality')).trim();
 const lean = (await page.textContent('#histLean')).trim();
 const poor = await page.evaluate(() =>
@@ -141,6 +142,7 @@ const csv = fs.readFileSync(csvPath, 'utf8');
 await page.click('#histList .hist-session[data-i="0"]');
 await page.waitForTimeout(400);
 const selChips = await page.$$eval('#histLaps .lap-chip', els => els.length);
+const selEvents = await page.$$eval('#histEvents .ev-row', els => els.length);
 const selStatus = (await page.textContent('#histStatus')).trim();
 await page.screenshot({ path: path.join(os.tmpdir(), 'laps-export.png') });
 
@@ -163,10 +165,17 @@ if (!/<name>race-tracker-\d{8}-\d{4}<\/name>/.test(gpx)) fails.push('GPX track h
 if (csvLines[0] !== 'ts,iso,lat,lon,kmh,cog,hdop,roll,pitch') fails.push(`CSV header: ${csvLines[0]}`);
 if (csvLines.length !== points.length + 1) fails.push(`CSV has ${csvLines.length - 1} rows, expected ${points.length}`);
 if (selChips !== 1) fails.push(`session 1 should hold 1 lap, got ${selChips}`);
+if (evKinds.length !== 5) fails.push(`expected 5 derived events, got ${evKinds.length}: ${JSON.stringify(evKinds)}`);
+if (evKinds[0] !== 'good') fails.push(`newest event should be quality recovery, got ${JSON.stringify(evKinds[0])}`);
+for (const kind of ['gap', 'poor', 'lap']) {
+  if (!evKinds.includes(kind)) fails.push(`event log is missing a ${kind} row: ${JSON.stringify(evKinds)}`);
+}
+if (selEvents !== 1) fails.push(`session 1 should show 1 event, got ${selEvents}`);
 if (!/^session 1 of 2, drawn as/.test(selStatus)) fails.push(`selection status: ${JSON.stringify(selStatus)}`);
 if (errors.length) fails.push(...errors);
 
 console.log(`chips     ${chips.join(' | ')}`);
+console.log(`events    ${evKinds.join(', ')}`);
 console.log(`head      ${head}`);
 console.log(`quality   ${quality}`);
 console.log(`mean lean ${lean} deg`);

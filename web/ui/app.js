@@ -915,6 +915,7 @@ if (!KEY) {
 
     renderTimeline();
     renderLaps();
+    renderEvents();
 
     const drawn = (typeof MAP !== 'undefined' && MAP.setHistory) ? MAP.setHistory(pts) : 0;
     let status = 'nothing stored in this window';
@@ -1060,6 +1061,55 @@ if (!KEY) {
     }
   }
 
+  // Newest first, because the reason to open a log is usually "what happened
+  // last". Capped so a noisy day cannot build thousands of DOM rows.
+  function renderEvents() {
+    const box = $('histEvents');
+    if (!box) return;
+    box.textContent = '';
+
+    const s = histSelected >= 0 ? histSessions[histSelected] : null;
+    const pts = s ? s.points : histAll;
+    const laps = s ? SESSIONS.lapsIn(histLaps, s.start, s.end) : histLaps;
+    const list = SESSIONS.events(pts, laps);
+    const MAX = 200;
+
+    if (!list.length) {
+      const empty = document.createElement('span');
+      empty.className = 'ev-empty';
+      empty.textContent = 'no events in this window';
+      box.appendChild(empty);
+      return;
+    }
+
+    for (const e of list.slice().reverse().slice(0, MAX)) {
+      const row = document.createElement('div');
+      row.className = 'ev-row ev-' + e.kind;
+
+      const t = document.createElement('span');
+      t.className = 'ev-time';
+      t.textContent = SESSIONS.fmtClock(e.ts);
+
+      const k = document.createElement('span');
+      k.className = 'ev-kind';
+      k.textContent = e.kind;
+
+      const d = document.createElement('span');
+      d.className = 'ev-text';
+      d.textContent = e.text;
+
+      row.append(t, k, d);
+      box.appendChild(row);
+    }
+
+    if (list.length > MAX) {
+      const more = document.createElement('span');
+      more.className = 'ev-empty';
+      more.textContent = `+${list.length - MAX} older event(s) not shown`;
+      box.appendChild(more);
+    }
+  }
+
   // ---- export --------------------------------------------------------------
   // Built from the points already in memory. Exporting must not depend on the
   // history host still being reachable seconds after the fetch that loaded it.
@@ -1123,6 +1173,7 @@ if (!KEY) {
     histSelected = (i === histSelected) ? -1 : i;
     renderTimeline();
     renderLaps();
+    renderEvents();
 
     const s = histSelected >= 0 ? histSessions[histSelected] : null;
     const pts = s ? s.points : histAll;
