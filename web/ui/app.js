@@ -930,12 +930,13 @@ if (!KEY) {
     // trail above is worth, and stay visible while a session is selected.
     const q = SESSIONS.quality(pts);
     if ($('histQuality')) {
-      $('histQuality').textContent = pts.length
+      $('histQuality').textContent = q.n
         ? `hdop ${q.avg.toFixed(2)} · ${q.badPct.toFixed(0)}% poor`
         : '--';
     }
     if ($('histLean')) {
-      $('histLean').textContent = pts.length ? SESSIONS.maxLean(pts).toFixed(1) : '--';
+      const lean = SESSIONS.maxLean(pts);
+      $('histLean').textContent = lean === null ? '--' : lean.toFixed(1);
     }
     setHistFields(
       String(body.count != null ? body.count : pts.length),

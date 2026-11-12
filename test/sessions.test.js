@@ -227,8 +227,10 @@ test('max lean reads roll and pitch at 6 and 7', () => {
   const pts = [[BASE, 0, 0, 0, 0, 0.9, -4.5, 1.0],
                [BASE, 0, 0, 0, 0, 0.9, 2.0, -12.25]];
   assert.strictEqual(S.maxLean(pts), 12.25);
-  assert.strictEqual(S.maxLean([[BASE, 0, 0, 0, 0, 1]]), 0);
-  assert.strictEqual(S.maxLean(null), 0);
+  assert.strictEqual(S.maxLean([[BASE, 0, 0, 0, 0, 1]]), null,
+    'no attitude columns means unknown, not flat');
+  assert.strictEqual(S.maxLean([[BASE, 0, 0, 0, 0, 1, null, '']]), null);
+  assert.strictEqual(S.maxLean(null), null);
 });
 
 // ---- export ---------------------------------------------------------------

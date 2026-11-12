@@ -167,14 +167,19 @@ const SESSIONS = (function () {
   }
 
   // Largest |roll| or |pitch| in a point list. Points carry the attitude at
-  // index 6 and 7 (see /history); missing columns simply score 0.
+  // index 6 and 7 (see /history). Returns null when no point has a finite
+  // value: old rows have no attitude columns, and 0.0 would look like a
+  // measurement instead of "never recorded".
   function maxLean(points) {
-    let m = 0;
+    let m = null;
     for (const p of (Array.isArray(points) ? points : [])) {
       if (!Array.isArray(p)) continue;
       for (const i of [6, 7]) {
-        const v = Math.abs(Number(p[i]));
-        if (Number.isFinite(v) && v > m) m = v;
+        const raw = p[i];
+        if (raw === null || raw === undefined || raw === "") continue;
+        const v = Math.abs(Number(raw));
+        if (!Number.isFinite(v)) continue;
+        if (m === null || v > m) m = v;
       }
     }
     return m;
