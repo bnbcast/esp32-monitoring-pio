@@ -288,7 +288,15 @@ counters can be read back with `dev/`-style parsing (ANSI stripped first).
 | Session | Continuous run | Boots | Heap | Watchdog | Fatal |
 |---|---|---|---|---|---|
 | interrupted by host restart | 8 min 59 s (539 s) | 1, power-on | 184-192 KB, 187 KB at the end | armed, never fired | none |
-| 2026-11-11, after flash, no sensors | running (60 min) | 1 per deliberate reset | 187-194 KB so far | armed, never fired | none |
+| 2026-11-11, after flash, no sensors | not completed - the board was re-flashed during the window | - | 187-194 KB observed | armed, never fired | none |
+| 2026-11-12, 1-minute capture, ESP32 only | 65 s | 0 resets (boot #14 throughout) | 189 → 188 KB | armed, never fired | none |
+
+The 1-minute capture (2026-11-12) ran on the flashed binary with no GPS and no
+IMU attached: `SYS up` went 00:04:02 → 00:05:06, heap 189 → 188 KB, RSSI -48 →
+-58 dBm, `tx` 230 → 294 (64 frames in 64 s, 1 Hz publish), `ok` matched `tx` and
+`fail`/`drop` stayed 0, HIST stayed `0/0/0/0/0, buf 0 B`, 33 panel refreshes
+arrived on the 2 s cadence, no `boot #` line and no panic/watchdog line in the
+window.
 
 Heap over the 9-minute session: 192, 187, 187, 187, 186, ... 187 KB. There is
 no downward trend, `boot` stayed at 1 and no `Guru Meditation` / `panic` line
