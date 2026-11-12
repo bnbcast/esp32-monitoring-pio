@@ -66,7 +66,7 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 
 const errors = [];
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 1250 } });
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('console', m => {
   if (m.type() === 'error' && /content security policy|refused to/i.test(m.text())) {
@@ -130,6 +130,13 @@ const pausedA = playingValue;
 await page.waitForTimeout(700);
 const pausedB = await page.$eval('#pbSlider', el => Number(el.value));
 
+// Evidence shot: the whole playback card, mid-session, with the marker and the
+// travelled line visible. Taken before the end-scrub so the chart shows a
+// playhead rather than a finished replay.
+await page.$eval('#histChart', el => el.scrollIntoView({ block: 'center' }));
+await page.waitForTimeout(900);   // let map tiles finish after the fit/scroll
+await page.screenshot({ path: path.join(os.tmpdir(), 'playback.png') });
+
 await page.$eval('#pbSlider', el => {
   el.value = el.max;
   el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -161,7 +168,6 @@ await page.waitForTimeout(1200);
 const autoStopValue = await page.$eval('#pbSlider', el => Number(el.value));
 const autoStopText = (await page.textContent('#btnPlay')).trim();
 
-await page.screenshot({ path: path.join(os.tmpdir(), 'playback.png') });
 await browser.close();
 server.close();
 

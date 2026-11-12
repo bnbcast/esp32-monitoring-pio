@@ -638,7 +638,7 @@ scoped to `.hist-btn[data-min]`, and a unit test pins that selector.
 |---|---|
 | JS suite | 107/107 pass, including `indexAt` boundaries and the playback controls/hooks |
 | Worker suite | 17/17 pass (unchanged path) |
-| Playback probe | `dev/check-playback.mjs` PASS: transport enabled, chart 9112 painted pixels, Play advanced to index 13 with a 14-point travelled line, Pause held 13, scrub to end 39, Reset 0, auto-stop at 39 and the button returned to Play |
+| Playback probe | `dev/check-playback.mjs` PASS: transport enabled, chart 9112 painted pixels, Play advanced into the session with a travelled line matching the marker, Pause held position, scrub to end landed on the last point, Reset returned to the first, auto-stop at the end returned the button to Play |
 | Regression probes | `dev/check-laps-export.mjs` PASS, `dev/check-timeline.mjs` PASS |
 
 ## Still needs the board
