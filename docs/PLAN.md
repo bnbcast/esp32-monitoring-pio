@@ -23,6 +23,8 @@ version keeps four workstreams, each one shippable and testable on its own.
 | W4 | **Mobile + lock mode** — one DOM, spectator default | **done on this branch** | single panel, 5 viewports, lock probe |
 | W5 | **GPS conditioning, 5 Hz, lap timing** | done, hardware verification pending | `test/gps.test.js`, `test/lap.test.js`, flash logs |
 | W6 | **HIST tab as a timeline** - sessions grouped from stored fixes, tap to draw and frame one stint | **done 2026-11-12** | `test/sessions.test.js` 16/16, `dev/check-timeline.mjs` PASS |
+| W7 | **Trackpad camera** - horizontal two-finger swipe rotates, every press releases the camera lock | **done 2026-11-12** | `dev/check-camera.mjs` PASS |
+| W8 | **MPU 3D attitude** - software-projected board on the MPU tab | **done 2026-11-12** | `test/mpu3d.test.js` 13/13, `dev/check-mpu3d.mjs` PASS |
 
 ## W1 — Stabilize (this branch)
 

@@ -415,10 +415,16 @@ const MAP = (function () {
 
     // Any user gesture drops out of follow mode; the recenter button (or C)
     // puts it back. Without this the camera fights the user while panning.
-    map.on("dragstart", () => { myLocMode = "free"; releaseFollow(); });
-    map.on("zoomstart", e => {
-      if (e.originalEvent) { myLocMode = "free"; releaseFollow(); }
-    });
+    // A plain click counts too: a press on the map is the operator taking the
+    // camera, and leaving the lock on meant the next fix pulled the view back
+    // while they were still deciding where to look.
+    map.on("dragstart", userCameraMove);
+    map.on("rotatestart", userCameraMove);
+    map.on("pitchstart", userCameraMove);
+    map.on("zoomstart", e => { if (e.originalEvent) userCameraMove(); });
+    map.getContainer().addEventListener("pointerdown", userCameraMove,
+      { capture: true, passive: true });
+    enableTrackpadRotate();
 
     // The camera is only ever mid-animation for a moment, but a finger that
     // lands during one is ignored by MapLibre's drag handler. Stopping the ease
@@ -1110,6 +1116,36 @@ const MAP = (function () {
     if (!followLock) return;
     followLock = false;
     if (followCb) followCb(false);
+  }
+
+  // Every intentional camera action goes through here first: a pan, a zoom, a
+  // rotate, a pitch. It drops the follow lock AND the auto-recenter mode, so the
+  // next fix cannot pull the view back out from under the user. A plain click
+  // counts, not just a drag.
+  function userCameraMove() {
+    myLocMode = "free";
+    releaseFollow();
+  }
+
+  // A trackpad has no rotate gesture: two-finger scrolling arrives as a wheel
+  // event and MapLibre uses only the vertical part, for zoom. The horizontal
+  // part (and Shift+scroll, which browsers deliver as horizontal) was unused,
+  // so a horizontal two-finger swipe now turns the map. That is the 360 that a
+  // mouse gets from ctrl+drag or a right-drag, without adding map buttons.
+  function enableTrackpadRotate() {
+    if (!map) return;
+    // Capture on the outer container so this runs before MapLibre's zoom
+    // handler on the canvas container, and stop it there: a horizontal swipe
+    // must turn the map, not nudge the zoom.
+    map.getContainer().addEventListener("wheel", ev => {
+      if (ev.ctrlKey) return;                        // pinch -> MapLibre zoom
+      const dx = ev.deltaX || 0, dy = ev.deltaY || 0;
+      if (!dx || Math.abs(dx) <= Math.abs(dy) * 1.2) return;  // vertical -> zoom
+      ev.preventDefault();
+      ev.stopPropagation();
+      userCameraMove();
+      map.setBearing(map.getBearing() + dx * 0.3);
+    }, { capture: true, passive: false });
   }
 
   function setFollow(on) {

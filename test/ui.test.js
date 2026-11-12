@@ -51,6 +51,25 @@ test('the map offers a camera lock and a full-screen button', () => {
   assert.match(APP, /classList\.toggle\('active', !!on\)/, 'the lock button has no pressed look');
 });
 
+test('a trackpad can turn the map, and any press releases the camera lock', () => {
+  // No extra map buttons: a trackpad already sends its horizontal scroll, so
+  // that gesture turns the map. The vertical part still zooms, and pinch
+  // (ctrl+wheel) is left to MapLibre.
+  assert.match(MAPJS, /function enableTrackpadRotate\(\)/);
+  assert.match(MAPJS, /if \(ev\.ctrlKey\) return/);
+  assert.match(MAPJS, /Math\.abs\(dx\) <= Math\.abs\(dy\)/);
+  assert.match(MAPJS, /map\.setBearing\(map\.getBearing\(\) \+ dx/);
+  assert.ok(!/btnRotate|btnPitch/.test(HTML), 'no camera buttons may be added to the map');
+
+  // "the lock camera is unreleased when I click anything": a press on the map,
+  // a rotate and a pitch all have to drop the lock, not only a pan.
+  assert.match(MAPJS, /addEventListener\("pointerdown", userCameraMove/);
+  assert.match(MAPJS, /map\.on\("dragstart", userCameraMove\)/);
+  assert.match(MAPJS, /map\.on\("rotatestart", userCameraMove\)/);
+  assert.match(MAPJS, /map\.on\("pitchstart", userCameraMove\)/);
+  assert.match(MAPJS, /function userCameraMove\(\)[\s\S]{0,200}releaseFollow\(\)/);
+});
+
 test('the bottom sheet folds to the tab bar on a phone, and only there', () => {
   assert.match(HTML, /id="sheetHandle"[\s\S]{0,200}aria-controls="tabPanels"/, 'the handle is not wired to the panels');
   assert.match(HTML, /class="tab-panels-wrapper" id="tabPanels"/, 'the panels have no id for the handle');

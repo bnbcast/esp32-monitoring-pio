@@ -109,7 +109,7 @@ current sensor: `acs`, `peakA` and the ADC pin are gone.
 | Raster fallback | Esri World Street → Esri Topo → OSM tiles |
 | Geocoding | public Nominatim, min 8 s and 80 m between calls, 110 m cache cells |
 | CSP | present, `script-src 'self'`, no CDN |
-| Tests | 80 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 6, `led` 15, `sessions` 16, `ui` 9) plus browser probes in `dev/` |
+| Tests | 94 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 6, `led` 15, `mpu3d` 13, `sessions` 16, `ui` 10) plus browser probes in `dev/` |
 
 ## Secrets
 
@@ -418,7 +418,7 @@ configuration cannot be exercised until that wire exists. Boot count advanced
 | UBX diagnostic | when the 38400 switch is not acknowledged, the firmware polls `UBX-MON-VER` on GPIO 33 and prints two different lines: `no reply on GPIO 33 - wire module RX to it` (no wire / wrong pin) versus `module answers on GPIO 33 but ignored 38400` (module refuses the rate). Measured on the mounted unit: **no reply**, which is why the link stayed at 9600 and 5 Hz never engaged |
 | IMU I2C | `mpuRead()` retries the 14-byte burst once after 200 µs, so one NACK on a patch cable no longer flips `mpu` to FAIL and back. Measured: 0 `MPU6050 stopped responding` lines in a 40 s capture, versus one pair every 5 s before |
 | Wi-Fi latency | `WiFi.setSleep(false)`; the scan matcher now builds one `String` per visible AP instead of one per (AP, candidate) pair, which removes N×M heap churn on every rescan |
-| Unit tests | 80/80 (`node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/sessions.test.js test/ui.test.js`) |
+| Unit tests | 94/94 (`node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/mpu3d.test.js test/sessions.test.js test/ui.test.js`) |
 | Lap geometry | `test/lap.test.js` (15 tests) mirrors the firmware cross-product and asserts the source still matches; a 144 km/h crossing 37 ms after a fix is timed at 37 ms, where nearest-sample rounding costs up to 100 ms and next-sample up to 163 ms. Five further tests pin the NVS session: saved after `lapCount++`, all three keys written, counters restored at boot with `lapCrossMs = 0`, reset persisted when a gate is armed, namespace cleared by `l` |
 | `dev/check-live.mjs` local | PASS, no page/CSP/console errors; `mode 3D`, `ttff 27`, `rejected 3`, laps `15`, last `41.23`, best `39.87`, gate `armed` |
 | Gate layer | `queryRenderedFeatures(['gate-line'])` = 1, 3 features (line + 2 ends) |
@@ -503,6 +503,44 @@ Two defects the probe caught before the commit:
 | Cross-gap distance | window said **6.13 km** for **1.59 km** of driving, because it summed the straight line from the last fix of one stint to the first of the next | total is `SESSIONS.summarize(...).distKm`; the chord code was removed |
 | UTC day headers | fixtures near midnight landed under the wrong day for a UTC+7 owner, while the rest of the page is local | `fmtClock`/`fmtDay`/`dayKey` use local time; the window line says `local` |
 
+
+## Map camera: trackpad rotation and lock release (2026-11-12)
+
+Two complaints, one cause each. A trackpad cannot rotate a MapLibre map: the
+only desktop rotate gestures are ctrl+drag and a right-drag, and two-finger
+scrolling was zoom only. And the camera lock was released by a pan or a wheel,
+but not by a rotate, a pitch or a plain click, so the next fix pulled the view
+back.
+
+| Check | Result |
+|---|---|
+| Handlers enabled before the change | `dragPan`, `dragRotate`, `scrollZoom`, `touchZoomRotate`, `keyboard`, `doubleClickZoom` all true - the camera was never broken |
+| Root cause, rotation | MapLibre has no trackpad rotate gesture; the horizontal part of a wheel event was unused |
+| Fix | `enableTrackpadRotate()` in `web/ui/map.js`: a horizontal two-finger swipe (or Shift+scroll) turns the map; pinch (`ctrlKey`) is left to MapLibre, vertical scrolling still zooms |
+| Root cause, lock | `dragstart` and `zoomstart` called `releaseFollow()`, but `rotatestart`/`pitchstart` and a click did not |
+| Fix | `userCameraMove()` runs on `dragstart`, `rotatestart`, `pitchstart`, an event-bearing `zoomstart` and `pointerdown` on the map - any press takes the camera |
+| No new buttons | an explicit rotate/tilt icon row was built and rejected by the owner as clutter; the gesture replaces it |
+| Probe | `dev/check-camera.mjs`, real Chromium: swipe bearing 96 -> 168 deg with zoom unchanged at 12; wheel 12 -> 12.334; pinch 12.334 -> 12.668 with bearing unchanged; compass drag rotates; lock true -> false for drag, click, swipe and ctrl+drag |
+| Unit tests | `test/ui.test.js` 10 checks, including the gesture handler and every release path |
+
+## MPU tab: 3D attitude view (2026-11-12)
+
+The MPU tab had a number grid and a tilt-history chart. It now opens with a 3D
+view of the sensor board, tilted by the same roll/pitch/yaw the firmware
+publishes.
+
+| Check | Result |
+|---|---|
+| Renderer | `web/ui/mpu3d.js`, software projection on a 2D canvas. No WebGL, no three.js, no new vendor file; works with the existing CSP |
+| Model | blue board + yellow MPU6050 chip, a fixed ground grid and world x/y/z axes; the body rotates, the grid does not, so tilt is readable |
+| Placement | top of `#tab-mpu`, above the numbers and the chart |
+| Cost | 100 ms repaint throttle for 1 Hz telemetry, `min(devicePixelRatio, 2)`, 170 px tall |
+| Hidden tab | `draw()` returns when the panel has no width; opening the tab paints the last frame (`showTab('mpu')`), and a window resize repaints |
+| Offline | a flat grey board plus `NO MPU DATA` until the first valid frame |
+| Math tests | `test/mpu3d.test.js` 13: identity, yaw/roll/pitch basis, 360 deg wrap, junk angles, origin, screen-up, perspective, scale, unit() |
+| Browser probe | `dev/check-mpu3d.mjs`: 282x170 canvas, 8,854 inked pixels level, 7,531 tilted, 8,678 offline; level and tilted checksums differ; 0 page/CSP errors |
+| Live wiring | repo simulator (`dev/server.js`, topic `dev-test-1234`): roll -4.7 -> -4.8, pitch -1.0 -> 0.8, yaw 251.2 -> 285.5, canvas checksum changed between samples |
+| Full suite | 94/94 |
 
 ## Still needs the board
 

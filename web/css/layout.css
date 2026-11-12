@@ -214,6 +214,24 @@ body.map-full .map-hud .hud-addr { display: none; }
   display: block;
 }
 
+/* MPU 3D attitude view: same box as the chart, drawn by ui/mpu3d.js. */
+.mpu-3d {
+  height: 170px;
+  overflow: hidden;
+}
+.mpu-3d canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+.mpu-caption {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
 /* Telemetry HUD inside side panel */
 .hud-card {
   border: var(--border-w) solid var(--ink);

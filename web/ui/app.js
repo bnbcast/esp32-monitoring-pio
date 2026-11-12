@@ -76,6 +76,23 @@ function drawTiltChart() {
   }
 }
 
+// ---- MPU 3D attitude view ---------------------------------------------------
+// The firmware already fuses roll/pitch/yaw; this only draws them, on a plain
+// 2D canvas (see ui/mpu3d.js). Frames arrive at 1 Hz, so repainting faster than
+// ~10 fps is wasted work; the view is throttled and redrawn on demand when the
+// tab is opened or the window changes size.
+let mpuAtt = { roll: 0, pitch: 0, yaw: 0, valid: false };
+let mpuDrawnAt = 0;
+
+function drawMpu3d(force) {
+  const canvas = $('mpu3d');
+  if (!canvas || typeof MPU3D === 'undefined') return;
+  const now = Date.now();
+  if (!force && now - mpuDrawnAt < 100) return;
+  mpuDrawnAt = now;
+  MPU3D.draw(canvas, mpuAtt);
+}
+
 // ---- Reverse geocoding (keyless: OSM Nominatim) ---------------------------
 // The usage policy allows a browser app if it is gentle: one request at a time,
 // never faster than ~1/s, and results must be cached. We are far stricter than
@@ -445,6 +462,13 @@ function renderData(d) {
   set('mpuTilt', fmt(d.tilt));
   set('mpuWarn', d.warn);
   set('mpuDanger', d.danger);
+  mpuAtt = {
+    roll: num(d.roll) ? d.roll : 0,
+    pitch: num(d.pitch) ? d.pitch : 0,
+    yaw: num(d.yaw) ? d.yaw : 0,
+    valid: ok && num(d.roll) && num(d.pitch) && num(d.yaw)
+  };
+  drawMpu3d(false);
 
   // Update tilt history
   if (num(d.tilt)) {
@@ -1023,6 +1047,9 @@ if (!KEY) {
     if (sidePanel && sidePanel.classList.contains('collapsed')) setCollapsed(false);
     // History is fetched on demand: opening the tab is the request.
     if (name === 'history') loadHistory(histMinutes);
+    // The 3D canvas has no size while its panel is hidden, so it is painted
+    // when the tab is actually opened, using the last frame received.
+    if (name === 'mpu') drawMpu3d(true);
   }
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => showTab(btn.dataset.tab));
@@ -1207,7 +1234,10 @@ if (!KEY) {
   let resizeTimer = 0;
   function scheduleResize() {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (typeof MAP !== 'undefined') MAP.resize(); }, 150);
+    resizeTimer = setTimeout(() => {
+      if (typeof MAP !== 'undefined') MAP.resize();
+      drawMpu3d(true);
+    }, 150);
   }
   window.addEventListener('resize', scheduleResize);
   window.addEventListener('orientationchange', scheduleResize);
