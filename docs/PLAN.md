@@ -21,6 +21,8 @@ version keeps four workstreams, each one shippable and testable on its own.
 | W2 | **Protect** — plausibility gate on every live frame | **done on this branch** | `test/guard.test.js` 14/14 |
 | W3 | **History** — Pages Function + D1 + device buffer | **done, needs soak + capture** | `worker/` 15/15, `POST /ingest -> 200`, 3 acks on the board |
 | W4 | **Mobile + lock mode** — one DOM, spectator default | **done on this branch** | single panel, 5 viewports, lock probe |
+| W5 | **GPS conditioning, 5 Hz, lap timing** | done, hardware verification pending | `test/gps.test.js`, `test/lap.test.js`, flash logs |
+| W6 | **Maps-style UI** — search, directions, satellite, saved places, timeline | **planned** | `docs/MAPS_UI_PLAN.md` |
 
 ## W1 — Stabilize (this branch)
 
