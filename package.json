@@ -7,7 +7,17 @@
     "test": "node --test test/charts.test.js test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/mpu3d.test.js test/sessions.test.js test/ui.test.js",
     "watch": "node dev/mqtt-watch.mjs",
     "capture": "node dev/mqtt-watch.mjs --out test/fixtures/capture.jsonl --dur 600000",
-    "prod": "pio run -e esp32-mqtt-simple -t upload && git add web/ && git commit -m \"Deploy frontend\" && git push origin HEAD"
+    "prod": "pio run -e esp32-mqtt-simple -t upload && git add web/ && git commit -m \"Deploy frontend\" && git push origin HEAD",
+    "pio:build": "pio run -e esp32-mqtt-simple",
+    "pio:upload": "pio run -e esp32-mqtt-simple -t upload",
+    "pio:clean": "pio run -t clean",
+    "pio:monitor": "pio device monitor",
+    "pio:monitor:baud115200": "pio device monitor --baud 115200",
+    "pio:list": "pio device list",
+    "pio:check": "pio check",
+    "pio:update": "pio platform update && pio lib update",
+    "pio:env": "pio env dump",
+    "pio:memory": "pio run -e esp32-mqtt-simple -t size"
   },
   "devDependencies": {
     "playwright": "^1.64.1",

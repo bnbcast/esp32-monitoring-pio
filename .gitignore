@@ -25,3 +25,6 @@ AGENTS.md
 docs/client_email_ble.md
 docs/BLE_PLAN_DETAILED.md
 docs/PLAN_B_ESPHOME_DETAILED.md
+CMakeLists.txt
+find-large.ps1
+playwright.config.js
