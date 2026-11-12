@@ -109,7 +109,7 @@ current sensor: `acs`, `peakA` and the ADC pin are gone.
 | Raster fallback | Esri World Street → Esri Topo → OSM tiles |
 | Geocoding | public Nominatim, min 8 s and 80 m between calls, 110 m cache cells |
 | CSP | present, `script-src 'self'`, no CDN |
-| Tests | 49 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 6, `ui` 9) plus browser probes in `dev/` |
+| Tests | 64 unit tests (`guard` 14, `info` 5, `lap` 15, `gps` 6, `led` 15, `ui` 9) plus browser probes in `dev/` |
 
 ## Secrets
 
@@ -418,7 +418,7 @@ configuration cannot be exercised until that wire exists. Boot count advanced
 | UBX diagnostic | when the 38400 switch is not acknowledged, the firmware polls `UBX-MON-VER` on GPIO 33 and prints two different lines: `no reply on GPIO 33 - wire module RX to it` (no wire / wrong pin) versus `module answers on GPIO 33 but ignored 38400` (module refuses the rate). Measured on the mounted unit: **no reply**, which is why the link stayed at 9600 and 5 Hz never engaged |
 | IMU I2C | `mpuRead()` retries the 14-byte burst once after 200 µs, so one NACK on a patch cable no longer flips `mpu` to FAIL and back. Measured: 0 `MPU6050 stopped responding` lines in a 40 s capture, versus one pair every 5 s before |
 | Wi-Fi latency | `WiFi.setSleep(false)`; the scan matcher now builds one `String` per visible AP instead of one per (AP, candidate) pair, which removes N×M heap churn on every rescan |
-| Unit tests | 49/49 (`node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/ui.test.js`) |
+| Unit tests | 64/64 (`node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/ui.test.js`) |
 | Lap geometry | `test/lap.test.js` (15 tests) mirrors the firmware cross-product and asserts the source still matches; a 144 km/h crossing 37 ms after a fix is timed at 37 ms, where nearest-sample rounding costs up to 100 ms and next-sample up to 163 ms. Five further tests pin the NVS session: saved after `lapCount++`, all three keys written, counters restored at boot with `lapCrossMs = 0`, reset persisted when a gate is armed, namespace cleared by `l` |
 | `dev/check-live.mjs` local | PASS, no page/CSP/console errors; `mode 3D`, `ttff 27`, `rejected 3`, laps `15`, last `41.23`, best `39.87`, gate `armed` |
 | Gate layer | `queryRenderedFeatures(['gate-line'])` = 1, 3 features (line + 2 ends) |
@@ -434,6 +434,44 @@ GeoJSON as `[lat, lng]` instead of `[lng, lat]`.
 Still missing for this block: flash over USB, a real 3D fix outdoors, the
 60-minute soak on this binary, and the extra wire from the module RX to GPIO 33
 before the 5 Hz claim can be measured.
+
+## Status LEDs and the "all three on" fault (2026-11-12)
+
+Reported symptom: the three LEDs on GPIO 26/27/32 appeared to light all at once.
+Two different faults look identical, and the old code could not tell them apart:
+
+1. **Active-low wiring** (anode to 3V3, cathode to the pin): `ledsOff()` drove all
+   three pins LOW, which *lit* all three. The old firmware assumed active-high.
+2. **Shorted signal nodes** (one breadboard row for all three anodes): any single
+   pin HIGH lights all three, and danger level 0 keeps blue HIGH, so the board is
+   steady "all on" even though `mpuValid` is true.
+
+Fault mode (`ledsFault()`, all three blinking every 500 ms) was ruled out on the
+mounted board: a 22 s capture shows `mpu OK` on every panel and 0
+`MPU6050 stopped responding` lines, so the loop is calling `setLeds()`, not
+`ledsFault()`.
+
+| Check | Result |
+|---|---|
+| Single write path | no `digitalWrite(LED_*_PIN, ...)` remains outside `ledWrite()`; `ledWrite(pin, on)` applies `(on != ledActiveLow) ? HIGH : LOW` |
+| Polarity is runtime | `y` inverts `ledActiveLow`, saves it as `sys/ledLow` in NVS, and prints the new state; loaded by `ledLoadPolarity()` *before* the first write at boot |
+| Self-test names the colour | boot and `d` run `ledSelfTest()`: 900 ms each for `only BLUE`, `only WHITE`, `only RED`, then all off, each line naming the pin |
+| Observed on the board | boot self-test prints `polarity active-low` after `y` was used once, then `active-high` after the next `y`; both survived a soft reset, proving the NVS load |
+| Health after change | boot #38, `mpu OK`, `GPS ... nmea 0s ago`, `IMU` tilt live, 0 faults in the capture |
+| Build | `SUCCESS`, RAM 16.3% (53,296 B), flash 40.9% (1,285,148 B) |
+| Unit tests | 64/64, including `test/led.test.js` (15) |
+
+The three outcomes of the self-test map to three fixes, which is why it exists:
+
+| What "only BLUE" actually shows | Cause | Fix |
+|---|---|---|
+| blue only | correct | none |
+| white + red | polarity inverted | press `y` once (saved) |
+| all three | signal nodes shorted | rewire, separate the three LED legs |
+
+Still open: the physical observation of `only BLUE` on this unit, which selects
+one of those three rows. Until then the firmware is correct under both polarities
+and the boot test says which one it is using.
 
 ## Still needs the board
 

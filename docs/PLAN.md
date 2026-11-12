@@ -212,6 +212,7 @@ and the tests.
 
 | Item | Why it is open |
 |---|---|
+| LED wiring | firmware now handles both polarities (`y`, saved) and `d` names each LED, but nobody has watched `only BLUE` yet; the answer picks rewire vs `y`: blue only = correct, white+red = inverted, all three = shorted signal legs |
 | Flash + outdoor check | firmware compiled but the board is not on USB; needs `boot #n` increment, a 3D fix, TTFF and hold verification |
 | GPS TX wire | confirmed missing by the new probe: boot prints `UBX: no reply on GPIO 33 - wire module RX to it`; 5 Hz and the UBX options need that wire |
 | HDOP 2.0 vs 4.0 | the live gate stays 5/4.0 until one track session reports `tight n/N (%)`; near 0 on a clean track means the strict gate is free, double digits means it costs segments |

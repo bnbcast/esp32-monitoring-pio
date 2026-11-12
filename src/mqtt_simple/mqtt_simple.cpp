@@ -59,6 +59,7 @@
 // ============ SERIAL CONSOLE ============
 // One framed panel every DASH_INTERVAL_MS plus event lines as they happen.
 // Keys: g raw NMEA echo | v verbose | c colours | p panel | ? help
+//       d LED self-test | y invert LED polarity | a/b lap gates | x reboot
 #define ANSI_RESET  "\033[0m"
 #define ANSI_BOLD   "\033[1m"
 #define ANSI_DIM    "\033[2m"
@@ -514,10 +515,60 @@ bool gpsFixUsable();
 void histLog(int lvl, const char* msg);
 
 // ============ LEDs ============
+// Two wirings exist in the wild and a wrong guess looks like a different bug:
+//   active-high  anode -> GPIO, cathode -> GND   (pin HIGH = lit)
+//   active-low   anode -> 3V3,  cathode -> GPIO  (pin LOW  = lit)
+// With active-low LEDs the old ledsOff() (all pins LOW) lit all three, which
+// reads exactly like "the LEDs come on all at once". Polarity is therefore a
+// runtime flag, settled by the 'd' self-test and the 'y' toggle, not a guess.
+static bool ledActiveLow = false;
+
+static void ledWrite(uint8_t pin, bool on) {
+  digitalWrite(pin, (on != ledActiveLow) ? HIGH : LOW);
+}
+
+// Kept in NVS so 'y' is a one-time fix: the wiring does not change when the
+// board reboots, and the boot self-test has to print the right polarity.
+static void ledLoadPolarity() {
+  Preferences p;
+  if (!p.begin("sys", true)) return;
+  ledActiveLow = p.getBool("ledLow", ledActiveLow);
+  p.end();
+}
+
+static void ledSavePolarity() {
+  Preferences p;
+  if (!p.begin("sys", false)) return;
+  p.putBool("ledLow", ledActiveLow);
+  p.end();
+}
+
 void ledsOff() {
-  digitalWrite(LED_BLUE_PIN, LOW);
-  digitalWrite(LED_WHITE_PIN, LOW);
-  digitalWrite(LED_RED_PIN, LOW);
+  ledWrite(LED_BLUE_PIN, false);
+  ledWrite(LED_WHITE_PIN, false);
+  ledWrite(LED_RED_PIN, false);
+}
+
+// Lights one LED at a time and names it on the console. Watching the board while
+// this runs answers both unknowns at once:
+//   "only BLUE"  -> blue lit, others dark  : wiring and polarity are correct
+//   "only BLUE"  -> all three lit          : the three signal wires are shorted
+//                                            (usually one breadboard row)
+//   "only BLUE"  -> nothing lit            : polarity is inverted, press 'y'
+void ledSelfTest(const char* why) {
+  const uint8_t pins[3]  = {LED_BLUE_PIN, LED_WHITE_PIN, LED_RED_PIN};
+  const char*   names[3] = {"BLUE", "WHITE", "RED"};
+  Serial.printf("LED test (%s): polarity %s\n", why,
+                ledActiveLow ? "active-low, LOW = lit" : "active-high, HIGH = lit");
+  for (int i = 0; i < 3; i++) {
+    ledsOff();
+    ledWrite(pins[i], true);
+    Serial.printf("LED test %d/3: only %s should be lit (GPIO %u)\n",
+                  i + 1, names[i], (unsigned)pins[i]);
+    delay(900);
+  }
+  ledsOff();
+  Serial.println("LED test: all off");
 }
 
 void updateLevel(float t) {
@@ -538,16 +589,16 @@ void setLeds(int lvl) {
   bool mqttOk = mqtt.connected();
   // Danger level still colours the panel, but a broken link blinks the LED of
   // the failing stage so a stuck dashboard is obvious from across the room.
-  digitalWrite(LED_BLUE_PIN,  lvl == 0 ? HIGH : (!wifiOk && fast ? HIGH : LOW));
-  digitalWrite(LED_WHITE_PIN, lvl == 1 ? HIGH : (!mqttOk && fast ? HIGH : LOW));
-  digitalWrite(LED_RED_PIN,   lvl == 2 ? (fast ? HIGH : LOW) : (!wifiOk && !fast ? HIGH : LOW));
+  ledWrite(LED_BLUE_PIN,  lvl == 0 ? true : (!wifiOk && fast));
+  ledWrite(LED_WHITE_PIN, lvl == 1 ? true : (!mqttOk && fast));
+  ledWrite(LED_RED_PIN,   lvl == 2 ? fast : (!wifiOk && !fast));
 }
 
 void ledsFault() {
   bool slow = ((millis() / 500) % 2 == 0);
-  digitalWrite(LED_BLUE_PIN,  slow ? HIGH : LOW);
-  digitalWrite(LED_WHITE_PIN, slow ? HIGH : LOW);
-  digitalWrite(LED_RED_PIN,   slow ? HIGH : LOW);
+  ledWrite(LED_BLUE_PIN,  slow);
+  ledWrite(LED_WHITE_PIN, slow);
+  ledWrite(LED_RED_PIN,   slow);
 }
 
 // ============ MPU6050 ============
@@ -1623,6 +1674,8 @@ void printBanner() {
 void printHelp() {
   Serial.printf("%skeys  g raw nmea | v verbose | c colours | p panel | r yaw=0 | x reboot | ? help%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
+  Serial.printf("%sled   d light each LED in turn | y invert polarity (all-on / dark)%s\n",
+                A(ANSI_DIM), A(ANSI_RESET));
   Serial.printf("%slap   a gate A here | b gate B here | l clear paint | k show gates%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
 }
@@ -1639,14 +1692,10 @@ void mqtt_simple_setup() {
   pinMode(LED_BLUE_PIN, OUTPUT);
   pinMode(LED_WHITE_PIN, OUTPUT);
   pinMode(LED_RED_PIN, OUTPUT);
+  ledLoadPolarity();              // before the first write, or the boot test lies
   ledsOff();
 
-  int testPins[] = {LED_BLUE_PIN, LED_WHITE_PIN, LED_RED_PIN};
-  for (int i = 0; i < 3; i++) {
-    digitalWrite(testPins[i], HIGH);
-    delay(300);
-    digitalWrite(testPins[i], LOW);
-  }
+  ledSelfTest("boot");
 
   // 1 KB RX buffer: a Wi-Fi/MQTT stall must not drop mid-sentence bytes, which
   // would show up as checksum failures in the NMEA tap. 5 Hz at 38400 is also
@@ -1703,7 +1752,7 @@ void mqtt_simple_setup() {
   float ax = 0, ay = 0, az = 0, t = 0, gx = 0, gy = 0, gz = 0;
   if (imuPresent) {
     logMsg(L_INFO, "CAL", "keep the board still while the gyro zero is measured (about 2 s)");
-    digitalWrite(LED_WHITE_PIN, HIGH);
+    ledWrite(LED_WHITE_PIN, true);
     const int N = 500;
     int good = 0;
     float sx = 0, sy = 0, sz = 0;
@@ -1825,6 +1874,16 @@ static void handleKeys() {
         break;
       case 'k': case 'K':
         gpsShowGates();
+        break;
+      case 'd': case 'D':
+        ledSelfTest("console");
+        break;
+      case 'y': case 'Y':
+        ledActiveLow = !ledActiveLow;
+        ledSavePolarity();
+        ledsOff();
+        logMsg(L_INFO, "LED", "polarity %s (saved) - press d to verify",
+               ledActiveLow ? "active-low (LOW = lit)" : "active-high (HIGH = lit)");
         break;
       case 'x': case 'X':
         logMsg(L_WARN, "SYS", "restart requested from console");
