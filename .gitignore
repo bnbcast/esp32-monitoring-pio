@@ -12,3 +12,6 @@ build/
 .dev.vars
 src/history_secret.h
 worker/pages/.wrangler/
+.claude/
+.pi/
+browser-automation/
