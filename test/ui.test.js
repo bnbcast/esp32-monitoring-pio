@@ -150,14 +150,14 @@ test('every asset is requested at one version', () => {
 });
 
 test('the page, icons and manifest carry the Orion brand', () => {
-  assert.match(HTML, /<title>Orion Project \/\/ LIVE SENSORS<\/title>/);
+  assert.match(HTML, /<title>Orion Project<\/title>/);
   assert.match(HTML, /class="brand-mascot"[^>]*src="assets\/orion\.png\?v=\d+"/,
     'the header mascot is missing');
   assert.match(HTML, /<span>Orion<br>LIVE<\/span>/, 'the wordmark is missing');
   assert.match(HTML, /<link rel="manifest" href="manifest\.webmanifest\?v=\d+">/);
   assert.match(HTML, /icons\/orion-64\.png\?v=\d+/, 'no 64 px favicon');
   assert.match(HTML, /icons\/orion-180\.png\?v=\d+/, 'no apple-touch icon');
-  assert.match(HTML, /ORION \/\/ LIVE VIA MQTT/, 'the footer still uses the old name');
+  assert.match(HTML, /<span>ORION<\/span>/, 'the footer still uses the old name');
   assert.doesNotMatch(HTML, /ESP32 \/\/ LIVE/);
 
   const manifest = JSON.parse(read('web/manifest.webmanifest'));

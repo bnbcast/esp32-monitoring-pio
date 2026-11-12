@@ -129,14 +129,14 @@ await browser.close();
 server.close();
 
 const fails = [];
-if (!/Orion/i.test(brand.title)) fails.push(`title: ${brand.title}`);
-if (!/ORION/i.test(brand.heading) || !/LIVE/i.test(brand.heading)) fails.push(`heading: ${brand.heading}`);
+if (brand.title !== 'Orion Project') fails.push(`title: ${brand.title}`);
+if (brand.heading !== 'OrionLIVE') fails.push(`heading: ${brand.heading}`);
 if (!(brand.mascot.w > 100 && brand.mascot.h > 100)) fails.push(`mascot natural size: ${brand.mascot.w}x${brand.mascot.h}`);
 if (!(brand.mascot.box >= 40)) fails.push(`mascot box: ${brand.mascot.box}px`);
 if (!/icons\/orion-64\.png/.test(brand.icon || '')) fails.push(`favicon: ${brand.icon}`);
 if (!/icons\/orion-180\.png/.test(brand.apple || '')) fails.push(`apple icon: ${brand.apple}`);
 if (!/manifest\.webmanifest/.test(brand.manifest || '')) fails.push(`manifest link: ${brand.manifest}`);
-if (!/ORION/.test(brand.footer)) fails.push(`footer: ${brand.footer}`);
+if (brand.footer !== 'ORION') fails.push(`footer: ${brand.footer}`);
 if (brand.theme !== '#ffe600') fails.push(`theme-color: ${brand.theme}`);
 if (brand.appName !== 'Orion Project') fails.push(`application-name: ${brand.appName}`);
 if (!/Orion/.test(infoIntro)) fails.push(`INFO intro: ${infoIntro.slice(0, 80)}`);

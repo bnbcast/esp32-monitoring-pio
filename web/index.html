@@ -6,21 +6,21 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; manifest-src 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
-<link rel="icon" type="image/png" sizes="64x64" href="icons/orion-64.png?v=42">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/orion-32.png?v=42">
-<link rel="apple-touch-icon" sizes="180x180" href="icons/orion-180.png?v=42">
-<link rel="manifest" href="manifest.webmanifest?v=42">
+<link rel="icon" type="image/png" sizes="64x64" href="icons/orion-64.png?v=44">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/orion-32.png?v=44">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/orion-180.png?v=44">
+<link rel="manifest" href="manifest.webmanifest?v=44">
 <meta name="theme-color" content="#ffe600">
 <meta name="application-name" content="Orion Project">
 <meta name="apple-mobile-web-app-title" content="Orion">
 <meta name="description" content="Orion Project - live GPS and telemetry for one vehicle.">
-<link rel="stylesheet" href="css/tokens.css?v=42">
-<link rel="stylesheet" href="css/base.css?v=42">
-<link rel="stylesheet" href="css/components.css?v=42">
-<link rel="stylesheet" href="css/layout.css?v=42">
-<link rel="stylesheet" href="css/map.css?v=42">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=42">
-<title>Orion Project // LIVE SENSORS</title>
+<link rel="stylesheet" href="css/tokens.css?v=44">
+<link rel="stylesheet" href="css/base.css?v=44">
+<link rel="stylesheet" href="css/components.css?v=44">
+<link rel="stylesheet" href="css/layout.css?v=44">
+<link rel="stylesheet" href="css/map.css?v=44">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=44">
+<title>Orion Project</title>
 </head>
 <body class="locked">
 <div class="app-shell" id="app-shell">
@@ -30,7 +30,7 @@
     <div class="top-bar">
       <div class="flex items-center gap-4">
         <h1 class="brand">
-          <img class="brand-mascot" src="assets/orion.png?v=42" alt="" width="540" height="680">
+          <img class="brand-mascot" src="assets/orion.png?v=44" alt="" width="540" height="680">
           <span>Orion<br>LIVE</span>
         </h1>
         <span class="label-tag" id="sim-badge">SIMULATED</span>
@@ -120,7 +120,8 @@
     <div class="side-panel" id="sidePanel">
       <div class="sheet-handle" id="sheetHandle" role="button" tabindex="0"
            aria-expanded="true" aria-controls="tabPanels"
-           aria-label="Collapse or expand the panels" title="Tap or swipe to hide the panels">
+           aria-label="Resize or fold the panels"
+           title="Drag to resize · tap to fold">
         <span class="grip" aria-hidden="true"></span>
         <span class="handle-caret" aria-hidden="true">&#9662;</span>
       </div>
@@ -394,21 +395,21 @@
   </section>
 
   <footer>
-    <span>ORION // LIVE VIA MQTT</span>
+    <span>ORION</span>
     <span id="fTime">--</span>
   </footer>
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=42"></script>
-<script src="ui/guard.js?v=42"></script>
-<script src="ui/map.js?v=42"></script>
-<script src="ui/mqtt-mini.js?v=42"></script>
-<script src="ui/info-data.js?v=42"></script>
-<script src="ui/info.js?v=42"></script>
-<script src="ui/sessions.js?v=42"></script>
-<script src="ui/charts.js?v=42"></script>
-<script src="ui/mpu3d.js?v=42"></script>
-<script src="ui/app.js?v=42"></script>
+<script src="vendor/maplibre-gl-csp.js?v=44"></script>
+<script src="ui/guard.js?v=44"></script>
+<script src="ui/map.js?v=44"></script>
+<script src="ui/mqtt-mini.js?v=44"></script>
+<script src="ui/info-data.js?v=44"></script>
+<script src="ui/info.js?v=44"></script>
+<script src="ui/sessions.js?v=44"></script>
+<script src="ui/charts.js?v=44"></script>
+<script src="ui/mpu3d.js?v=44"></script>
+<script src="ui/app.js?v=44"></script>
 </body>
 </html>

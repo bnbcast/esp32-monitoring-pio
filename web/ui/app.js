@@ -1765,7 +1765,7 @@ if (!KEY) {
     // jumping around on a phone.
     if (tabPanels) tabPanels.scrollTop = 0;
     // Picking a tab is a request to see it: reopen the bottom sheet if hidden.
-    if (sidePanel && sidePanel.classList.contains('collapsed')) setCollapsed(false);
+    if (sidePanel && sidePanel.classList.contains('collapsed')) setSnap(lastOpenSnap);
     // History is fetched on demand: opening the tab is the request.
     if (name === 'history') loadHistory(histMinutes);
     // A canvas has no width while its panel is hidden, so the charts are
@@ -1867,47 +1867,291 @@ if (!KEY) {
   }
   if (btnFull) btnFull.addEventListener('click', () => setFull(!document.body.classList.contains('map-full')));
 
-  // ---- Bottom sheet: tap or swipe the handle to hide the panels -----------
-  // On a phone the panels cover 38% of the screen. The handle folds them down to
-  // the tab bar, and picking a tab unfolds them again, so nothing is hidden that
-  // the reader then cannot find.
+  // ---- Bottom sheet: drag it, tap it, or let a tab reopen it --------------
+  // On a phone the panels start at 38% of the screen. The handle is a real
+  // resize grip: drag it down to the tab bar to give the map the whole screen,
+  // or up past the tall sheet to a full sheet that covers the map.
+  // On release it snaps to the nearest of four heights; a tap folds or unfolds
+  // to the last height the reader chose, and picking a tab unfolds the sheet.
   const sidePanel = $('sidePanel');
   const sheetHandle = $('sheetHandle');
   const tabPanels = $('tabPanels');
-  function setCollapsed(on) {
-    if (!sidePanel) return;
-    sidePanel.classList.toggle('collapsed', !!on);
-    if (sheetHandle) sheetHandle.setAttribute('aria-expanded', String(!on));
-    try { localStorage.setItem('sheetCollapsed', on ? '1' : '0'); } catch (e) { /* quota */ }
-    requestAnimationFrame(() => { if (typeof MAP !== 'undefined') MAP.resize(); });
-  }
-  if (sidePanel && sheetHandle) {
-    let savedSheet = false;
-    try { savedSheet = localStorage.getItem('sheetCollapsed') === '1'; } catch (e) { savedSheet = false; }
-    setCollapsed(savedSheet);
-    const isCollapsed = () => sidePanel.classList.contains('collapsed');
-    const toggleSheet = () => setCollapsed(!isCollapsed());
+  const SNAPS = ['collapsed', 'half', 'tall', 'full'];
+  const SHEET_KEY = 'sheetSnap';
+  let sheetSnap = 'half';
+  let lastOpenSnap = 'half';
+  let collapsedPx = 0;
+  let sheetTimer = 0;
+  let drag = null;
+  let suppressClickUntil = 0;
+  let resizeRaf = 0;
 
-    sheetHandle.addEventListener('click', toggleSheet);
-    sheetHandle.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(); }
+  function phoneSheet() {
+    return window.matchMedia('(max-width: 900px)').matches;
+  }
+
+  function resizeMapSoon() {
+    if (resizeRaf) return;
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      if (typeof MAP !== 'undefined') MAP.resize();
     });
-    // A swipe is the natural gesture on a phone: down = hide, up = show. A tap
-    // still works, so a short drag that ends where it started is not a toggle.
-    let startY = null;
-    sheetHandle.addEventListener('touchstart', (e) => {
-      startY = e.touches && e.touches[0] ? e.touches[0].clientY : null;
-    }, { passive: true });
-    sheetHandle.addEventListener('touchend', (e) => {
-      const t = e.changedTouches && e.changedTouches[0];
-      if (startY != null && t) {
-        const dy = t.clientY - startY;
-        if (dy > 28) setCollapsed(true);
-        else if (dy < -28) setCollapsed(false);
-        else toggleSheet();
+  }
+
+  // The folded height is the tab bar plus the panel's padding and borders. Let
+  // the browser measure it in the folded state, then put the element back in
+  // the same task. `.measuring` keeps the height transition from firing while
+  // the probe is on screen.
+  function measureCollapsed() {
+    if (!sidePanel || !phoneSheet()) return 0;
+    if (getComputedStyle(sheetHandle).display === 'none') return 0;
+    const hadCollapsed = sidePanel.classList.contains('collapsed');
+    const inlineH = sidePanel.style.height;
+    const inlineVar = sidePanel.style.getPropertyValue('--sheet-h');
+    sidePanel.classList.add('measuring', 'collapsed');
+    sidePanel.style.height = '';
+    const h = sidePanel.getBoundingClientRect().height;
+    sidePanel.classList.toggle('collapsed', hadCollapsed);
+    sidePanel.style.height = inlineH;
+    if (inlineVar) sidePanel.style.setProperty('--sheet-h', inlineVar);
+    sidePanel.getBoundingClientRect();
+    sidePanel.classList.remove('measuring');
+    return h;
+  }
+
+  // Tall stops at the same 160 px map floor #map-container declares, so the
+  // vehicle stays visible while the sheet is at its highest.
+  // Full covers the entire layout (map hidden).
+  function maxSheetHeight() {
+    const layout = sidePanel.parentElement;
+    const gap = parseFloat(getComputedStyle(layout).rowGap) || 0;
+    return Math.max(collapsedPx + 80, layout.clientHeight - 160 - gap);
+  }
+
+  function fullSheetHeight() {
+    const layout = sidePanel.parentElement;
+    const gap = parseFloat(getComputedStyle(layout).rowGap) || 0;
+    return layout.clientHeight - gap;
+  }
+
+  function snapHeight(snap) {
+    if (snap === 'collapsed') return collapsedPx;
+    if (snap === 'full') return fullSheetHeight();
+    const max = maxSheetHeight();
+    if (snap === 'tall') return max;
+    const half = Math.max(180, window.innerHeight * 0.38);
+    return Math.min(max, Math.max(collapsedPx + 40, half));
+  }
+
+  function saveSnap(snap) {
+    sheetSnap = snap;
+    if (snap !== 'collapsed') lastOpenSnap = snap;
+    if (sheetHandle) {
+      sheetHandle.setAttribute('aria-expanded', String(snap !== 'collapsed'));
+      sheetHandle.classList.toggle('near-collapsed', snap === 'collapsed');
+    }
+    if (sidePanel) sidePanel.classList.toggle('sheet-low', snap === 'collapsed');
+    try {
+      // sheetCollapsed is kept for older links/bookmarks and the UI test;
+      // sheetSnap remembers which of the three heights to restore.
+      localStorage.setItem('sheetCollapsed', snap === 'collapsed' ? '1' : '0');
+      localStorage.setItem(SHEET_KEY, snap);
+    } catch (e) { /* quota */ }
+  }
+
+  function foldNow() {
+    clearTimeout(sheetTimer);
+    sheetTimer = 0;
+    sidePanel.classList.add('collapsed');
+    sidePanel.style.height = '';
+    sidePanel.style.removeProperty('--sheet-h');
+    saveSnap('collapsed');
+    resizeMapSoon();
+  }
+
+  function openTo(snap) {
+    clearTimeout(sheetTimer);
+    sheetTimer = 0;
+    sidePanel.classList.remove('dragging');
+    const target = snapHeight(snap);
+    const wasCollapsed = sidePanel.classList.contains('collapsed');
+    const startH = sidePanel.getBoundingClientRect().height;
+    sidePanel.style.setProperty('--sheet-h', target + 'px');
+    if (wasCollapsed) {
+      // `height:auto` cannot interpolate: pin the folded height in pixels,
+      // unfold without a transition, then release the pin so the height
+      // animates up to --sheet-h.
+      sidePanel.classList.add('measuring');
+      sidePanel.style.height = startH + 'px';
+      sidePanel.getBoundingClientRect();
+      sidePanel.classList.remove('collapsed');
+      sidePanel.classList.remove('measuring');
+      void sidePanel.offsetHeight;
+      requestAnimationFrame(() => { sidePanel.style.height = ''; });
+    } else {
+      sidePanel.style.height = '';
+    }
+    saveSnap(snap);
+    resizeMapSoon();
+  }
+
+  function collapseTo() {
+    clearTimeout(sheetTimer);
+    sheetTimer = 0;
+    sidePanel.classList.remove('dragging');
+    if (sidePanel.classList.contains('collapsed')) { foldNow(); return; }
+    const target = collapsedPx || measureCollapsed();
+    const startH = sidePanel.getBoundingClientRect().height;
+    if (target <= 0 || Math.abs(startH - target) < 1) { foldNow(); return; }
+    sidePanel.style.height = startH + 'px';
+    void sidePanel.offsetHeight;
+    sidePanel.style.height = target + 'px';
+    saveSnap('collapsed');
+    resizeMapSoon();
+    // Hand the final height back to `auto` once the sheet has shrunk, so the
+    // folded panel always fits its content exactly.
+    sheetTimer = setTimeout(foldNow, 230);
+  }
+
+  function setSnap(snap) {
+    if (!sidePanel || !sheetHandle) return;
+    if (!SNAPS.includes(snap)) snap = 'half';
+    if (snap === 'collapsed') collapseTo();
+    else openTo(snap);
+  }
+
+  if (sidePanel && sheetHandle) {
+    collapsedPx = measureCollapsed();
+    let savedSnap = null;
+    let savedCollapsed = false;
+    try {
+      savedSnap = localStorage.getItem(SHEET_KEY);
+      savedCollapsed = localStorage.getItem('sheetCollapsed') === '1';
+    } catch (e) { savedSnap = null; savedCollapsed = false; }
+    if (!SNAPS.includes(savedSnap)) savedSnap = savedCollapsed ? 'collapsed' : 'half';
+    if (phoneSheet()) setSnap(savedSnap);
+
+    // ---- Drag ---------------------------------------------------------
+    sheetHandle.addEventListener('pointerdown', (e) => {
+      if (!phoneSheet() || drag) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      clearTimeout(sheetTimer);
+      sheetTimer = 0;
+      const rect = sidePanel.getBoundingClientRect();
+      collapsedPx = measureCollapsed();
+      drag = {
+        id: e.pointerId,
+        startY: e.clientY,
+        startH: rect.height,
+        lastY: e.clientY,
+        lastT: e.timeStamp,
+        vy: 0,
+        moved: false,
+        wasCollapsed: sidePanel.classList.contains('collapsed'),
+        maxH: fullSheetHeight()
+      };
+      // Unfold now so the panels are revealed under the finger, but keep the
+      // pixel height the sheet had: the content is clipped until it is dragged.
+      sidePanel.classList.add('dragging');
+      sidePanel.classList.remove('collapsed');
+      sidePanel.classList.remove('sheet-low');
+      sidePanel.style.height = rect.height + 'px';
+      try { sheetHandle.setPointerCapture(e.pointerId); } catch (err) { /* no capture */ }
+      e.preventDefault();
+    });
+
+    sheetHandle.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dy = e.clientY - drag.startY;
+      if (Math.abs(dy) > 6) drag.moved = true;
+      const h = Math.max(collapsedPx, Math.min(drag.maxH, drag.startH - dy));
+      sidePanel.style.height = h + 'px';
+      const dt = e.timeStamp - drag.lastT;
+      if (dt > 0) drag.vy = 0.7 * drag.vy + 0.3 * ((e.clientY - drag.lastY) / dt);
+      drag.lastY = e.clientY;
+      drag.lastT = e.timeStamp;
+      const low = h <= collapsedPx + 18;
+      sidePanel.classList.toggle('sheet-low', low);
+      sheetHandle.classList.toggle('near-collapsed', low);
+      if (typeof MAP !== 'undefined') resizeMapSoon();
+      e.preventDefault();
+    }, { passive: false });
+
+    function endDrag(e, cancelled) {
+      if (!drag || (e && e.pointerId !== drag.id)) return;
+      const d = drag;
+      drag = null;
+      sidePanel.classList.remove('dragging');
+      try { sheetHandle.releasePointerCapture(d.id); } catch (err) { /* already released */ }
+      if (cancelled) {
+        setSnap(d.wasCollapsed ? 'collapsed' : sheetSnap);
+        return;
       }
-      startY = null;
+      if (!d.moved) {
+        // A tap, not a drag: fold, or unfold to the height the reader last used.
+        suppressClickUntil = performance.now() + 600;
+        setSnap(d.wasCollapsed ? lastOpenSnap : 'collapsed');
+        return;
+      }
+      const h = sidePanel.getBoundingClientRect().height;
+      const points = [
+        { snap: 'collapsed', at: collapsedPx },
+        { snap: 'half', at: snapHeight('half') },
+        { snap: 'tall', at: snapHeight('tall') },
+        { snap: 'full', at: snapHeight('full') }
+      ].sort((a, b) => a.at - b.at);
+      let pick = null;
+      // A quick flick jumps one snap in that direction even if the finger did
+      // not travel the whole way; a slower drag goes to the nearest height.
+      // Threshold ~0.8 px/ms (800 px/s) to avoid triggering on normal drag release.
+      if (Math.abs(d.vy) > 0.8) {
+        pick = d.vy < 0
+          ? points.find(p => p.at > h + 24)
+          : points.slice().reverse().find(p => p.at < h - 24);
+      }
+      if (!pick) {
+        pick = points.reduce((best, p) =>
+          Math.abs(p.at - h) < Math.abs(best.at - h) ? p : best, points[0]);
+      }
+      setSnap(pick.snap);
+    }
+    sheetHandle.addEventListener('pointerup', (e) => endDrag(e, false));
+    sheetHandle.addEventListener('pointercancel', (e) => endDrag(e, true));
+    sheetHandle.addEventListener('lostpointercapture', (e) => endDrag(e, true));
+
+    // Pointer taps are handled in endDrag(); the click below is for a screen
+    // reader or a synthetic click. The window swallows the click that follows
+    // a real pointer tap so it cannot toggle twice.
+    sheetHandle.addEventListener('click', () => {
+      if (performance.now() < suppressClickUntil) return;
+      setSnap(sidePanel.classList.contains('collapsed') ? lastOpenSnap : 'collapsed');
     });
+    sheetHandle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setSnap(sidePanel.classList.contains('collapsed') ? lastOpenSnap : 'collapsed');
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const i = SNAPS.indexOf(sheetSnap);
+        setSnap(SNAPS[Math.max(0, Math.min(SNAPS.length - 1,
+          i + (e.key === 'ArrowDown' ? 1 : -1)))]);
+      }
+    });
+
+    // Rotating the phone or opening the keyboard changes what "38dvh" and the
+    // map floor mean, so re-measure and re-apply the current snap.
+    window.addEventListener('resize', () => {
+      if (!phoneSheet()) return;
+      collapsedPx = measureCollapsed();
+      if (drag) { drag.maxH = fullSheetHeight(); return; }
+      if (sidePanel.classList.contains('collapsed')) {
+        sidePanel.style.height = '';
+        sidePanel.style.removeProperty('--sheet-h');
+      } else {
+        sidePanel.style.setProperty('--sheet-h', snapHeight(sheetSnap) + 'px');
+      }
+      resizeMapSoon();
+    }, { passive: true });
   }
 
   // ---- Measure A->B + trip reset -----------------------------------------
