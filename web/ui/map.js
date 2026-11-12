@@ -160,7 +160,7 @@ const MAP = (function () {
   // trail (speed-colored polyline) + its measured length
   let trailCoords = [];
   let trailDistM = 0;
-  const TRAIL_MAX = 1200;          // drawn vertices before decimation
+  const TRAIL_MAX = 800;           // drawn vertices before decimation (was 1200)
   const TRAIL_STEP_MOVING = 3.0;   // metres between accepted points
   const TRAIL_STEP_STOPPED = 15.0; // deadband while parked (grows with HDOP)
   let trailRaf = 0;
@@ -520,6 +520,8 @@ const MAP = (function () {
     });
 
     // ---- Trail layer (speed-colored, solid) ----
+    // Uses line-gradient for a single continuous LineString — far fewer features
+    // than one per segment, and GPU-native coloring along the line.
     map.addLayer({
       id: "trail",
       type: "line",
@@ -530,26 +532,40 @@ const MAP = (function () {
       },
       paint: {
         "line-width": 4,
-        "line-color": [
-          "interpolate", ["linear"], ["zoom"],
-          12, ["interpolate", ["linear"], ["get", "kmh"], 0, "#00e676", 30, "#ffe600", 60, "#ff3b1f"],
-          16, ["interpolate", ["linear"], ["get", "kmh"], 0, "#00e676", 30, "#ffe600", 60, "#ff3b1f"]
+        "line-gradient": [
+          "interpolate", ["linear"], ["line-progress"],
+          0, "#00e676",    // stopped/green
+          0.1, "#ffe600",  // slow/yellow
+          0.5, "#ff3b1f",  // fast/red
+          1, "#ff3b1f"
         ],
         "line-opacity": 0.85
       }
     });
 
     // ---- Accuracy circle ----
+    // Circle layer with geographic radius: expression converts meters to screen px.
+    // At zoom 18, 1 meter ≈ 1.5 screen px; scales with zoom via 2^(z-18).
+    map.addSource("accuracy", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] }
+    });
     map.addLayer({
       id: "accuracy",
-      type: "fill",
-      source: {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] }
-      },
+      type: "circle",
+      source: "accuracy",
       paint: {
-        "fill-color": "#2447ff",
-        "fill-opacity": 0.15
+        "circle-radius": [
+          "interpolate", ["exponential", 2], ["zoom"],
+          12, 2,
+          18, ["*", ["get", "radius"], 1.5],
+          20, ["*", ["get", "radius"], 6]
+        ],
+        "circle-color": "#2447ff",
+        "circle-opacity": 0.15,
+        "circle-stroke-color": "#2447ff",
+        "circle-stroke-width": 1,
+        "circle-stroke-opacity": 0.4
       }
     });
 
@@ -859,9 +875,8 @@ const MAP = (function () {
     markerInner.classList.toggle("nofix", !vehicle.fix);
   }
 
-  // The circle used to be uploaded twice per fix (a point, then a polygon that
-  // replaced it), which doubled the work for a shape nobody ever saw. One
-  // upload, and only when the position or the radius actually changed.
+  // Accuracy as a MapLibre circle layer — no polygon math, GPU-native, tiny.
+  // Radius in pixels at zoom 18 scales with zoom so it stays geographic.
   let accKey = "";
   function updateAccuracy() {
     if (!map || !mapReady) return;
@@ -874,14 +889,13 @@ const MAP = (function () {
     const key = pos.lng.toFixed(5) + "," + pos.lat.toFixed(5) + "," + radius.toFixed(0);
     if (key === accKey) return;
     accKey = key;
-    // MapLibre has no circle primitive for a geographic radius: draw the ring.
-    const circle = circleCoords(pos.lng, pos.lat, radius, 32);
+    // Single point feature; circle-radius expression converts meters to px.
     src.setData({
       type: "FeatureCollection",
       features: [{
         type: "Feature",
-        properties: {},
-        geometry: { type: "Polygon", coordinates: [circle] }
+        properties: { radius },
+        geometry: { type: "Point", coordinates: [pos.lng, pos.lat] }
       }]
     });
   }
@@ -941,7 +955,7 @@ const MAP = (function () {
     const w = deg2rad(35 * conf); // wedge width ~ confidence
     const cLat = Math.cos(pos.lat * Math.PI / 180);
     const pts = [[pos.lng, pos.lat]];
-    const steps = 8;
+    const steps = 4;  // was 8 — fewer vertices, still smooth enough at small radius
     for (let i = 0; i <= steps; i++) {
       const a = h - w / 2 + (w * i) / steps;
       pts.push([
@@ -992,21 +1006,19 @@ const MAP = (function () {
       src.setData({ type: "FeatureCollection", features: [] });
       return;
     }
-    // One feature per segment so line-color can read that segment's speed.
-    const features = [];
-    for (let i = 1; i < trailCoords.length; i++) {
-      const a = trailCoords[i - 1], b = trailCoords[i];
-      if (a.seg !== b.seg) continue;      // fix outage: no line across it
-      features.push({
-        type: "Feature",
-        properties: { kmh: b.kmh || 0 },
-        geometry: {
-          type: "LineString",
-          coordinates: [[a.lng, a.lat], [b.lng, b.lat]]
-        }
-      });
+    // Single LineString — line-gradient handles speed coloring via line-progress.
+    const coords = [];
+    for (let i = 0; i < trailCoords.length; i++) {
+      coords.push([trailCoords[i].lng, trailCoords[i].lat]);
     }
-    src.setData({ type: "FeatureCollection", features });
+    src.setData({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: {},
+        geometry: { type: "LineString", coordinates: coords }
+      }]
+    });
   }
 
   function clearTrail() {
