@@ -118,12 +118,11 @@ const MAP = (function () {
   }
 
   // What to switch off on a phone, and what must never be switched off:
-  //   * OUT: polygon/line decoration that costs fill rate and tells you nothing
-  //     about where the car is - building footprints and 3D extrusions, airport
-  //     aprons, runways, taxiways.
-  //   * IN: every symbol layer. Street names, place names and building/POI
-  //     labels are what make the map readable, so they stay.
-  const HEAVY_LAYER = /(^|[-_])(building|aeroway)(?=$|[-_])/i;
+  //   * OUT: aeroway polygons (airport aprons, runways, taxiways) - truly decorative
+  //   * IN:  building polygons (footprints) - useful context
+  //   * IN:  every symbol layer (street names, place names, building/POI labels)
+  //          names are the map, fills are the wallpaper.
+  const HEAVY_LAYER = /(^|[-_])(aeroway)(?=$|[-_])/i;
 
   function isDecorative(layer) {
     return layer && layer.type !== "symbol" && HEAVY_LAYER.test(layer.id || "");
@@ -380,13 +379,15 @@ const MAP = (function () {
     });
 
     // If the vector style never arrives (blocked host, DNS, offline) the map
-    // would stay blank, so drop to the raster provider list after 12 s.
+    // would stay blank, so drop to the raster provider list after 8 s (5 s on phone).
+    // Mobile networks are slower; fail fast so labels appear sooner.
+    const FALLBACK_MS = isPhone() ? 5000 : 8000;
     setTimeout(() => {
       if (initDone || styleKind !== "vector") return;
       console.warn("Vector basemap did not load, falling back to raster");
       styleKind = "raster";
       map.setStyle(buildStyle(TILE_PROVIDERS[tileProviderIndex]));
-    }, 12000);
+    }, FALLBACK_MS);
 
     // ---- raster tile failover --------------------------------------------
     let tileErrors = 0;
@@ -445,11 +446,13 @@ const MAP = (function () {
     });
   }
 
-  // Switch off the decorative basemap polygons a phone cannot afford. Every
-  // symbol layer (street names, place names, POI and building labels) is left
-  // alone: names are the map, fills are the wallpaper. Called on style.load, so
-  // it also survives the raster fallback, where no such layer ids exist and each
-  // call is a harmless no-op.
+  // Switch off only the truly decorative basemap polygons a phone cannot afford.
+  //   * OUT: aeroway (airport aprons, runways, taxiways)
+  //   * IN:  building footprints - useful context for orientation
+  //   * IN:  every symbol layer (street names, place names, building/POI labels)
+  //          names are the map, fills are the wallpaper. Called on style.load, so
+  //          it also survives the raster fallback, where no such layer ids exist and
+  //          each call is a harmless no-op.
   let lightApplied = false;
   function lightenBasemap() {
     if (lightApplied || !map || !isPhone()) return;

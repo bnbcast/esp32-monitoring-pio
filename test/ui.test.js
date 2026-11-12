@@ -109,10 +109,12 @@ test('the phone basemap drops decoration but never text labels', () => {
   assert.ok(m, 'HEAVY_LAYER regex not found');
   const re = eval(m[1]);   // a literal from our own source, not user input
 
-  for (const id of ['building', 'building-3d', 'aeroway_fill', 'aeroway_runway']) {
+  // Only aeroway (airport aprons, runways, taxiways) are treated as decoration.
+  // Building footprints are kept for orientation context.
+  for (const id of ['aeroway_fill', 'aeroway_runway']) {
     assert.ok(re.test(id), `${id} should be treated as decoration`);
   }
-  for (const id of ['highway-name-major', 'highway-name-minor', 'label_city', 'label_village',
+  for (const id of ['building', 'building-3d', 'highway-name-major', 'highway-name-minor', 'label_city', 'label_village',
     'poi_r1', 'airport', 'water_name_point_label', 'road_shield_us', 'water', 'park']) {
     assert.ok(!re.test(id), `${id} must never be hidden`);
   }

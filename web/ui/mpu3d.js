@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 // ---------------------------------------------------------------------------
 // web/ui/mpu3d.js - a small software 3D view of the MPU6050 board.
@@ -160,113 +160,37 @@ const MPU3D = (function () {
     ctx.arc(o[0], o[1], 2.2, 0, Math.PI * 2);
     ctx.fill();
 
-    // ---- MOTORCYCLE SILHOUETTE -----------------------------------------------
-    // Drawn at center, leans with roll (x-axis) and pitches with pitch (y-axis).
-    // The motorcycle is defined in local coordinates (x=right, y=forward, z=up).
-    // We project its key points through the same 3D→2D pipeline so it tilts naturally.
-    function drawMotorcycle() {
-      // Motorcycle key points in local space (meters relative to center)
-      // Frame: rear wheel center at (-0.6, 0, 0), front wheel at (0.6, 0, 0)
-      const bike = [
-        // Rear wheel
-        { x: -0.6, y: 0, z: -0.15, r: 0.18 },
-        // Front wheel
-        { x: 0.6, y: 0, z: -0.15, r: 0.16 },
-        // Frame triangle: rear bottom → front bottom → seat → rear bottom
-        { x: -0.6, y: 0, z: -0.02 },
-        { x: 0.6, y: 0, z: -0.02 },
-        { x: -0.1, y: 0, z: 0.22 },
-        { x: -0.6, y: 0, z: -0.02 },
-        // Seat to handlebar
-        { x: -0.1, y: 0, z: 0.22 },
-        { x: 0.5, y: 0, z: 0.28 },
-        // Fork: front wheel to handlebar
-        { x: 0.6, y: 0, z: -0.02 },
-        { x: 0.5, y: 0, z: 0.28 },
-        // Exhaust (rear)
-        { x: -0.65, y: 0.15, z: 0.05 },
-        { x: -0.85, y: 0.15, z: 0.12 },
-        // Engine block (center)
-        { x: -0.2, y: 0.12, z: -0.05 },
-        { x: 0.2, y: 0.12, z: -0.05 },
-        { x: 0.2, y: 0.12, z: 0.12 },
-        { x: -0.2, y: 0.12, z: 0.12 },
-        { x: -0.2, y: 0.12, z: -0.05 },
-      ];
+    // ---- the board and its chip --------------------------------------------
+    const toFace = (f, rgb) => {
+      const screen = f.pts.map(at);
+      let depth = 0;
+      for (const s of screen) depth += s[2];
+      return { screen, depth: depth / screen.length, lit: f.lit, rgb };
+    };
+    const faces = facesOf(BOARD, roll, pitch, yaw).map(f => toFace(f, BOARD.rgb))
+      .concat(facesOf(CHIP, roll, pitch, yaw).map(f => toFace(f, CHIP.rgb)));
 
-      // Rotate all points by roll/pitch/yaw
-      const rotated = bike.map(p => rotate([p.x, p.y, p.z], roll, pitch, yaw));
-      // Project to screen
-      const screen = rotated.map(p => at(p));
-
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-
-      // Wheels (circles)
-      const rw = screen[0], fw = screen[1];
-      const wheelStyle = live ? "#ffe600" : "#888";
-      const wheelStroke = live ? "#000" : "#555";
-
+    faces.sort((a, b) => a.depth - b.depth);
+    ctx.lineJoin = "round";
+    for (const f of faces) {
       ctx.beginPath();
-      ctx.ellipse(rw[0], rw[1], scale * 0.18, scale * 0.12, 0, 0, Math.PI * 2);
-      ctx.fillStyle = live ? "rgba(255,230,0,0.25)" : "rgba(120,120,120,0.3)";
+      ctx.moveTo(f.screen[0][0], f.screen[0][1]);
+      for (let k = 1; k < f.screen.length; k++) {
+        ctx.lineTo(f.screen[k][0], f.screen[k][1]);
+      }
+      ctx.closePath();
+      ctx.fillStyle = live ? tint(f.rgb, f.lit) : "rgba(120,120,120,0.45)";
       ctx.fill();
-      ctx.strokeStyle = wheelStroke;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.ellipse(fw[0], fw[1], scale * 0.16, scale * 0.10, 0, 0, Math.PI * 2);
-      ctx.fillStyle = live ? "rgba(255,230,0,0.25)" : "rgba(120,120,120,0.3)";
-      ctx.fill();
-      ctx.strokeStyle = wheelStroke;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Frame lines (indices 2-10)
-      ctx.strokeStyle = live ? "#2447ff" : "#666";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      // Frame triangle
-      ctx.moveTo(screen[2][0], screen[2][1]);
-      ctx.lineTo(screen[3][0], screen[3][1]);
-      ctx.lineTo(screen[4][0], screen[4][1]);
-      ctx.lineTo(screen[5][0], screen[5][1]);
-      // Seat to handlebar
-      ctx.moveTo(screen[6][0], screen[6][1]);
-      ctx.lineTo(screen[7][0], screen[7][1]);
-      // Fork
-      ctx.moveTo(screen[8][0], screen[8][1]);
-      ctx.lineTo(screen[9][0], screen[9][1]);
-      ctx.stroke();
-
-      // Exhaust
-      ctx.strokeStyle = live ? "#ff3b1f" : "#888";
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      ctx.moveTo(screen[10][0], screen[10][1]);
-      ctx.lineTo(screen[11][0], screen[11][1]);
-      ctx.stroke();
-
-      // Engine block
-      ctx.strokeStyle = live ? "#000" : "#777";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(screen[12][0], screen[12][1]);
-      ctx.lineTo(screen[13][0], screen[13][1]);
-      ctx.lineTo(screen[14][0], screen[14][1]);
-      ctx.lineTo(screen[15][0], screen[15][1]);
-      ctx.lineTo(screen[16][0], screen[16][1]);
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1.6;
       ctx.stroke();
     }
-
-    drawMotorcycle();
 
     // ---- state label -------------------------------------------------------
     ctx.font = "700 10px ui-monospace, Menlo, Consolas, monospace";
     ctx.textBaseline = "top";
     ctx.fillStyle = live ? "rgba(0,0,0,0.55)" : "#ff3b1f";
-    ctx.fillText(live ? "MPU6050 · yaw drifts" : "NO MPU DATA", 6, 5);
+    ctx.fillText(live ? "MPU6050 ┬╖ yaw drifts" : "NO MPU DATA", 6, 5);
   }
 
   return { draw, rotate, project, cross, unit };
