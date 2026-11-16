@@ -136,7 +136,7 @@ Published once per second, retained. Real shape (one line on the wire):
 | `lap.on` | boolean | — | Timing gate armed |
 | `lap.auto` | boolean | — | Line was armed automatically (no stored gate) |
 | `lap.n` | integer | — | Lap count |
-| `lap.gen` | integer | — | Session generation: changes when the counters restart, survives a reboot |
+| `lap.gen` | integer | — | Session generation: starts at 1000000, survives a reboot, changes when the counters restart |
 | `lap.last_ms`, `lap.best_ms` | integer | ms | Last and best lap |
 | `lap.la`, `lap.lb` | number[2] | deg | Gate endpoints |
 

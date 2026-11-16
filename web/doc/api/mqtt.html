@@ -178,7 +178,7 @@ esp32-dash/&lt;TOPIC_KEY&gt;/status  online/offline  (retained, QoS 0, LWT)
 <tr><td><code>lap.on</code></td><td>boolean</td><td>—</td><td>Timing gate armed</td></tr>
 <tr><td><code>lap.auto</code></td><td>boolean</td><td>—</td><td>Line was armed automatically (no stored gate)</td></tr>
 <tr><td><code>lap.n</code></td><td>integer</td><td>—</td><td>Lap count</td></tr>
-<tr><td><code>lap.gen</code></td><td>integer</td><td>—</td><td>Session generation: changes when the counters restart, survives a reboot</td></tr>
+<tr><td><code>lap.gen</code></td><td>integer</td><td>—</td><td>Session generation: starts at 1000000, survives a reboot, changes when the counters restart</td></tr>
 <tr><td><code>lap.last_ms</code>, <code>lap.best_ms</code></td><td>integer</td><td>ms</td><td>Last and best lap</td></tr>
 <tr><td><code>lap.la</code>, <code>lap.lb</code></td><td>number[2]</td><td>deg</td><td>Gate endpoints</td></tr>
 </tbody></table></div>

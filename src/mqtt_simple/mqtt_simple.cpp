@@ -184,6 +184,11 @@
 #define LAP_AUTO_KEEP_M   500.0f  // boot elsewhere -> drop a stored auto gate
 #define LAP_AUTO_STOP_MS  180000UL // a 3 min stop elsewhere re-arms the line
 
+// The session generation starts well above any boot counter. Servers that
+// logged laps before this field existed keyed them on the boot number, and a
+// generation of 1..N would eventually collide with those rows.
+#define LAP_GEN_BASE     1000000UL
+
 // ============ GLOBALS ============
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(2);
@@ -273,7 +278,7 @@ uint32_t lapCount = 0, lapLastMs = 0, lapBestMs = 0;
 // Session generation. It survives a reboot (so a lap is never logged twice)
 // and changes whenever the counters start over (a new gate, a clear), so the
 // server can tell lap 1 of this session from lap 1 of the last one.
-uint32_t lapGen = 1;
+uint32_t lapGen = LAP_GEN_BASE;
 uint32_t lapCrossMs = 0;        // interpolated time of the last crossing
 static void lapSaveCounters();  // defined with the NVS gate storage below
 static void lapBumpGen();       // new session -> new generation
@@ -1320,7 +1325,7 @@ void gpsLoadGates() {
   prefs.end();
   Preferences sid;
   if (sid.begin("lapid", true)) {
-    lapGen = sid.getUInt("gen", 1);
+    lapGen = sid.getUInt("gen", LAP_GEN_BASE);
     sid.end();
   }
   // millis() restarts at boot, so a stored crossing time would be meaningless.

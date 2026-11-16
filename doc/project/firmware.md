@@ -130,6 +130,8 @@ The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` �
 | `LAP_AUTO_HOLD_MS` | `5000` | Sustained motion required before arming |
 | `LAP_AUTO_HALF_M` | `15.0` | Half-width of the automatic line (30 m gate) |
 | `LAP_AUTO_KEEP_M` | `500.0` | Boot further than this drops a stored auto gate |
+| `LAP_AUTO_STOP_MS` | `180000` | A stop this long re-arms the line if motion resumes elsewhere |
+| `LAP_GEN_BASE` | `1000000` | First session generation; above any boot counter |
 
 ### Secrets (`src/mqtt_simple/history_secret.h` — **gitignored**)
 ```cpp
@@ -147,7 +149,7 @@ The board counts laps; the dashboard only mirrors the result.
 - **Auto-arm**: with no gate stored (and no manual capture in progress), the first motion above 5 km/h sustained for 5 s arms a line through the launch fix, perpendicular to the heading, 30 m wide. The lap clock starts at that launch fix, so the first return crossing times lap 1 rather than only arming the gate.
 - **Persistence**: both kinds of gate live in NVS. A stored auto line is dropped when the first fix after boot is more than 500 m away (a different track), or after a stop of 3 minutes or more followed by motion more than 500 m away (powered transport to another venue). Manual gates are never dropped.
 - **Counting**: the segment between two accepted fixes must cross A→B forward, above 5 km/h, at least 3 s after the previous crossing. The crossing time is interpolated inside the segment.
-- **Payload**: `lap.on` (armed), `lap.auto` (came from auto-arm), `lap.n`, `lap.gen`, `lap.last_ms`, `lap.best_ms`, `lap.la`/`lb`. History rows carry `lap_n`, `lap_last_ms`, `lap_best_ms` and `lap_gen` so the server can log one row per completed lap. `lap_gen` is the session generation: it survives a reboot, so the board saying "lap 5" again after a reset does not write a duplicate row, and it increments whenever the counters start over.
+- **Payload**: `lap.on` (armed), `lap.auto` (came from auto-arm), `lap.n`, `lap.gen`, `lap.last_ms`, `lap.best_ms`, `lap.la`/`lb`. History rows carry `lap_n`, `lap_last_ms`, `lap_best_ms` and `lap_gen` so the server can log one row per completed lap. `lap_gen` is the session generation: it survives a reboot, so the board saying "lap 5" again after a reset does not write a duplicate row, and it increments whenever the counters start over. It starts at 1000000, above any boot counter, so it cannot collide with laps the server logged before the field existed.
 
 ---
 

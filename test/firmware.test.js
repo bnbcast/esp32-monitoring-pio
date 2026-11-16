@@ -19,8 +19,10 @@ test('a lap is keyed to a session generation that survives a reboot', () => {
   // The board keeps its counters in NVS across a reset, so the server must key
   // the lap row on something that does not change on boot. `boot` does; `gen`
   // does not.
-  assert.match(SRC, /uint32_t lapGen = 1;/);
-  assert.match(SRC, /lapGen = sid\.getUInt\("gen", 1\)/,
+  assert.match(SRC, /#define LAP_GEN_BASE\s+1000000UL/,
+    'a low generation would collide with laps keyed on the old boot number');
+  assert.match(SRC, /uint32_t lapGen = LAP_GEN_BASE;/);
+  assert.match(SRC, /lapGen = sid\.getUInt\("gen", LAP_GEN_BASE\)/,
     'the generation is not restored after a reboot');
   assert.match(SRC, /static void lapBumpGen\(\)/);
   assert.match(SRC, /prefs\.putUInt\("gen", lapGen\)/);
