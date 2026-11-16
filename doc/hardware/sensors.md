@@ -144,7 +144,7 @@ mpu.PrintActiveOffsets();
 
 - Cold start: ensure clear sky, 5+ minutes
 - HDOP < 1.5 = excellent, 1.5–2.5 = good, >3 = poor
-- Firmware rejects fixes with HDOP > 6
+- Firmware rejects fixes with HDOP > 4.0 (server gate is 8)
 
 ---
 
@@ -154,7 +154,7 @@ mpu.PrintActiveOffsets();
 |---------|--------|-------|
 | `MPU FAIL` pill | MPU6050 | I2C wiring, 0x68 address, 3.3V, `mpu.testConnection()` |
 | `GPS WAIT` > 5 min | NEO-6M | Antenna sky view, UART wiring, baud 9600, cold start time |
-| HDOP > 6 | NEO-6M | Obstructed sky, multipath, antenna orientation |
+| HDOP > 4 | NEO-6M | Obstructed sky, multipath, antenna orientation |
 | Roll/Pitch stuck | MPU6050 | I2C bus contention, DLPF setting, accel range |
 | Yaw drifts fast | MPU6050 | Gyro offset not calibrated, DLPF too high |
 

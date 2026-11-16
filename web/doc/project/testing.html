@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Testing Documentation - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="on" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1 id="testing-documentation">Testing Documentation</h1>
+<h2 id="overview">Overview</h2>
+<p>Three layers of testing ensure correctness without a device farm.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Layer</th><th>Tool</th><th>Scope</th><th>Command</th></tr></thead>
+<tbody>
+<tr><td>Unit</td><td>Node <code>--test</code></td><td>Pure functions, static invariants</td><td><code>npm test</code></td></tr>
+<tr><td>Browser probes</td><td>Playwright</td><td>Real DOM, map, charts</td><td><code>node dev/check-*.mjs</code></td></tr>
+<tr><td>Integration</td><td>Manual</td><td>Live MQTT + dashboard</td><td><code>npm run dev</code></td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="unit-tests-115-tests">Unit Tests (115 tests)</h2>
+<p>Run: <code>npm test</code></p>
+<h3 id="test-files">Test Files</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>File</th><th>Focus</th></tr></thead>
+<tbody>
+<tr><td><code>test/gps.test.js</code></td><td>NMEA parsing, coordinate math</td></tr>
+<tr><td><code>test/mpu3d.test.js</code></td><td>3D rotation, projection math</td></tr>
+<tr><td><code>test/charts.test.js</code></td><td>Canvas helpers (autoMax, bands, lines)</td></tr>
+<tr><td><code>test/sessions.test.js</code></td><td>Session splitting, lap detection, GPX/CSV</td></tr>
+<tr><td><code>test/info.test.js</code></td><td>Glossary content, search</td></tr>
+<tr><td><code>test/lap.test.js</code></td><td>Lap gate logic, best-lap tracking</td></tr>
+<tr><td><code>test/led.test.js</code></td><td>Danger LED state machine</td></tr>
+<tr><td><code>test/guard.test.js</code></td><td>Operator lock logic</td></tr>
+<tr><td><code>test/ui.test.js</code></td><td>Static HTML/CSS/JS invariants</td></tr>
+</tbody></table></div>
+<h3 id="key-invariants-ui-test-js">Key Invariants (ui.test.js)</h3>
+<ul>
+<li>All 21 asset refs share same <code>?v=</code> version</li>
+<li>No camera/pitch/rotate buttons on map</li>
+<li>Phone basemap keeps all text labels (buildings, streets, POIs)</li>
+<li>Accuracy circle uploaded once per fix</li>
+<li>MPU3D canvas has fixed 170px height</li>
+<li>Dashboard calls <code>MPU3D.draw()</code> on tab open + resize</li>
+</ul>
+<hr>
+<h2 id="browser-probes-playwright">Browser Probes (Playwright)</h2>
+<p>Run individually:</p>
+<pre><code>
+node dev/check-playback.mjs      # Session replay + speed/lean chart
+node dev/check-timeline.mjs      # Timeline chart (desktop + phone)
+node dev/check-laps-export.mjs   # GPX/CSV export, lap markers
+node dev/check-live-charts.mjs   # LIVE/WIFI/MPU charts + stats
+node dev/check-orion.mjs         # Branding: title, mascot, icons, manifest
+</code></pre>
+<h3 id="probe-architecture">Probe Architecture</h3>
+<ol>
+<li>Start throwaway HTTP server serving <code>web/</code></li>
+<li>Mock <code>race-tracker-history.pages.dev/*</code> → fixed JSON fixtures</li>
+<li>Launch Chromium (1280×1000 desktop, 390×844 phone)</li>
+<li>Wait for map ready (<code>MAP.isReady()</code>)</li>
+<li>Interact (click tabs, scrub playback, export)</li>
+<li>Assert visual state + screenshot</li>
+<li>Fail on any console error or CSP violation</li>
+</ol>
+<h3 id="fixtures">Fixtures</h3>
+<p>Fixed JSON responses in each probe:</p>
+<ul>
+<li>20 points with known values</li>
+<li>2 laps with known times</li>
+<li>HDOP &gt; 3 segments for red-line test</li>
+</ul>
+<hr>
+<h2 id="local-development-testing">Local Development Testing</h2>
+<pre><code>
+# Start simulator + dashboard
+npm run dev
+# → http://localhost:5003/?dev&amp;t=dev-test-1234
+
+# Watch live MQTT traffic
+npm run watch
+# or
+node dev/mqtt-watch.mjs
+
+# Capture 10 min of real frames
+npm run capture
+# → test/fixtures/parked.jsonl
+</code></pre>
+<hr>
+<h2 id="ci-github-actions">CI (GitHub Actions)</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Workflow</th><th>Trigger</th><th>Steps</th></tr></thead>
+<tbody>
+<tr><td><code>deploy-pages.yml</code></td><td>push to main</td><td>Build → GitHub Pages deploy</td></tr>
+<tr><td><code>test.yml</code></td><td>push/PR</td><td><code>npm test</code> (Node 22)</td></tr>
+</tbody></table></div>
+<pre><code>
+# .github/workflows/test.yml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: npm test
+</code></pre>
+<hr>
+<h2 id="adding-a-test">Adding a Test</h2>
+<ol>
+<li>Create <code>test/&lt;name&gt;.test.js</code></li>
+<li>Use <code>node:test</code> + <code>node:assert</code></li>
+<li>Run <code>npm test</code> → verify passes</li>
+<li>If testing browser behavior → add probe in <code>dev/check-&lt;name&gt;.mjs</code></li>
+</ol>
+<hr>
+<h2 id="debugging-failures">Debugging Failures</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Symptom</th><th>Likely Cause</th></tr></thead>
+<tbody>
+<tr><td><code>SyntaxError: Invalid or unexpected token</code></td><td>File has UTF-16 BOM (run <code>node -e &quot;fs.writeFileSync('file', fs.readFileSync('file','utf16le'), 'utf8')&quot;</code>)</td></tr>
+<tr><td><code>map never became ready</code></td><td>MapLibre failed to load (network, CSP, missing vendor)</td></tr>
+<tr><td><code>accuracy circle uploaded twice</code></td><td><code>updateAccuracy</code> missing <code>key === accKey</code> guard</td></tr>
+<tr><td><code>building should be treated as decoration</code></td><td><code>HEAVY_LAYER</code> regex changed in <code>map.js</code></td></tr>
+<tr><td><code>mixed asset versions</code></td><td><code>index.html</code> has mismatched <code>?v=</code> params</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="coverage-goals">Coverage Goals</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Area</th><th>Target</th></tr></thead>
+<tbody>
+<tr><td>Pure math (rotate, project, chart helpers)</td><td>100%</td></tr>
+<tr><td>GPS parsing (NMEA, coordinate math)</td><td>100%</td></tr>
+<tr><td>Session logic (split, laps, export)</td><td>100%</td></tr>
+<tr><td>UI invariants (HTML/CSS static checks)</td><td>100%</td></tr>
+<tr><td>Browser probes (map, charts, playback)</td><td>5/5 passing</td></tr>
+</tbody></table></div></main>
+</div>
+</body>
+</html>

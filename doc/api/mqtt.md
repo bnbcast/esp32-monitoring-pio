@@ -1,63 +1,95 @@
 # MQTT Topic Structure & Payload Format
 
-Live telemetry flows: **ESP32 → HiveMQ (wss) → Dashboard**
+Live telemetry: **ESP32 → HiveMQ → browser dashboard**.
+
+| Client | Transport | Address |
+|--------|-----------|---------|
+| ESP32 firmware | MQTT over TCP | `broker.hivemq.com:1883` |
+| Dashboard (browser) | MQTT over WebSocket Secure | `wss://broker.hivemq.com:8884/mqtt` |
+
+No authentication on either path — this is the public HiveMQ broker.
 
 ---
 
-## Broker
-
-| Property | Value |
-|----------|-------|
-| Host | `broker.hivemq.com` |
-| Port | `8884` (wss) |
-| Path | `/mqtt` |
-| Protocol | MQTT 3.1.1 over WebSocket Secure |
-| Auth | None (public broker) |
-
----
-
-## Topic Format
+## Topics
 
 ```
-esp32-dash/<TOPIC_KEY>/data   → sensor readings (retained)
-esp32-dash/<TOPIC_KEY>/status → online/offline (retained, LWT)
+esp32-dash/<TOPIC_KEY>/data    sensor frames   (retained, QoS 0)
+esp32-dash/<TOPIC_KEY>/status  online/offline  (retained, QoS 0, LWT)
 ```
 
-- `<TOPIC_KEY>` default: `race-tracker` (configurable in firmware and dashboard URL `#t=<key>`)
-- Dashboard subscribes to both topics on connect
-- Multiple trackers can share the broker by using different `<TOPIC_KEY>`
+- `TOPIC_KEY` default: `race-tracker` (`src/mqtt_simple/mqtt_simple.cpp`)
+- The dashboard derives the key from the URL hash: `#t=<key>`
+- Data is retained: a new subscriber immediately receives the last frame
+- Status uses the broker Last Will: if the device drops, HiveMQ publishes `offline`
 
 ---
 
-## Data Payload (esp32-dash/<key>/data)
+## Data Payload
 
-Published at **1 Hz** (every second). Retained = true (latest always available).
+Published once per second, retained. Real shape (one line on the wire):
 
 ```json
 {
+  "seq": 1234,
   "ts": 1700000001,
+  "up": 3600,
+  "mpu": true,
+  "roll": 4.10,
+  "pitch": -2.10,
+  "yaw": 12.30,
+  "tilt": 4.60,
+  "ax": 0.020,
+  "ay": -0.150,
+  "az": 9.780,
+  "temp": 31.2,
+  "lvl": 0,
+  "warn": 35,
+  "danger": 50,
+  "maxTilt": 12.4,
   "gps": {
+    "chars": 18422,
+    "view": 11,
+    "snr": 24,
+    "q": 1,
+    "bad": 3,
+    "sats": 9,
     "fix": true,
     "lat": -6.200001,
     "lng": 106.800001,
-    "alt": 42.5,
+    "alt": 120.4,
     "kmh": 45.2,
     "cog": 90.5,
     "hdop": 0.8,
-    "sats": 8
+    "dist_m": 1520.4,
+    "ttff_s": 41,
+    "rej": 0,
+    "still": false,
+    "mode": 3,
+    "utc_h": 9, "utc_m": 12, "utc_s": 3,
+    "utc_y": 2026, "utc_mo": 11, "utc_d": 16
   },
-  "mpu": {
-    "roll": 2.1,
-    "pitch": -1.8,
-    "yaw": 42.0,
-    "accel": {"x": 0.02, "y": -0.15, "z": 9.78},
-    "gyro": {"x": 0.01, "y": 0.02, "z": 0.03}
+  "lap": {
+    "on": false,
+    "n": 2,
+    "last_ms": 45230,
+    "best_ms": 44210,
+    "la": [-6.2001, 106.8001],
+    "lb": [-6.2002, 106.8002]
   },
   "sys": {
-    "uptime": 3600,
-    "freeHeap": 245000,
-    "wifiRssi": -52,
-    "wifiCh": 1
+    "heap": 194560,
+    "heap_min": 188400,
+    "boot": 7,
+    "rssi": -52,
+    "wifi": {
+      "ssid": "Gi Joe",
+      "bssid": "aa:bb:cc:dd:ee:ff",
+      "channel": 6,
+      "status": "Connected",
+      "ip": "10.0.0.42",
+      "mac": "28:56:2f:49:b9:10"
+    }
   }
 }
 ```
@@ -66,95 +98,96 @@ Published at **1 Hz** (every second). Retained = true (latest always available).
 
 | Path | Type | Unit | Description |
 |------|------|------|-------------|
-| `ts` | integer | seconds (epoch) | GPS time if fix, else millis()/1000 |
-| `gps.fix` | boolean | — | True if valid position |
-| `gps.lat` | number | degrees | Latitude (WGS84) |
-| `gps.lng` | number | degrees | Longitude (WGS84) |
-| `gps.alt` | number | meters | Altitude (MSL) |
-| `gps.kmh` | number | km/h | Speed over ground |
-| `gps.cog` | number | degrees | Course over ground (0–360) |
-| `gps.hdop` | number | — | Horizontal dilution of precision |
-| `gps.sats` | integer | count | Satellites used in fix |
-| `mpu.roll` | number | degrees | Fused roll (tilt left/right) |
-| `mpu.pitch` | number | degrees | Fused pitch (tilt fore/aft) |
-| `mpu.yaw` | number | degrees | Gyro-integrated heading (drifts) |
-| `mpu.accel` | object | m/s² | Raw accelerometer (x/y/z) |
-| `mpu.gyro` | object | rad/s | Raw gyroscope (x/y/z) |
-| `sys.uptime` | integer | seconds | Seconds since boot |
-| `sys.freeHeap` | integer | bytes | ESP.getFreeHeap() |
-| `sys.wifiRssi` | integer | dBm | WiFi signal strength |
-| `sys.wifiCh` | integer | — | WiFi channel |
+| `seq` | integer | — | Monotonic publish counter |
+| `ts` | integer | epoch s | GPS UTC when valid, else 0 |
+| `up` | integer | s | `millis()/1000` |
+| `mpu` | boolean | — | MPU present and initialised |
+| `roll`, `pitch`, `yaw` | number | deg | Fused attitude (yaw is gyro-only) |
+| `tilt` | number | deg | Combined tilt magnitude |
+| `ax`, `ay`, `az` | number | g | Accelerometer |
+| `temp` | number | °C | MPU die temperature |
+| `lvl` | integer | — | 0 safe, 1 warn, 2 danger |
+| `warn`, `danger` | integer | deg | Configured tilt thresholds |
+| `maxTilt` | number | deg | Peak tilt this boot |
+| `gps.chars` | integer | — | NMEA characters processed |
+| `gps.view` | integer | count | Satellites in view (`-1` unknown) |
+| `gps.snr` | integer | dB-Hz | Best SNR |
+| `gps.q` | integer | — | Fix quality (0 none, 1 GPS, 2 DGPS) |
+| `gps.bad` | integer | — | Bad NMEA sentences |
+| `gps.sats` | integer | count | Satellites used |
+| `gps.fix` | boolean | — | Valid position |
+| `gps.lat`, `gps.lng` | number | deg | WGS84 |
+| `gps.alt` | number | m | MSL altitude |
+| `gps.kmh` | number | km/h | Ground speed |
+| `gps.cog` | number | deg | Course over ground |
+| `gps.hdop` | number | — | Horizontal dilution |
+| `gps.dist_m` | number | m | Device odometer |
+| `gps.ttff_s` | integer | s | Time to first fix this boot |
+| `gps.rej` | integer | — | Fixes rejected by the jump gate |
+| `gps.still` | boolean | — | Parked/hold state |
+| `gps.mode` | integer | — | NMEA fix mode |
+| `gps.utc_*` | integer | — | UTC broken down for the dashboard clock |
+| `lap.on` | boolean | — | Timing gate armed |
+| `lap.n` | integer | — | Lap count |
+| `lap.last_ms`, `lap.best_ms` | integer | ms | Last and best lap |
+| `lap.la`, `lap.lb` | number[2] | deg | Gate endpoints |
+| `sys.heap`, `sys.heap_min` | integer | bytes | Free / minimum free heap |
+| `sys.boot` | integer | — | Boot counter (NVS) |
+| `sys.rssi` | integer | dBm | Wi-Fi RSSI |
+| `sys.wifi.*` | mixed | — | SSID, BSSID, channel, status, IP, MAC |
+
+> `sys.wifi.status` is `Connected`, `Disconnected`, `No SSID`, `Connect failed`,
+> `Idle` or `Unknown`. When not connected, `ssid` is empty and `ip` is `-`.
 
 ---
 
-## Status Payload (esp32-dash/<key>/status)
+## Status Payload
 
-Published on connect and as Last Will (LWT). Retained = true.
+Plain string, not JSON:
 
-### Online
-```json
-{"online": true, "ts": 1700000000, "fw": "orion 1.4.0", "id": "orion-A1B2C3D4"}
+| Value | When |
+|-------|------|
+| `online` | Published retained immediately after a successful connect |
+| `offline` | Broker Last Will when the TCP session drops |
+
+---
+
+## Client ID & Session
+
+- Client ID: `orion-<8 hex>` from the ESP32 eFuse MAC, e.g. `orion-3B4A21C8`
+- Clean session, keepalive 15 s, socket timeout 3 s
+- Last Will: topic `.../status`, payload `offline`, QoS 0, retained
+- The firmware keeps a 3-slot publish queue; frames that fail to send are
+  retried oldest-first after a reconnect
+- A watchdog forces a reconnect if nothing is delivered for 20 s
+
+---
+
+## Firmware Config
+
+```cpp
+#define MQTT_HOST   "broker.hivemq.com"
+#define MQTT_PORT   1883
+#define TOPIC_KEY   "race-tracker"
+#define TOPIC_DATA   "esp32-dash/" TOPIC_KEY "/data"
+#define TOPIC_STATUS "esp32-dash/" TOPIC_KEY "/status"
+#define FW_NAME     "orion"
+#define FW_VERSION  "1.4.0"
+#define PUBLISH_INTERVAL_MS 1000
 ```
-
-### Offline (LWT)
-```json
-{"online": false, "ts": 1700000000}
-```
-
-| Field | Description |
-|-------|-------------|
-| `online` | true = connected, false = LWT fired |
-| `ts` | Epoch seconds when status sent |
-| `fw` | Firmware version string |
-| `id` | MQTT client ID (`orion-<MAC>`) |
 
 ---
 
 ## Dashboard Subscription
 
-On page load (or `#t=<key>` change):
-
 ```js
 const TOPIC_ROOT = "esp32-dash/";
-const TOPIC_KEY = "race-tracker"; // or from URL hash
+const TOPIC_KEY  = "race-tracker";      // or from #t=<key>
 mqtt.subscribe(TOPIC_ROOT + TOPIC_KEY + "/data");
 mqtt.subscribe(TOPIC_ROOT + TOPIC_KEY + "/status");
 ```
 
-- Data topic → `ingestGPS()` → updates all tabs
-- Status topic → updates `DEVICE` pill (LIVE/OFFLINE/NO SIGNAL)
+- `/data` → `ingestGPS()` → map, charts, pills
+- `/status` → DEVICE pill (`LIVE` / `OFFLINE` / `NO SIGNAL`)
 
----
-
-## Multiple Trackers
-
-Each tracker uses a unique `<TOPIC_KEY>`:
-- Firmware: `#define TOPIC_KEY "my-tracker"`
-- Dashboard: open `https://.../esp32-monitoring-pio/#t=my-tracker`
-- Broker: public, no coordination needed
-
----
-
-## QoS & Retention
-
-| Topic | QoS | Retained | Reason |
-|-------|-----|----------|--------|
-| `.../data` | 0 | true | Latest reading always available on subscribe |
-| `.../status` | 0 | true | LWT ensures offline state visible |
-
-QoS 0 chosen for: minimal overhead, 1 Hz is frequent enough, broker is public/unreliable anyway.
-
----
-
-## Firmware Config (src/mqtt_simple/mqtt_simple.cpp)
-
-```cpp
-#define TOPIC_KEY     "race-tracker"      // Change per tracker
-#define TOPIC_DATA    "esp32-dash/" TOPIC_KEY "/data"
-#define TOPIC_STATUS  "esp32-dash/" TOPIC_KEY "/status"
-#define FW_NAME       "orion"
-#define FW_VERSION    "1.4.0"
-#define PUBLISH_INTERVAL_MS 1000
-```
-
-Client ID generated at boot: `orion-<MAC>` (e.g., `orion-A1B2C3D4`).
+Every tracker needs its own `TOPIC_KEY`; both sides must match.

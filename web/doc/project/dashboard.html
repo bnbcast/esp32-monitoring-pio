@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard Architecture - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="on" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1 id="dashboard-architecture">Dashboard Architecture</h1>
+<h2 id="overview">Overview</h2>
+<p>Single-page vanilla JS dashboard served statically from GitHub Pages.</p>
+<ul>
+<li>No build step, no bundler, no framework</li>
+<li>Loads in order: CSS → vendor → modules → <code>app.js</code></li>
+<li>All state in <code>app.js</code>; modules export single objects/functions</li>
+</ul>
+<hr>
+<h2 id="module-load-order-from-index-html">Module Load Order (from <code>index.html</code>)</h2>
+<pre><code>
+&lt;!-- Styles --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;css/tokens.css?v=53&quot;&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;css/base.css?v=53&quot;&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;css/components.css?v=53&quot;&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;css/layout.css?v=53&quot;&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;css/map.css?v=53&quot;&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;vendor/maplibre-gl.css?v=53&quot;&gt;
+
+&lt;!-- Vendor --&gt;
+&lt;script src=&quot;vendor/maplibre-gl-csp.js?v=53&quot;&gt;&lt;/script&gt;
+
+&lt;!-- Modules (dependency order) --&gt;
+&lt;script src=&quot;ui/guard.js?v=53&quot;&gt;&lt;/script&gt;        // Operator lock
+&lt;script src=&quot;ui/map.js?v=53&quot;&gt;&lt;/script&gt;          // MAP object
+&lt;script src=&quot;ui/mqtt-mini.js?v=53&quot;&gt;&lt;/script&gt;    // MQTT client
+&lt;script src=&quot;ui/info-data.js?v=53&quot;&gt;&lt;/script&gt;    // Glossary data
+&lt;script src=&quot;ui/info.js?v=53&quot;&gt;&lt;/script&gt;         // INFO UI
+&lt;script src=&quot;ui/sessions.js?v=53&quot;&gt;&lt;/script&gt;     // History sessions
+&lt;script src=&quot;ui/charts.js?v=53&quot;&gt;&lt;/script&gt;       // Chart helpers
+&lt;script src=&quot;ui/mpu3d.js?v=53&quot;&gt;&lt;/script&gt;        // MPU 3D view
+&lt;script src=&quot;ui/app.js?v=53&quot;&gt;&lt;/script&gt;          // Main entry
+</code></pre>
+<hr>
+<h2 id="module-exports">Module Exports</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Module</th><th>Export</th><th>Consumers</th></tr></thead>
+<tbody>
+<tr><td><code>guard.js</code></td><td><code>LOCK</code> object</td><td><code>app.js</code></td></tr>
+<tr><td><code>map.js</code></td><td><code>MAP</code> object</td><td><code>app.js</code></td></tr>
+<tr><td><code>mqtt-mini.js</code></td><td><code>MQTT</code> object</td><td><code>app.js</code></td></tr>
+<tr><td><code>info-data.js</code></td><td><code>INFO_INTRO</code>, <code>INFO_GROUPS</code></td><td><code>info.js</code>, <code>app.js</code></td></tr>
+<tr><td><code>info.js</code></td><td><code>window.INFO.reveal()</code></td><td><code>app.js</code></td></tr>
+<tr><td><code>sessions.js</code></td><td><code>SESSIONS</code> object</td><td><code>app.js</code></td></tr>
+<tr><td><code>charts.js</code></td><td><code>CHARTS</code> object</td><td><code>app.js</code></td></tr>
+<tr><td><code>mpu3d.js</code></td><td><code>MPU3D</code> object</td><td><code>app.js</code></td></tr>
+<tr><td><code>app.js</code></td><td>—</td><td>(entry)</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="data-flow-app-js">Data Flow (app.js)</h2>
+<pre><code>
+MQTT message
+    │
+    ├─ ingestGPS(payload)
+    │    ├─ Parse GPS, MPU, sys
+    │    ├─ Update GPS object (circular buffers)
+    │    ├─ Update pills (BROKER, DEVICE, MPU, GPS)
+    │    ├─ Update HUD values
+    │    ├─ MAP.updateMarker() + trail
+    │    ├─ Update charts (if LIVE tab open)
+    │    └─ Update MPU3D (if MPU tab open)
+    │
+    └─ renderBanner() (500ms interval)
+         ├─ Compute status text
+         ├─ Update brand state (DREAMING/LIVE/etc.)
+         └─ Update pills
+</code></pre>
+<hr>
+<h2 id="key-objects">Key Objects</h2>
+<h3 id="gps-in-app-js"><code>GPS</code> (in app.js)</h3>
+<pre><code>
+{
+  lastPoint: { lat, lng, kmh, cog, hdop, sats, ts },
+  tiltHistory: [],    // last 120 pitch values
+  trace: [],          // trail points {lng, lat, kmh, seg}
+  maxSpeed: 0,
+  movingTime: 0,
+  stoppedTime: 0,
+  elevGain: 0,
+  elevLoss: 0
+}
+</code></pre>
+<h3 id="map-from-map-js"><code>MAP</code> (from map.js)</h3>
+<pre><code>
+{
+  create(containerId),
+  loaded(),           // Promise → map ready
+  updateMarker(lng, lat, heading, fix),
+  updateTrail(points),
+  setHistory(points),
+  recenterNow(),
+  setFollow(bool),
+  setMeasureMode(bool),
+  resize()
+}
+</code></pre>
+<h3 id="mpu3d-from-mpu3d-js"><code>MPU3D</code> (from mpu3d.js)</h3>
+<pre><code>
+{
+  draw(canvas, { roll, pitch, yaw, valid }),
+  rotate(point, roll, pitch, yaw),
+  project(point, scale)
+}
+</code></pre>
+<h3 id="charts-from-charts-js"><code>CHARTS</code> (from charts.js)</h3>
+<pre><code>
+{
+  autoMax(values, headroom),
+  niceMax(max),
+  bands(ctx, config),
+  line(ctx, points, config),
+  bar(ctx, data, config)
+}
+</code></pre>
+<h3 id="sessions-from-sessions-js"><code>SESSIONS</code> (from sessions.js)</h3>
+<pre><code>
+{
+  load(minutes),           // → Promise { sessions[], laps[] }
+  select(index),           // Highlight one session
+  exportHistory(format),   // 'gpx' | 'csv'
+  toGpx(points, name),     // GPX 1.1 string
+  toCsv(points)            // CSV string
+}
+</code></pre>
+<hr>
+<h2 id="ui-state">UI State</h2>
+<h3 id="tabs">Tabs</h3>
+<ul>
+<li><code>LIVE</code> — real-time HUD, charts, map</li>
+<li><code>WIFI</code> — RSSI + heap chart, link stats</li>
+<li><code>MPU</code> — 3D attitude, tilt chart, accel chart</li>
+<li><code>HIST</code> — sessions timeline, laps, export, playback</li>
+<li><code>INFO</code> — glossary (search, chips, expand)</li>
+</ul>
+<h3 id="bottom-sheet-mobile">Bottom Sheet (mobile)</h3>
+<ul>
+<li>4 snap points: <code>collapsed</code> | <code>half</code> | <code>tall</code> | <code>full</code></li>
+<li>Drag handle, tap toggle, keyboard arrows, persists <code>sheetSnap</code></li>
+<li>Tab click reopens to last height</li>
+</ul>
+<h3 id="operator-lock">Operator Lock</h3>
+<ul>
+<li>Long-press <code>LOCKED</code> button → unlocks <code>operator-only</code> buttons</li>
+<li>Stored in <code>localStorage</code> (per browser)</li>
+</ul>
+<hr>
+<h2 id="charts">Charts</h2>
+<h3 id="live-tab">LIVE Tab</h3>
+<ul>
+<li>Speed line (180 frames) — red where HDOP &gt; 3</li>
+<li>Stats: avg moving speed, stopped %, peak</li>
+</ul>
+<h3 id="wifi-tab">WIFI Tab</h3>
+<ul>
+<li>RSSI (black) + free heap (red) — dual axis</li>
+<li>Link quality: strong/fair/weak (current RSSI)</li>
+<li>Msg rate (15s), max gap (60s)</li>
+</ul>
+<h3 id="mpu-tab">MPU Tab</h3>
+<ul>
+<li>Accel magnitude |a| with 1g ref line</li>
+<li>Peak |a|, peak tilt</li>
+<li>Tilt chart (30° floor)</li>
+</ul>
+<h3 id="hist-tab">HIST Tab</h3>
+<ul>
+<li>View: Speed+Lean | HDOP | Lap vs Best</li>
+<li>Timeline: moving/stopped %, avg moving, max speed</li>
+</ul>
+<hr>
+<h2 id="keyboard-shortcuts">Keyboard Shortcuts</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><code>C</code></td><td>Recenter map</td></tr>
+<tr><td><code>M</code></td><td>Toggle measure mode</td></tr>
+<tr><td><code>R</code></td><td>Reset trip</td></tr>
+<tr><td><code>F</code></td><td>Full-screen map</td></tr>
+<tr><td><code>Esc</code></td><td>Exit full-screen / cancel measure</td></tr>
+<tr><td><code>↑/↓</code></td><td>Step sheet snap (when handle focused)</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="responsive-breakpoints">Responsive Breakpoints</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Breakpoint</th><th>Layout</th></tr></thead>
+<tbody>
+<tr><td><code>&gt; 900px</code></td><td>Desktop: top bar \</td><td>map (flex) \</td><td>side panel</td></tr>
+<tr><td><code>≤ 900px</code></td><td>Mobile: top bar, map (flex:1), bottom sheet</td></tr>
+<tr><td><code>≤ 520px</code> + short</td><td>Hide header wordmark, compact sheet</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="performance">Performance</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Optimization</th><th>Implementation</th></tr></thead>
+<tbody>
+<tr><td>Trail rendering</td><td>Single <code>LineString</code> + <code>line-gradient</code> (GPU)</td></tr>
+<tr><td>Accuracy circle</td><td>Circle layer + geographic radius expression</td></tr>
+<tr><td>Heading wedge</td><td>4 vertices (was 8)</td></tr>
+<tr><td>Vertex cap</td><td>800 (decimate at 50%)</td></tr>
+<tr><td>Pixel ratio</td><td>Capped at 2×</td></tr>
+<tr><td>Resize debounce</td><td>150ms + visualViewport listener</td></tr>
+<tr><td>Chart repaint</td><td>Only on tab open + resize</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="security-csp">Security (CSP)</h2>
+<pre><code>
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;
+  default-src 'none';
+  script-src 'self';
+  style-src 'unsafe-inline' 'self';
+  manifest-src 'self';
+  connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org;
+  img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org;
+  worker-src blob: 'self';
+  base-uri 'none';
+  form-action 'none'
+&quot;&gt;
+</code></pre>
+<ul>
+<li>No inline scripts (<code>unsafe-inline</code> only for styles)</li>
+<li>MapLibre worker via blob URL (<code>vendor/maplibre-gl-csp.js</code>)</li>
+<li>All external connections explicitly listed</li>
+</ul></main>
+</div>
+</body>
+</html>

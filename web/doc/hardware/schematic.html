@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hardware Schematic &amp; Wiring - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="on" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1 id="hardware-schematic-wiring">Hardware Schematic &amp; Wiring</h1>
+<h2 id="bill-of-materials">Bill of Materials</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Component</th><th>Qty</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>ESP32 DevKit V1 (DOIT)</td><td>1</td><td><code>esp32doit-devkit-v1</code></td></tr>
+<tr><td>NEO-6M GPS Module</td><td>1</td><td>UART, 9600 baud default</td></tr>
+<tr><td>MPU6050 IMU</td><td>1</td><td>I2C, 0x68 address</td></tr>
+<tr><td>Breadboard / Perfboard</td><td>1</td><td></td></tr>
+<tr><td>Jumper wires</td><td>~10</td><td></td></tr>
+<tr><td>USB cable (data)</td><td>1</td><td>For power + flash</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="pinout">Pinout</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>ESP32 Pin</th><th>Function</th><th>Connected To</th></tr></thead>
+<tbody>
+<tr><td><strong>GPIO 16 (RX2)</strong></td><td>UART2 RX</td><td>NEO-6M <strong>TX</strong></td></tr>
+<tr><td><strong>GPIO 17 (TX2)</strong></td><td>UART2 TX</td><td>NEO-6M <strong>RX</strong></td></tr>
+<tr><td><strong>GPIO 21 (SDA)</strong></td><td>I2C SDA</td><td>MPU6050 <strong>SDA</strong></td></tr>
+<tr><td><strong>GPIO 22 (SCL)</strong></td><td>I2C SCL</td><td>MPU6050 <strong>SCL</strong></td></tr>
+<tr><td><strong>3V3</strong></td><td>Power</td><td>NEO-6M VCC, MPU6050 VCC</td></tr>
+<tr><td><strong>GND</strong></td><td>Ground</td><td>NEO-6M GND, MPU6050 GND</td></tr>
+<tr><td><strong>EN</strong></td><td>Reset</td><td>(optional) button to GND</td></tr>
+</tbody></table></div>
+<blockquote><strong>Note</strong>: NEO-6M RX accepts 3.3V logic. If your module is 5V-only, add a voltage divider on ESP32 TX2 → NEO-6M RX.</blockquote>
+<hr>
+<h2 id="wiring-diagram">Wiring Diagram</h2>
+<pre><code>
+                    ┌─────────────────────┐
+                    │    ESP32 DevKit     │
+                    │                     │
+              ┌─────►│ GPIO 16 (RX2)       │
+              │      │ GPIO 17 (TX2)       │──────┐
+              │      │ GPIO 21 (SDA)       │──────┤
+              │      │ GPIO 22 (SCL)       │──────┤
+              │      │ 3V3                 │──────┼──┐
+              │      │ GND                 │──────┼──┼──┐
+              │      │                     │      │  │  │
+              │      └─────────────────────┘      │  │  │
+              │                                   │  │  │
+              ▼                                   ▼  ▼  ▼
+        ┌───────────┐                     ┌───────────────┐
+        │  NEO-6M   │                     │    MPU6050    │
+        │           │                     │               │
+        │ TX ───────┘                     │ SDA ──────────┘
+        │ RX ─────────────────────────────┘ SCL ──────────┘
+        │ VCC ────────────────────────────────────────────┘
+        │ GND ────────────────────────────────────────────┘
+        └───────────┘
+</code></pre>
+<hr>
+<h2 id="power-considerations">Power Considerations</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Component</th><th>Voltage</th><th>Current (typical)</th></tr></thead>
+<tbody>
+<tr><td>ESP32</td><td>3.3V</td><td>80–240 mA (WiFi active)</td></tr>
+<tr><td>NEO-6M</td><td>3.3V</td><td>30–50 mA (acquisition)</td></tr>
+<tr><td>MPU6050</td><td>3.3V</td><td>3–5 mA</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>3.3V</strong></td><td><strong>~150–300 mA</strong></td></tr>
+</tbody></table></div>
+<ul>
+<li>ESP32 DevKit onboard LDO (AMS1117) handles up to 800 mA → sufficient</li>
+<li>Add 100 µF + 100 nF decoupling near ESP32 3V3/GND if using long wires</li>
+<li>NEO-6M cold start draws more current → ensure stable 3.3V</li>
+</ul>
+<hr>
+<h2 id="antenna-placement">Antenna Placement</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Sensor</th><th>Requirement</th></tr></thead>
+<tbody>
+<tr><td><strong>NEO-6M</strong></td><td>Ceramic patch antenna needs clear sky view. Keep &gt;5 cm from ESP32 WiFi antenna, metal, carbon fiber. Horizontal mount (patch facing up).</td></tr>
+<tr><td><strong>MPU6050</strong></td><td>Mount flat on vehicle chassis. Align axes: X = right, Y = forward, Z = up. Secure rigidly (double-sided tape + zip tie).</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="esp32-devkit-v1-pin-reference">ESP32 DevKit V1 Pin Reference</h2>
+<pre><code>
+          ┌────────────────────────┐
+    VIN ──►│ 3V3           GND ◄───│
+           │ GND           GPIO23   │
+           │ GPIO18          GPIO22 │◄── SCL (MPU6050)
+           │ GPIO19          GPIO21 │◄── SDA (MPU6050)
+           │ GPIO5           GPIO19 │
+           │ GPIO4           GPIO18 │
+           │ GPIO2           GPIO5  │
+           │ GPIO0           GPIO4  │
+           │ GPIO35          GPIO0  │
+           │ GPIO34          GPIO35 │
+           │ GPIO39          GPIO34 │
+           │ GPIO36          GPIO39 │
+           │ GPIO16 (RX2)  GPIO36   │
+           │ GPIO17 (TX2)  GPIO39   │
+           │ 3V3           EN       │
+    3V3 ◄───│ GND           GPIO16   │◄── RX (NEO-6M)
+           └────────────────────────┘
+</code></pre>
+<hr>
+<h2 id="optional-external-led-indicators">Optional: External LED Indicators</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>LED</th><th>Pin</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GPS Fix (green)</td><td>GPIO 25</td><td>Blinks on fix, solid on good HDOP</td></tr>
+<tr><td>MPU OK (blue)</td><td>GPIO 26</td><td>Solid when MPU self-test passes</td></tr>
+<tr><td>Danger (red)</td><td>GPIO 27</td><td>High accel/tilt warning</td></tr>
+<tr><td>Status (RGB)</td><td>GPIO 13/12/14</td><td>Combined status (PWM)</td></tr>
+</tbody></table></div>
+<blockquote>Not implemented in current firmware. Add if desired.</blockquote>
+<hr>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Symptom</th><th>Check</th></tr></thead>
+<tbody>
+<tr><td>GPS never fixes</td><td>Antenna orientation, clear sky, 5+ min cold start</td></tr>
+<tr><td>MPU FAIL pill</td><td>I2C wiring (SDA/SCL), 0x68 address, 3.3V power</td></tr>
+<tr><td>WiFi won't connect</td><td>SSID/password in <code>src/wifi_config.h</code>, 2.4 GHz only; serial log prints visible SSIDs</td></tr>
+<tr><td>MQTT won't connect</td><td>Device uses <code>broker.hivemq.com:1883</code> (TCP); browser uses <code>wss://...:8884/mqtt</code>. Check serial for <code>mqtt OK</code></td></tr>
+<tr><td>No history upload</td><td><code>HISTORY_URL</code> + <code>HISTORY_KEY</code> in <code>history_secret.h</code></td></tr>
+</tbody></table></div></main>
+</div>
+</body>
+</html>

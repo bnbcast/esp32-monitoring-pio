@@ -125,6 +125,6 @@
 |---------|-------|
 | GPS never fixes | Antenna orientation, clear sky, 5+ min cold start |
 | MPU FAIL pill | I2C wiring (SDA/SCL), 0x68 address, 3.3V power |
-| WiFi won't connect | SSID/password in `secret.txt`, 2.4 GHz only |
-| MQTT won't connect | Broker reachable, port 8884, TLS cert valid |
+| WiFi won't connect | SSID/password in `src/wifi_config.h`, 2.4 GHz only; serial log prints visible SSIDs |
+| MQTT won't connect | Device uses `broker.hivemq.com:1883` (TCP); browser uses `wss://...:8884/mqtt`. Check serial for `mqtt OK` |
 | No history upload | `HISTORY_URL` + `HISTORY_KEY` in `history_secret.h` |

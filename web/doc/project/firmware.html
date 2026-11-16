@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Firmware Architecture - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="on" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1 id="firmware-architecture">Firmware Architecture</h1>
+<h2 id="overview">Overview</h2>
+<p>Single-variant firmware (<code>esp32-mqtt-simple</code>) for classic ESP32 (<code>esp32doit-devkit-v1</code>).</p>
+<ul>
+<li>Framework: Arduino (PlatformIO)</li>
+<li>Transport: MQTT over TCP (<code>broker.hivemq.com:1883</code>); the browser dashboard uses <code>wss://broker.hivemq.com:8884/mqtt</code></li>
+<li>Sensors: NEO-6M GPS (UART), MPU6050 (I2C)</li>
+<li>Storage: LittleFS ring buffer for history</li>
+</ul>
+<hr>
+<h2 id="build-flash">Build &amp; Flash</h2>
+<pre><code>
+# Build
+pio run -e esp32-mqtt-simple
+
+# Flash (auto-detects COM port)
+pio run -e esp32-mqtt-simple -t upload
+
+# Monitor serial (115200 baud)
+pio device monitor
+</code></pre>
+<h3 id="platformio-env">PlatformIO Env</h3>
+<pre><code>
+[env:esp32-mqtt-simple]
+platform = espressif32
+board = esp32doit-devkit-v1
+framework = arduino
+lib_deps =
+    bblanchon/ArduinoJson@^7.0.4
+    knolleary/PubSubClient@^2.8
+    bblanchon/TinyGPSPlus@^1.0.3
+build_flags =
+    -D USE_MQTT_SIMPLE
+    -D CORE_DEBUG_LEVEL=0
+</code></pre>
+<hr>
+<h2 id="main-loop-non-blocking">Main Loop (non-blocking)</h2>
+<pre><code>
+loop()
+  ├─ gps read → NMEA parse → fix, lat, lng, alt, kmh, cog, hdop, sats
+  ├─ MPU read → complementary filter → roll, pitch, yaw
+  ├─ networkService() → wifiService() → MQTT reconnect/publish/queue drain
+  ├─ publishData() at PUBLISH_INTERVAL_MS (1 Hz)
+  │    ├─ MQTT publish → esp32-dash/&lt;key&gt;/data (retained)
+  │    └─ historyEnqueue() when a valid fix + clock exists
+  ├─ historyService() → HTTPS batch every 30 s
+  └─ serial status panel every DASH_INTERVAL_MS
+</code></pre>
+<p>The loop never calls <code>delay()</code> for pacing: sensors, Wi-Fi, MQTT and history each use <code>millis()</code> deadlines, so a TLS upload or a scan cannot stall the others.</p>
+<hr>
+<h2 id="key-components">Key Components</h2>
+<h3 id="gps-neo-6m">GPS (NEO-6M)</h3>
+<ul>
+<li>UART2 (GPIO 16/17), 9600 baud</li>
+<li>TinyGPSPlus parser</li>
+<li>Outputs: fix, lat, lng, alt, speed (km/h), course, HDOP, satellites</li>
+<li>Cold start: 30–60s outdoors; warm start: ~5s</li>
+</ul>
+<h3 id="mpu6050">MPU6050</h3>
+<ul>
+<li>I2C (GPIO 21/22), 400 kHz</li>
+<li>Accel ±2g, Gyro ±250°/s</li>
+<li>Complementary filter (0.98 gyro / 0.02 accel) for roll/pitch</li>
+<li>Yaw = integrated gyro Z (drifts, no magnetometer)</li>
+<li>Self-test on boot; fails → MPU FAIL pill</li>
+</ul>
+<h3 id="mqtt-client">MQTT Client</h3>
+<ul>
+<li>PubSubClient over <code>WiFiClientSecure</code></li>
+<li>CA cert: HiveMQ root (embedded)</li>
+<li>Client ID: <code>orion-&lt;MAC&gt;</code> (e.g., <code>orion-A1B2C3D4</code>)</li>
+<li>Topics: <code>esp32-dash/&lt;key&gt;/data</code>, <code>esp32-dash/&lt;key&gt;/status</code></li>
+<li>LWT: <code>offline</code> on <code>.../status</code> (retained); <code>online</code> is published retained on connect</li>
+<li>Reconnect: exponential backoff (2s, 4s, 8s, max 30s)</li>
+</ul>
+<h3 id="wi-fi-reconnect-behavior">Wi-Fi Reconnect Behavior</h3>
+<p>The network stack is a non-blocking state machine (<code>WF_IDLE</code> → <code>WF_SCANNING</code> → <code>WF_CONNECTING</code>) driven from <code>networkService()</code>:</p>
+<ul>
+<li>Boot starts an <strong>async scan</strong> (never blocks the GPS/IMU loop).</li>
+<li>Candidates live in <code>src/wifi_config.h</code>; exact SSID match wins, then prefix match.</li>
+<li>After one success the AP is cached (<code>lastGoodNet</code>) so reconnects skip the scan.</li>
+<li>If the scan shows no configured SSID, each candidate is tried <strong>directly, round-robin</strong>. This covers hidden APs and scan misses.</li>
+<li>A cached AP that times out <strong>3 times</strong> is dropped and a rescan is forced, so a hotspot that moved or was renamed cannot pin the device forever.</li>
+<li>Association timeout uses <code>WiFi.disconnect(false)</code> so the radio stays up (the old <code>true</code> powered the station down and made retries look like flapping).</li>
+<li>Modem sleep is disabled (<code>WiFi.setSleep(false)</code>) for low-latency telemetry.</li>
+<li>Every scan logs each visible SSID with RSSI/channel, which distinguishes &quot;wrong SSID&quot; from &quot;dead radio&quot;.</li>
+</ul>
+<blockquote>If the log shows <code>best candidate=none</code>, the configured SSID is simply not in range. Add the correct <strong>2.4 GHz</strong> SSID/password to <code>src/wifi_config.h</code> and reflash; 5 GHz-only APs are invisible to the ESP32.</blockquote>
+<h3 id="history-ring-buffer-littlefs">History Ring Buffer (LittleFS)</h3>
+<ul>
+<li>File: <code>/history.bin</code> (fixed-size, ~200 KB)</li>
+<li>Format: binary, fixed-record (36 bytes/frame)</li>
+<li>Only frames with <code>gps.fix=true</code> stored</li>
+<li>Moving (≥3 km/h): every frame (1 Hz)</li>
+<li>Parked: 1 frame / 10 s</li>
+<li>Batch upload: 30s or 120 frames → HTTPS POST /ingest</li>
+<li>On 2xx: delete batch (even if server rejected some)</li>
+<li>Max ~9M frames/year (fits 5 GB D1 free tier)</li>
+</ul>
+<hr>
+<h2 id="configuration-compile-time">Configuration (compile-time)</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Define</th><th>Default</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>TOPIC_KEY</code></td><td><code>&quot;race-tracker&quot;</code></td><td>MQTT topic suffix</td></tr>
+<tr><td><code>FW_NAME</code></td><td><code>&quot;orion&quot;</code></td><td>Firmware name in banner</td></tr>
+<tr><td><code>FW_VERSION</code></td><td><code>&quot;1.4.0&quot;</code></td><td>Firmware version</td></tr>
+<tr><td><code>PUBLISH_INTERVAL_MS</code></td><td><code>1000</code></td><td>Publish cadence (ms)</td></tr>
+<tr><td><code>HISTORY_URL</code></td><td><code>&quot;&quot;</code></td><td>Pages Function URL (from <code>history_secret.h</code>)</td></tr>
+<tr><td><code>HISTORY_KEY</code></td><td><code>&quot;&quot;</code></td><td>Ingest key (from <code>history_secret.h</code>)</td></tr>
+<tr><td><code>HISTORY_DEVICE</code></td><td><code>&quot;esp32-01&quot;</code></td><td>Device ID in D1</td></tr>
+</tbody></table></div>
+<h3 id="secrets-src-mqtt-simple-history-secret-h-gitignored">Secrets (<code>src/mqtt_simple/history_secret.h</code> — <strong>gitignored</strong>)</h3>
+<pre><code>
+#define HISTORY_URL &quot;https://race-tracker-history.pages.dev/ingest&quot;
+#define HISTORY_KEY &quot;your-ingest-key-here&quot;
+</code></pre>
+<hr>
+<h2 id="serial-output-115200-baud">Serial Output (115200 baud)</h2>
+<pre><code>
+orion 1.4.0
+WiFi: connected (SSID) RSSI -52 dB
+MQTT: connected to broker.hivemq.com
+MPU: OK (roll=0.1 pitch=-0.2)
+GPS: waiting for fix...
+[1700000001] GPS FIX lat=-6.200001 lng=106.800001 kmh=45.2 sats=8 hdop=0.8
+[1700000002] GPS FIX lat=-6.200002 lng=106.800003 kmh=46.1 sats=8 hdop=0.7
+History: uploaded 120 frames (2xx)
+</code></pre>
+<hr>
+<h2 id="status-pills-from-firmware-dashboard">Status Pills (from firmware → dashboard)</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Pill</th><th>Source</th><th>Values</th></tr></thead>
+<tbody>
+<tr><td>BROKER</td><td>MQTT conn state</td><td>OK / ... / OFFLINE</td></tr>
+<tr><td>DEVICE</td><td><code>online</code> field in status topic</td><td>LIVE / OFFLINE / NO SIGNAL</td></tr>
+<tr><td>MPU6050</td><td>Self-test + valid data</td><td>OK / FAIL</td></tr>
+<tr><td>GPS</td><td><code>gps.fix</code> + HDOP</td><td>FIX / WAIT / NO FIX</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="memory-map-approx">Memory Map (approx)</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Region</th><th>Size</th></tr></thead>
+<tbody>
+<tr><td>Flash (code + rodata)</td><td>~1.3 MB / 3.1 MB (41%)</td></tr>
+<tr><td>RAM (static + heap)</td><td>~53 KB / 320 KB (16%)</td></tr>
+<tr><td>LittleFS (history)</td><td>200 KB</td></tr>
+<tr><td>WiFi + MQTT buffers</td><td>~40 KB</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="ota">OTA</h2>
+<p><strong>Explicitly out of scope.</strong> Firmware updates require USB flash.</p>
+<ul>
+<li>Reason: single device, no fleet, public broker cannot push OTA</li>
+<li>If needed: <code>pio run -t upload</code> via USB</li>
+</ul></main>
+</div>
+</body>
+</html>

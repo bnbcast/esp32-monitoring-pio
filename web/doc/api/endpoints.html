@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>API Endpoints Reference - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="on" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1 id="api-endpoints-reference">API Endpoints Reference</h1>
+<p>Base URL: <strong>https://race-tracker-history.pages.dev</strong> (Cloudflare Pages Function).</p>
+<p>Public read. Writes require <code>X-Ingest-Key</code>. All responses are JSON.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/health</code></td><td>—</td><td>Liveness</td></tr>
+<tr><td>GET</td><td><code>/history</code></td><td>—</td><td>Stored fixes + laps</td></tr>
+<tr><td>POST</td><td><code>/ingest</code></td><td><code>X-Ingest-Key</code></td><td>Device batch upload</td></tr>
+<tr><td>OPTIONS</td><td>any</td><td>—</td><td>CORS preflight, <code>204</code></td></tr>
+</tbody></table></div>
+<p>Unknown paths return <code>404 { &quot;ok&quot;: false, &quot;error&quot;: &quot;not-found&quot; }</code>.</p>
+<p>Full request/response detail lives in <a href="history.html">history.md</a>; the live telemetry stream is documented in <a href="mqtt.html">mqtt.md</a>.</p>
+<hr>
+<h2 id="quick-reference">Quick Reference</h2>
+<h3 id="get-health">GET /health</h3>
+<pre><code>
+{ &quot;ok&quot;: true, &quot;service&quot;: &quot;race-tracker-history&quot; }
+</code></pre>
+<h3 id="get-history">GET /history</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>device</code></td><td>string</td><td><code>esp32-01</code></td><td>32-char cap</td></tr>
+<tr><td><code>from</code></td><td>epoch sec</td><td>now − 24 h</td><td>must be <code>&lt; to</code></td></tr>
+<tr><td><code>to</code></td><td>epoch sec</td><td>now</td><td>inclusive</td></tr>
+<tr><td><code>limit</code></td><td>int</td><td><code>2000</code></td><td>clamped 1–5000</td></tr>
+</tbody></table></div>
+<pre><code>
+{
+  &quot;ok&quot;: true, &quot;device&quot;: &quot;esp32-01&quot;, &quot;from&quot;: 1700000000, &quot;to&quot;: 1700086400,
+  &quot;count&quot;: 1, &quot;total&quot;: 86400, &quot;step&quot;: 173, &quot;sampled&quot;: true,
+  &quot;maxGap&quot;: 2, &quot;truncated&quot;: false,
+  &quot;points&quot;: [[1700000001, -6.200001, 106.800001, 45.2, 90.5, 0.8, 4.1, -2.1, 7]],
+  &quot;laps&quot;: [[1700000123, 1, 45230, 44210]]
+}
+</code></pre>
+<ul>
+<li>Point tuple: <code>[ts, lat, lon, kmh, cog, hdop, roll, pitch, boot]</code></li>
+<li>Lap tuple: <code>[ts, n, dur_ms, best_ms]</code></li>
+<li>Invalid window: <code>400 { &quot;ok&quot;: false, &quot;error&quot;: &quot;bad-window&quot; }</code></li>
+</ul>
+<h3 id="post-ingest">POST /ingest</h3>
+<pre><code>
+{
+  &quot;device&quot;: &quot;esp32-01&quot;,
+  &quot;frames&quot;: [
+    {&quot;seq&quot;: 1234, &quot;up&quot;: 3600, &quot;ts&quot;: 1700000001, &quot;boot&quot;: 7, &quot;fix&quot;: true,
+     &quot;lat&quot;: -6.2, &quot;lng&quot;: 106.8, &quot;kmh&quot;: 45.2, &quot;cog&quot;: 90.5, &quot;hdop&quot;: 0.8,
+     &quot;sats&quot;: 8, &quot;roll&quot;: 4.1, &quot;pitch&quot;: -2.1}
+  ]
+}
+</code></pre>
+<p><code>seq</code>, <code>up</code> and <code>ts</code> are mandatory. Response:</p>
+<pre><code>
+{
+  &quot;ok&quot;: true, &quot;received&quot;: 1, &quot;stored&quot;: 1, &quot;laps&quot;: 0,
+  &quot;duplicates&quot;: 0, &quot;rejected&quot;: [], &quot;retention&quot;: &quot;skipped&quot;
+}
+</code></pre>
+<div class="table-wrap"><table>
+<thead><tr><th>Status</th><th><code>error</code></th><th>Cause</th></tr></thead>
+<tbody>
+<tr><td>400</td><td><code>bad-json</code></td><td>Body is not JSON</td></tr>
+<tr><td>400</td><td><code>no-frames</code></td><td>Missing/empty <code>frames</code></td></tr>
+<tr><td>401</td><td><code>unauthorized</code></td><td>Missing/wrong <code>X-Ingest-Key</code></td></tr>
+<tr><td>413</td><td><code>body-too-large</code></td><td>Body &gt; 64 KB</td></tr>
+<tr><td>413</td><td><code>too-many-frames</code></td><td>More than 120 frames</td></tr>
+<tr><td>503</td><td><code>ingest-key-not-set</code></td><td>Server has no <code>INGEST_KEY</code></td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="cors">CORS</h2>
+<pre><code>
+access-control-allow-origin: *
+access-control-allow-methods: GET, POST, OPTIONS
+access-control-allow-headers: content-type, x-ingest-key
+</code></pre>
+<hr>
+<h2 id="limits-implemented">Limits (implemented)</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Limit</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Body size</td><td>64 KB</td></tr>
+<tr><td>Frames per batch</td><td>120</td></tr>
+<tr><td>History rows per response</td><td>5000</td></tr>
+<tr><td>Retention</td><td>365 days</td></tr>
+<tr><td>Speed gate</td><td>150 km/h</td></tr>
+<tr><td>HDOP gate</td><td>8</td></tr>
+</tbody></table></div>
+<p>There is no per-IP rate limiter in the function; device traffic is paced by the 30 s upload interval.</p></main>
+</div>
+</body>
+</html>

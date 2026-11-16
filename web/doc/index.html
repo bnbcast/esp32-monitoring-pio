@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Documentation - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="on" href="index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="api/endpoints.html">API Endpoints Reference</a><a class="" href="api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="project/dashboard.html">Dashboard Architecture</a><a class="" href="project/firmware.html">Firmware Architecture</a><a class="" href="project/structure.html">Project Structure</a><a class="" href="project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1>Orion Project Documentation</h1><p>Complete reference for the ESP32 tracker, the history API and the dashboard.</p><div class="cards"><a class="card" href="README.html"><strong>Orion Project — Documentation Index</strong><span>README.md</span></a></div><h2>Api</h2><ul><li><a href="api/endpoints.html">API Endpoints Reference</a></li><li><a href="api/history.html">History API (Cloudflare Pages Function)</a></li><li><a href="api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a></li></ul><h2>Project</h2><ul><li><a href="project/dashboard.html">Dashboard Architecture</a></li><li><a href="project/firmware.html">Firmware Architecture</a></li><li><a href="project/structure.html">Project Structure</a></li><li><a href="project/testing.html">Testing Documentation</a></li></ul><h2>Hardware</h2><ul><li><a href="hardware/schematic.html">Hardware Schematic &amp; Wiring</a></li><li><a href="hardware/sensors.html">Sensor Specifications &amp; Configuration</a></li></ul></main>
+</div>
+</body>
+</html>

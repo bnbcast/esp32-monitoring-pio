@@ -19,9 +19,10 @@ This directory contains comprehensive documentation for the Orion Project: a liv
 ## Quick Links
 
 - **Live Dashboard**: https://bnbcast.github.io/esp32-monitoring-pio/
+- **Docs Site**: https://bnbcast.github.io/esp32-monitoring-pio/doc/
 - **History API**: https://race-tracker-history.pages.dev/
 - **Repository**: https://github.com/bnbcast/esp32-monitoring-pio
-- **MQTT Broker**: wss://broker.hivemq.com:8884/mqtt
+- **MQTT Broker**: `broker.hivemq.com` — device `:1883`, dashboard `wss :8884/mqtt`
 
 ## Project Overview
 
@@ -47,4 +48,4 @@ All surfaces use **Orion Project** branding:
 
 ---
 
-*Generated from commit `ecdc832` — see [CHANGELOG](../CHANGELOG.md) for history.*
+*Markdown in this directory is the source; `node tools/build-docs.mjs` renders it into `web/doc/` for GitHub Pages.*

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sensor Specifications &amp; Configuration - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="on" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1 id="sensor-specifications-configuration">Sensor Specifications &amp; Configuration</h1>
+<hr>
+<h2 id="neo-6m-gps-module">NEO-6M GPS Module</h2>
+<h3 id="specifications">Specifications</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><strong>Chip</strong></td><td>u-blox NEO-6M</td></tr>
+<tr><td><strong>Receiver</strong></td><td>50-channel, GPS L1 C/A</td></tr>
+<tr><td><strong>Update Rate</strong></td><td>1 Hz (default), up to 5 Hz</td></tr>
+<tr><td><strong>Accuracy</strong></td><td>2.5 m CEP (autonomous)</td></tr>
+<tr><td><strong>Acquisition</strong></td><td>Cold: 27 s, Warm: 5 s, Hot: 1 s</td></tr>
+<tr><td><strong>Sensitivity</strong></td><td>Tracking: -161 dBm, Reacq: -160 dBm, Cold: -148 dBm</td></tr>
+<tr><td><strong>Interface</strong></td><td>UART, 9600 baud (default), 8N1</td></tr>
+<tr><td><strong>Protocol</strong></td><td>NMEA 0183 + u-blox binary (UBX)</td></tr>
+<tr><td><strong>Power</strong></td><td>3.0–3.6 V, 37 mA (acquisition), 25 mA (tracking)</td></tr>
+<tr><td><strong>Antenna</strong></td><td>Integrated ceramic patch (25×25 mm)</td></tr>
+<tr><td><strong>Backup</strong></td><td>VBAT pin for RTC + ephemeris (supercap/coin cell)</td></tr>
+</tbody></table></div>
+<h3 id="nmea-sentences-enabled-by-default">NMEA Sentences (enabled by default)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Sentence</th><th>Description</th><th>Used By Firmware</th></tr></thead>
+<tbody>
+<tr><td><code>GGA</code></td><td>Global positioning fix data</td><td>✅ lat, lng, alt, fix, sats, HDOP</td></tr>
+<tr><td><code>RMC</code></td><td>Recommended minimum</td><td>✅ lat, lng, speed, course, date, time</td></tr>
+<tr><td><code>GSA</code></td><td>DOP and active satellites</td><td>✅ HDOP, fix quality</td></tr>
+<tr><td><code>GSV</code></td><td>Satellites in view</td><td>(sats count)</td></tr>
+<tr><td><code>VTG</code></td><td>Track made good</td><td>(speed, course backup)</td></tr>
+</tbody></table></div>
+<h3 id="key-configuration-via-ubx">Key Configuration (via UBX)</h3>
+<pre><code>
+// Set 1 Hz update rate (default)
+uint8_t rate[] = {0x06, 0x08, 0x06, 0x00, 0xE8, 0x03, 0x01, 0x00, 0x01, 0x00};
+
+// Disable unused sentences to reduce UART traffic
+uint8_t gll_off[]  = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+uint8_t gsa_off[]  = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+uint8_t gsv_off[]  = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+uint8_t vtg_off[]  = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+uint8_t zda_off[]  = {0x06, 0x01, 0x08, 0x00, 0xF0, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+</code></pre>
+<blockquote>Current firmware uses defaults (1 Hz, all sentences). Parser ignores unknown sentences.</blockquote>
+<hr>
+<h2 id="mpu6050-imu">MPU6050 IMU</h2>
+<h3 id="specifications">Specifications</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><strong>Chip</strong></td><td>InvenSense MPU-6050</td></tr>
+<tr><td><strong>Accelerometer</strong></td><td>3-axis, ±2/±4/±8/±16 g</td></tr>
+<tr><td><strong>Gyroscope</strong></td><td>3-axis, ±250/±500/±1000/±2000 °/s</td></tr>
+<tr><td><strong>DMP</strong></td><td>Digital Motion Processor (not used)</td></tr>
+<tr><td><strong>Interface</strong></td><td>I2C, up to 400 kHz</td></tr>
+<tr><td><strong>Address</strong></td><td>0x68 (AD0=GND) or 0x69 (AD0=VCC)</td></tr>
+<tr><td><strong>Power</strong></td><td>2.375–3.45 V, 3.9 mA (active)</td></tr>
+<tr><td><strong>Temp Sensor</strong></td><td>±1°C accuracy, -40 to +85°C</td></tr>
+</tbody></table></div>
+<h3 id="configuration-firmware">Configuration (Firmware)</h3>
+<pre><code>
+// Accel: ±2g (16384 LSB/g)
+mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
+
+// Gyro: ±250°/s (131 LSB/°/s)
+mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
+
+// DLPF: 44 Hz (bandwidth)
+mpu.setDLPFMode(MPU6050_DLPF_BW_44);
+
+// Sample rate: 1 kHz / (1 + SMPLRT_DIV) = 100 Hz
+mpu.setRate(9);  // 1000/(1+9) = 100 Hz
+</code></pre>
+<h3 id="sensor-fusion-complementary-filter">Sensor Fusion (Complementary Filter)</h3>
+<pre><code>
+// Roll/Pitch from accelerometer (noisy, absolute)
+accelRoll  = atan2(ay, az) * RAD_TO_DEG;
+accelPitch = atan2(-ax, sqrt(ay*ay + az*az)) * RAD_TO_DEG;
+
+// Gyro integration (drift-free short term, relative)
+gyroRoll  += gx * dt;
+gyroPitch += gy * dt;
+
+// Fuse: 98% gyro, 2% accel
+fusedRoll  = 0.98 * (fusedRoll  + gx * dt) + 0.02 * accelRoll;
+fusedPitch = 0.98 * (fusedPitch + gy * dt) + 0.02 * accelPitch;
+
+// Yaw: gyro-only (no magnetometer)
+fusedYaw += gz * dt;  // drifts ~1°/min
+</code></pre>
+<div class="table-wrap"><table>
+<thead><tr><th>Output</th><th>Source</th><th>Latency</th><th>Drift</th></tr></thead>
+<tbody>
+<tr><td>Roll</td><td>98% gyro + 2% accel</td><td>~10 ms</td><td>&lt;0.1°/min</td></tr>
+<tr><td>Pitch</td><td>98% gyro + 2% accel</td><td>~10 ms</td><td>&lt;0.1°/min</td></tr>
+<tr><td>Yaw</td><td>Gyro only (integrated)</td><td>~10 ms</td><td>~1°/min</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="neo-6m-mpu6050-timing">NEO-6M + MPU6050 Timing</h2>
+<pre><code>
+t=0ms      GPS UART byte arrives
+    │
+    ├─ parse NMEA → gpsFix, lat, lng, kmh, cog, hdop, sats
+    │
+    ├─ MPU I2C read (100 Hz) → accel, gyro
+    │       │
+    │       └─ complementary filter → roll, pitch, yaw
+    │
+    └─ build JSON payload
+         │
+         └─ MQTT publish (1 Hz)
+</code></pre>
+<ul>
+<li>GPS: 1 Hz (NMEA sentences arrive ~once/sec)</li>
+<li>MPU: 100 Hz I2C reads, fused at 100 Hz</li>
+<li>MQTT: 1 Hz publish (aligned with GPS)</li>
+</ul>
+<hr>
+<h2 id="sensor-calibration">Sensor Calibration</h2>
+<h3 id="mpu6050-run-once-store-offsets-in-nvs">MPU6050 (run once, store offsets in NVS)</h3>
+<pre><code>
+// On first boot or when &quot;calibrate&quot; command received
+mpu.CalibrateAccel(6);   // 6 samples per axis
+mpu.CalibrateGyro(6);
+mpu.PrintActiveOffsets();
+// Save to NVS: mpu.GetAccelOffset(), mpu.GetGyroOffset()
+</code></pre>
+<h3 id="gps-no-calibration-needed">GPS (no calibration needed)</h3>
+<ul>
+<li>Cold start: ensure clear sky, 5+ minutes</li>
+<li>HDOP &lt; 1.5 = excellent, 1.5–2.5 = good, &gt;3 = poor</li>
+<li>Firmware rejects fixes with HDOP &gt; 4.0 (server gate is 8)</li>
+</ul>
+<hr>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Symptom</th><th>Sensor</th><th>Check</th></tr></thead>
+<tbody>
+<tr><td><code>MPU FAIL</code> pill</td><td>MPU6050</td><td>I2C wiring, 0x68 address, 3.3V, <code>mpu.testConnection()</code></td></tr>
+<tr><td><code>GPS WAIT</code> &gt; 5 min</td><td>NEO-6M</td><td>Antenna sky view, UART wiring, baud 9600, cold start time</td></tr>
+<tr><td>HDOP &gt; 4</td><td>NEO-6M</td><td>Obstructed sky, multipath, antenna orientation</td></tr>
+<tr><td>Roll/Pitch stuck</td><td>MPU6050</td><td>I2C bus contention, DLPF setting, accel range</td></tr>
+<tr><td>Yaw drifts fast</td><td>MPU6050</td><td>Gyro offset not calibrated, DLPF too high</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="data-quality-metrics-published-in-mqtt">Data Quality Metrics (published in MQTT)</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>Good</th><th>Warning</th><th>Critical</th></tr></thead>
+<tbody>
+<tr><td>HDOP</td><td>&lt; 1.5</td><td>1.5–3.0</td><td>&gt; 3.0</td></tr>
+<tr><td>Satellites</td><td>≥ 8</td><td>5–7</td><td>&lt; 5</td></tr>
+<tr><td>MPU temp</td><td>-10 to 50°C</td><td>-20 to 60°C</td><td>outside</td></tr>
+<tr><td>Free heap</td><td>&gt; 150 KB</td><td>50–150 KB</td><td>&lt; 50 KB</td></tr>
+<tr><td>WiFi RSSI</td><td>&gt; -60 dBm</td><td>-60 to -80</td><td>&lt; -80 dBm</td></tr>
+</tbody></table></div></main>
+</div>
+</body>
+</html>

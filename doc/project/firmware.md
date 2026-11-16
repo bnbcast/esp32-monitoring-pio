@@ -4,7 +4,7 @@
 
 Single-variant firmware (`esp32-mqtt-simple`) for classic ESP32 (`esp32doit-devkit-v1`).
 - Framework: Arduino (PlatformIO)
-- Transport: MQTT over WebSocket Secure (wss://broker.hivemq.com:8884/mqtt)
+- Transport: MQTT over TCP (`broker.hivemq.com:1883`); the browser dashboard uses `wss://broker.hivemq.com:8884/mqtt`
 - Sensors: NEO-6M GPS (UART), MPU6050 (I2C)
 - Storage: LittleFS ring buffer for history
 
@@ -41,20 +41,22 @@ build_flags =
 
 ---
 
-## Main Loop (1 Hz)
+## Main Loop (non-blocking)
 
 ```
 loop()
-  ├─ WiFi.reconnect() if needed
-  ├─ MQTT.reconnect() if needed
-  ├─ GPS.read() → parse NMEA → gpsFix, lat, lng, alt, kmh, cog, hdop, sats
-  ├─ MPU.read() → accel + gyro → complementary filter → roll, pitch, yaw
-  ├─ Build JSON payload
-  ├─ MQTT publish → esp32-dash/<key>/data (retained)
-  ├─ If GPS fix: push to history ring buffer (LittleFS)
-  ├─ If 30s elapsed → HTTPS POST /ingest batch
-  └─ delay(1000)
+  ├─ gps read → NMEA parse → fix, lat, lng, alt, kmh, cog, hdop, sats
+  ├─ MPU read → complementary filter → roll, pitch, yaw
+  ├─ networkService() → wifiService() → MQTT reconnect/publish/queue drain
+  ├─ publishData() at PUBLISH_INTERVAL_MS (1 Hz)
+  │    ├─ MQTT publish → esp32-dash/<key>/data (retained)
+  │    └─ historyEnqueue() when a valid fix + clock exists
+  ├─ historyService() → HTTPS batch every 30 s
+  └─ serial status panel every DASH_INTERVAL_MS
 ```
+
+The loop never calls `delay()` for pacing: sensors, Wi-Fi, MQTT and history each
+use `millis()` deadlines, so a TLS upload or a scan cannot stall the others.
 
 ---
 
