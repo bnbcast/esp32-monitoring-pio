@@ -1131,8 +1131,9 @@ if (!KEY) {
     const pts = Array.isArray(body && body.points) ? body.points : [];
 
     // Timeline: one row per run of fixes with no gap longer than
-    // SESSIONS.DEFAULT_GAP_S. The whole window stays the default drawing, so
-    // pressing 1 h / 6 h / 24 h behaves exactly as before.
+    // SESSIONS.DEFAULT_GAP_S. The newest run is selected at the end of this
+    // function so playback is armed without a tap; tapping the active row still
+    // falls back to the whole window.
     histAll = pts;
     histSessions = SESSIONS.group(pts);
     histLaps = Array.isArray(body.laps) ? body.laps : [];
@@ -1196,6 +1197,12 @@ if (!KEY) {
       windowText,
       status
     );
+
+    // Open on the most recent run. selectSession() fills the timeline row,
+    // laps, events, stats and playback data, so skipping it would leave the
+    // transport disabled until the user picked a row. With no sessions (empty
+    // window, or a single fix) everything stays disabled as before.
+    if (histSessions.length) selectSession(histSessions.length - 1);
   }
 
   // A compact read on what the stored points mean: how much of the window was
