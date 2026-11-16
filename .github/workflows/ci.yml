@@ -49,7 +49,9 @@ jobs:
             node --check "$f"
           done
       - name: Unit tests
-        run: node --test test/gps.test.js test/guard.test.js test/info.test.js test/lap.test.js test/led.test.js test/mpu3d.test.js test/sessions.test.js test/ui.test.js
+        # Keep this list identical to the "test" script in package.json; a file
+        # that only runs locally is not a check.
+        run: npm test
 
   worker:
     name: History API checks
