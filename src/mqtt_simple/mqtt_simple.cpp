@@ -196,6 +196,8 @@ enum WifiPhase { WF_IDLE, WF_SCANNING, WF_CONNECTING };
 WifiPhase wifiPhase = WF_IDLE;
 unsigned long wifiPhaseSince = 0;
 int8_t lastGoodNet = -1;        // index into WIFI_NETS of the last working AP
+int8_t directNext  = 0;         // round-robin cursor for hidden/scan-missed APs
+uint8_t wifiFailStreak = 0;     // consecutive association timeouts on lastGoodNet
 
 // Pending publish ring (oldest at txqHead)
 static char txq[TXQ_SLOTS][TXQ_LEN];
@@ -1199,6 +1201,7 @@ void wifiService(unsigned long now) {
   if (WiFi.status() == WL_CONNECTED) {
     if (wifiPhase != WF_IDLE) {
       wifiPhase = WF_IDLE;
+      wifiFailStreak = 0;
       // Remember the AP that actually worked so reconnects skip the scan.
       String cur = WiFi.SSID();
       for (size_t c = 0; c < WIFI_NET_COUNT; c++) {
@@ -1241,6 +1244,13 @@ void wifiService(unsigned long now) {
         return;
       }
       int8_t best = pickBestNetwork(found);
+      // Print what the radio actually sees. Without this the only visible
+      // symptom of a renamed/hidden hotspot is "best candidate=none", which
+      // cannot be told apart from a dead radio.
+      for (int i = 0; i < found; i++) {
+        logMsg(L_INFO, "NET", "  seen[%d] '%s' rssi=%d ch=%d",
+               i, WiFi.SSID(i).c_str(), (int)WiFi.RSSI(i), (int)WiFi.channel(i));
+      }
       logMsg(L_INFO, "NET", "%d network(s) visible, best candidate=%s",
              found, best >= 0 ? WIFI_NETS[best].ssid : "none");
       WiFi.scanDelete();
@@ -1251,7 +1261,19 @@ void wifiService(unsigned long now) {
         wifiPhase = WF_CONNECTING;
         wifiPhaseSince = now;
       } else {
-        wifiPhase = WF_IDLE;
+        // No configured SSID showed up in the scan. Hidden APs never do, and a
+        // busy radio can miss a weak beacon, so try each candidate directly
+        // before giving up. Round-robin keeps the loop non-blocking.
+        if (WIFI_NET_COUNT > 0) {
+          int8_t cand = directNext % (int8_t)WIFI_NET_COUNT;
+          directNext = (int8_t)((cand + 1) % (int8_t)WIFI_NET_COUNT);
+          logMsg(L_INFO, "NET", "not in scan, trying '%s' directly", WIFI_NETS[cand].ssid);
+          WiFi.begin(WIFI_NETS[cand].ssid, WIFI_NETS[cand].pass);
+          wifiPhase = WF_CONNECTING;
+          wifiPhaseSince = now;
+        } else {
+          wifiPhase = WF_IDLE;
+        }
       }
       break;
     }
@@ -1259,9 +1281,21 @@ void wifiService(unsigned long now) {
     case WF_CONNECTING:
       if (now - wifiPhaseSince > WIFI_CONNECT_TIMEOUT) {
         logMsg(L_WARN, "NET", "association timeout (status=%d), backing off", (int)WiFi.status());
-        WiFi.disconnect(true);
+        // disconnect(false): keep the radio up. disconnect(true) powers the
+        // station down, which made every retry after a timeout start from a
+        // dead radio and look like a flapping link.
+        WiFi.disconnect(false);
         wifiPhase = WF_IDLE;
         lastWifiTry = now;
+        // A cached AP is only worth retrying a few times. If it has really
+        // gone away (hotspot off, SSID renamed, moved out of range) the next
+        // pass must rescan instead of hammering the same dead SSID forever.
+        if (lastGoodNet >= 0 && ++wifiFailStreak >= 3) {
+          logMsg(L_WARN, "NET", "'%s' failed %u times, forcing a rescan",
+                 WIFI_NETS[lastGoodNet].ssid, (unsigned)wifiFailStreak);
+          lastGoodNet = -1;
+          wifiFailStreak = 0;
+        }
       }
       break;
   }

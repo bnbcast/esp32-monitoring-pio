@@ -78,8 +78,23 @@ loop()
 - CA cert: HiveMQ root (embedded)
 - Client ID: `orion-<MAC>` (e.g., `orion-A1B2C3D4`)
 - Topics: `esp32-dash/<key>/data`, `esp32-dash/<key>/status`
-- LWT: `{"online":false}` on `.../status` (retained)
-- Reconnect: exponential backoff (1s, 2s, 4s, 8s, max 30s)
+- LWT: `offline` on `.../status` (retained); `online` is published retained on connect
+- Reconnect: exponential backoff (2s, 4s, 8s, max 30s)
+
+### Wi-Fi Reconnect Behavior
+The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` → `WF_CONNECTING`) driven from `networkService()`:
+
+- Boot starts an **async scan** (never blocks the GPS/IMU loop).
+- Candidates live in `src/wifi_config.h`; exact SSID match wins, then prefix match.
+- After one success the AP is cached (`lastGoodNet`) so reconnects skip the scan.
+- If the scan shows no configured SSID, each candidate is tried **directly, round-robin**. This covers hidden APs and scan misses.
+- A cached AP that times out **3 times** is dropped and a rescan is forced, so a hotspot that moved or was renamed cannot pin the device forever.
+- Association timeout uses `WiFi.disconnect(false)` so the radio stays up (the old `true` powered the station down and made retries look like flapping).
+- Modem sleep is disabled (`WiFi.setSleep(false)`) for low-latency telemetry.
+- Every scan logs each visible SSID with RSSI/channel, which distinguishes "wrong SSID" from "dead radio".
+
+> If the log shows `best candidate=none`, the configured SSID is simply not in range. Add the correct **2.4 GHz** SSID/password to `src/wifi_config.h` and reflash; 5 GHz-only APs are invisible to the ESP32.
+
 
 ### History Ring Buffer (LittleFS)
 - File: `/history.bin` (fixed-size, ~200 KB)
