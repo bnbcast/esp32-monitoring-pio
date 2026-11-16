@@ -213,6 +213,7 @@ function navHtml(active, depth = 0) {
   const up = "../".repeat(depth);
   const label = { "": "Overview", api: "API", project: "Project", hardware: "Hardware" };
   let h = '<a class="' + (active === "" ? "on" : "") + '" href="' + up + 'index.html">Docs home</a>';
+  h += '<div class="nav-group">Tools</div><a href="' + up + '../api/docs/">API Tester</a>';
   for (const key of Object.keys(groups)) {
     if (!groups[key].length) continue;
     h += '<div class="nav-group">' + label[key] + "</div>";

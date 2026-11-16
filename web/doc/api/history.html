@@ -46,7 +46,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <div class="layout">
 <aside>
 <div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
-<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="on" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="on" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
 </aside>
 <main id="content"><h1 id="history-api-cloudflare-pages-function">History API (Cloudflare Pages Function)</h1>
 <p>Base URL: <strong>https://race-tracker-history.pages.dev</strong></p>
@@ -60,8 +60,9 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <tr><td>GET</td><td><code>/history</code></td><td>—</td><td>Query stored fixes + laps</td></tr>
 <tr><td>POST</td><td><code>/ingest</code></td><td><code>X-Ingest-Key</code></td><td>Device batch upload</td></tr>
 <tr><td>OPTIONS</td><td><code>*</code></td><td>—</td><td>CORS preflight, <code>204</code></td></tr>
-<tr><td>any</td><td>other</td><td>—</td><td><code>404 { ok:false, error:&quot;not-found&quot; }</code></td></tr>
+<tr><td>any</td><td>known path, wrong method</td><td>—</td><td><code>404 { ok:false, error:&quot;not-found&quot; }</code></td></tr>
 </tbody></table></div>
+<p>Arbitrary unmatched paths never reach the function on the Pages deployment: Pages falls back to <code>public/index.html</code> and returns the landing page with <code>200</code>. The router's JSON <code>404</code> applies to a known path called with the wrong method (for example <code>POST /health</code>).</p>
 <hr>
 <h2 id="get-health">GET /health</h2>
 <pre><code>

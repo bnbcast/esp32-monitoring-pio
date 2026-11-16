@@ -23,10 +23,12 @@ esp32-monitoring-pio/
 │       └── history_secret.h # (gitignored) API keys
 ├── test/                    # Unit tests (node --test)
 │   ├── *.test.js            # GPS, MPU3D, charts, sessions, etc.
-│   └── ui.test.js           # Static HTML/CSS/JS invariants
+│   ├── ui.test.js           # Static HTML/CSS/JS invariants
+│   └── api-docs.test.js     # Interactive API tester invariants
 ├── web/                     # Dashboard (static site → GitHub Pages)
 │   ├── index.html           # Single-page app
 │   ├── manifest.webmanifest # PWA manifest
+│   ├── api/docs/            # Interactive API tester (/api/docs)
 │   ├── css/
 │   │   ├── tokens.css       # Design tokens, colors, cursors
 │   │   ├── base.css         # Base typography
@@ -85,6 +87,17 @@ esp32-monitoring-pio/
 | `mqtt-mini.js` | Lightweight MQTT over WS client |
 | `guard.js` | Operator lock (long-press) |
 
+### API tester (`web/api/docs/`)
+
+| File | Responsibility |
+|------|----------------|
+| `index.html` | Static tester page, one card per endpoint |
+| `app.js` | Request builder, fetch, status/timing/headers/body panel, curl preview |
+
+The tester is static and outside `web/doc/`: it calls the base URL directly,
+never proxies, and never embeds the ingest key. `Verify key` posts an empty
+body so the auth check runs without writing a row.
+
 ### Styles (`web/css/`)
 
 | File | Responsibility |
@@ -118,7 +131,7 @@ ESP32 (1 Hz)
 | Firmware | `pio run -e esp32-mqtt-simple` | `.pio/build/.../firmware.bin` |
 | Upload | `pio run -e esp32-mqtt-simple -t upload` | Flash via USB |
 | Dashboard (local) | `npm run dev` | `http://localhost:5003/?dev` |
-| Tests | `npm test` | 120 unit tests |
+| Tests | `npm test` | 127 unit tests |
 | Browser probes | `node dev/check-*.mjs` | Playwright screenshots |
 | Dashboard (prod) | `git push` → GitHub Actions | `https://bnbcast.github.io/...` |
 | API (prod) | `cd worker/pages && npx wrangler pages deploy` | `https://race-tracker-history.pages.dev` |

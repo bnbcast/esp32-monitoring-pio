@@ -4,6 +4,8 @@ Base URL: **https://race-tracker-history.pages.dev** (Cloudflare Pages Function)
 
 Public read. Writes require `X-Ingest-Key`. All responses are JSON.
 
+> **Try it live:** [API Tester](https://bnbcast.github.io/esp32-monitoring-pio/api/docs/) — send every endpoint from your browser, with the response status, timing, headers and body on screen. Reads need nothing; the ingest key is typed at runtime and never embedded in the page.
+
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET | `/health` | — | Liveness |
@@ -11,7 +13,10 @@ Public read. Writes require `X-Ingest-Key`. All responses are JSON.
 | POST | `/ingest` | `X-Ingest-Key` | Device batch upload |
 | OPTIONS | any | — | CORS preflight, `204` |
 
-Unknown paths return `404 { "ok": false, "error": "not-found" }`.
+Unknown paths on the Pages deployment fall through to the static landing page
+(`200`, HTML), because Pages treats a missing `404.html` as a single-page app.
+The JSON error shape applies to the Worker entry and to a known path called
+with the wrong method: `404 { "ok": false, "error": "not-found" }`.
 
 Full request/response detail lives in [history.md](history.md); the live
 telemetry stream is documented in [mqtt.md](mqtt.md).

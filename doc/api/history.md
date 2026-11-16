@@ -15,7 +15,12 @@ Public read; write requires the ingest secret. All responses are JSON with CORS
 | GET | `/history` | — | Query stored fixes + laps |
 | POST | `/ingest` | `X-Ingest-Key` | Device batch upload |
 | OPTIONS | `*` | — | CORS preflight, `204` |
-| any | other | — | `404 { ok:false, error:"not-found" }` |
+| any | known path, wrong method | — | `404 { ok:false, error:"not-found" }` |
+
+Arbitrary unmatched paths never reach the function on the Pages deployment:
+Pages falls back to `public/index.html` and returns the landing page with
+`200`. The router's JSON `404` applies to a known path called with the wrong
+method (for example `POST /health`).
 
 ---
 

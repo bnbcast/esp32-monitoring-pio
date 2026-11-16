@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src https: http://localhost:* http://127.0.0.1:*; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<title>API Tester - Orion Docs</title>
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;--get:#38bdf8;--post:#c084fc;--opt:#94a3b8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.page{max-width:1400px;margin:0 auto;padding:26px 24px 6px}
+.title{display:flex;align-items:center;gap:12px}
+.title img{width:32px;height:32px;flex:none}
+h1{font-size:28px;margin:6px 0 8px}
+.back{display:inline-block;font-size:12.5px;color:var(--muted)}
+.back:hover{color:var(--accent)}
+.sub{color:var(--muted);max-width:95ch;margin:0 0 16px;font-size:14px}
+.banner{border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8;padding:10px 14px;border-radius:0 8px 8px 0;font-size:13.5px;margin:0 0 20px}
+.banner code{background:#0a0c0f;color:var(--ink)}
+main{max-width:1400px;margin:0 auto;padding:0 24px 60px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,470px);gap:18px;align-items:start}
+@media(max-width:1100px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.grid > div > .card:last-child{margin-bottom:0}
+.card-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.card-head label{margin:0}
+.method{font:700 11px/1 ui-monospace,Consolas,monospace;letter-spacing:.8px;padding:5px 7px;border-radius:4px;color:#06121c;background:var(--get)}
+.method.post{background:var(--post);color:#180a24}
+.method.opt{background:var(--opt);color:#111}
+.path{font:13px/1.5 ui-monospace,Consolas,monospace;color:var(--ink)}
+.tag{margin-left:auto;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:1.2px}
+.hint{color:var(--muted);font-size:13px;margin:8px 0 12px}
+.hint code,.banner code,footer code{background:var(--code);padding:1px 5px;border-radius:4px;font:12px/1.5 ui-monospace,Consolas,monospace;color:#cbd7e3}
+label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.9px;margin:12px 0 4px}
+input,select,textarea,button{font:inherit;color:var(--ink)}
+input,select,textarea{width:100%;background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:14px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+input[type=checkbox]{width:auto;flex:0 0 auto;accent-color:var(--accent);margin:0}
+textarea{font:12.5px/1.5 ui-monospace,Consolas,monospace;resize:vertical;min-height:190px}
+.row{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.row > *{flex:1 1 160px;min-width:0}
+.row .shrink{flex:0 0 auto}
+button{cursor:pointer;border:1px solid var(--line);background:#212a34;border-radius:6px;padding:9px 14px;font-weight:600;font-size:14px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:#111;border-color:var(--accent)}
+button.ghost{background:transparent;color:var(--muted);font-weight:500}
+button:disabled{opacity:.45;cursor:progress}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.curl-wrap{position:relative;margin-top:12px}
+pre.curl{margin:0;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 64px 12px 12px;font:12px/1.55 ui-monospace,Consolas,monospace;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#b9c7d6}
+.copy{position:absolute;top:7px;right:7px;padding:3px 9px;font-size:11px;background:#1b222a;color:var(--muted)}
+.response{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+@media(max-width:1100px){.response{position:static;max-height:none}}
+.resp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.resp-head .path{flex:1;min-width:0;word-break:break-word}
+.status{font:700 11.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.6px;padding:5px 8px;border-radius:999px;background:#2b3138;color:var(--muted);white-space:nowrap}
+.status.ok{background:#123524;color:var(--ok)}
+.status.warn{background:#3a2c10;color:var(--warn)}
+.status.bad{background:#3a1616;color:var(--bad)}
+.status.run{background:#1e2b3a;color:#7dd3fc}
+.meta{color:var(--muted);font-size:12px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:10px;word-break:break-word}
+.meta b{color:var(--ink);font-weight:600}
+.meta .url{display:block;margin-top:3px;font:11.5px/1.5 ui-monospace,Consolas,monospace;color:#8fb6d9}
+h3.sec{font-size:10.5px;text-transform:uppercase;letter-spacing:1.3px;color:var(--muted);margin:14px 0 6px}
+table.hdr{border-collapse:collapse;width:100%;font:12px/1.5 ui-monospace,Consolas,monospace}
+table.hdr td{border-bottom:1px solid var(--line);padding:4px 0;vertical-align:top;word-break:break-all}
+table.hdr td:first-child{color:#8fb6d9;padding-right:10px;white-space:nowrap}
+pre.body{margin:0;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px;font:12px/1.5 ui-monospace,Consolas,monospace;overflow:auto;max-height:46vh;white-space:pre;color:#cbd7e3}
+.note{background:#1c2530;border-left:3px solid #5eb1ff;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:0 0 10px}
+.note.good{border-color:var(--ok)}
+.note.bad{border-color:var(--bad)}
+.err{color:var(--bad);font-size:12.5px;margin-top:8px}
+.epoch{color:var(--muted);font-size:11.5px;margin-top:3px;font-family:ui-monospace,Consolas,monospace}
+.epoch.bad{color:var(--bad)}
+.checks{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--muted);font-size:12.5px}
+.checks label{margin:0;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--muted)}
+footer{max-width:1400px;margin:0 auto;padding:0 24px 48px;color:var(--muted);font-size:12.5px}
+@media(max-width:640px){
+  header.page{padding:18px 14px 4px}
+  main{padding:0 14px 40px}
+  footer{padding:0 14px 32px}
+  h1{font-size:23px}
+}
+</style>
+</head>
+<body>
+<header class="page">
+  <a class="back" href="../../doc/api/endpoints.html">&larr; Endpoint reference</a>
+  <div class="title">
+    <img src="../../icons/orion-32.png" alt="" width="32" height="32">
+    <h1>Orion API Tester</h1>
+  </div>
+  <p class="sub">Send real requests to the history API from this page. Each request goes straight from your browser to the base URL below &mdash; no proxy, no server, no logging. Schemas live in the <a href="../../doc/api/endpoints.html">endpoint reference</a> and the <a href="../../doc/api/history.html">history API</a>; the live telemetry stream is on the <a href="../../">dashboard</a>.</p>
+  <p class="banner"><strong>Writes are real.</strong> <code>POST /ingest</code> with a valid key inserts rows into D1. Use <em>Verify key</em> first &mdash; it proves the key is accepted without storing anything. The ingest key is never embedded in this page and never sent anywhere except the base URL.</p>
+</header>
+
+<main>
+  <section class="card" aria-labelledby="baseLabel">
+    <div class="card-head">
+      <label id="baseLabel" for="base">Base URL</label>
+      <span class="tag">Cloudflare Pages Function</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="base" type="url" inputmode="url" spellcheck="false" autocomplete="off" value="https://race-tracker-history.pages.dev">
+      <button type="button" id="btnBaseReset" class="shrink">Reset</button>
+    </div>
+    <p class="hint" id="baseNote">Default: the public history API. For a local run use <code>http://localhost:8788</code>.</p>
+  </section>
+
+  <div class="grid">
+    <div>
+      <section class="card" aria-labelledby="healthTitle">
+        <div class="card-head">
+          <span class="method">GET</span>
+          <span class="path" id="healthTitle">/health</span>
+          <span class="tag">no auth</span>
+        </div>
+        <p class="hint">Liveness probe. Expect <code>200</code> and <code>{"ok":true,"service":"race-tracker-history"}</code>.</p>
+        <div class="actions">
+          <button type="button" class="primary" data-act="health">Send request</button>
+        </div>
+        <div class="curl-wrap">
+          <pre class="curl" id="curl-health"></pre>
+          <button type="button" class="copy" data-copy="curl-health">Copy</button>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="historyTitle">
+        <div class="card-head">
+          <span class="method">GET</span>
+          <span class="path" id="historyTitle">/history</span>
+          <span class="tag">no auth &middot; read</span>
+        </div>
+        <p class="hint">Stored fixes and laps for one device. An empty <code>from</code>/<code>to</code> lets the server pick the last 24&nbsp;h; <code>limit</code> is clamped to 1&ndash;5000.</p>
+        <form id="form-history" novalidate>
+          <div class="row">
+            <div>
+              <label for="hDevice">Device</label>
+              <input id="hDevice" name="device" value="esp32-01" maxlength="32" spellcheck="false" autocomplete="off">
+            </div>
+            <div style="flex:0 0 120px">
+              <label for="hLimit">Limit</label>
+              <input id="hLimit" name="limit" type="number" min="1" max="5000" step="1" value="2000">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="hFrom">From (local time)</label>
+              <input id="hFrom" name="from" type="datetime-local" step="60">
+              <div class="epoch" id="hFromEpoch">epoch &mdash;</div>
+            </div>
+            <div>
+              <label for="hTo">To (local time)</label>
+              <input id="hTo" name="to" type="datetime-local" step="60">
+              <div class="epoch" id="hToEpoch">epoch &mdash;</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary">Send request</button>
+            <button type="button" id="btnLast24" class="ghost">Last 24 h</button>
+            <button type="button" id="btnHistoryClear" class="ghost">Clear window</button>
+          </div>
+          <div class="err" id="historyErr" hidden></div>
+          <div class="curl-wrap">
+            <pre class="curl" id="curl-history"></pre>
+            <button type="button" class="copy" data-copy="curl-history">Copy</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="ingestTitle">
+        <div class="card-head">
+          <span class="method post">POST</span>
+          <span class="path" id="ingestTitle">/ingest</span>
+          <span class="tag">X-Ingest-Key</span>
+        </div>
+        <p class="hint">Device batch upload: at most 120 frames and 64&nbsp;KB per request. The key lives only in this input; the curl preview always shows a placeholder.</p>
+        <form id="form-ingest" novalidate>
+          <label for="iKey">X-Ingest-Key</label>
+          <input id="iKey" type="password" autocomplete="off" spellcheck="false" placeholder="paste the key from src/history_secret.h">
+          <div class="checks">
+            <input id="iRemember" type="checkbox">
+            <label for="iRemember">Remember the key in this browser &mdash; localStorage, avoid on a shared machine</label>
+          </div>
+          <div class="row">
+            <div>
+              <label for="iDevice">Device</label>
+              <input id="iDevice" value="esp32-test" maxlength="32" spellcheck="false" autocomplete="off">
+            </div>
+          </div>
+          <label for="iFrames">Frames &mdash; JSON array</label>
+          <textarea id="iFrames" spellcheck="false" aria-describedby="iFramesMeta"></textarea>
+          <div class="epoch" id="iFramesMeta"></div>
+          <div class="actions">
+            <button type="submit" class="primary">Send (writes rows)</button>
+            <button type="button" id="btnVerifyKey">Verify key (no write)</button>
+            <button type="button" id="btnSample" class="ghost">Reset sample</button>
+          </div>
+          <div class="err" id="ingestErr" hidden></div>
+          <div class="curl-wrap">
+            <pre class="curl" id="curl-ingest"></pre>
+            <button type="button" class="copy" data-copy="curl-ingest">Copy</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="optionsTitle">
+        <div class="card-head">
+          <span class="method opt">OPTIONS</span>
+          <span class="path" id="optionsTitle">/&hellip;</span>
+          <span class="tag">CORS preflight</span>
+        </div>
+        <p class="hint">Preflight probe. Expect <code>204</code> with no body. The browser sends this automatically before a cross-origin <code>POST</code>; this button lets you see it directly.</p>
+        <form id="form-options" novalidate>
+          <label for="oPath">Path</label>
+          <select id="oPath">
+            <option>/health</option>
+            <option>/history</option>
+            <option>/ingest</option>
+            <option>/nope</option>
+          </select>
+          <div class="actions">
+            <button type="submit" class="primary">Send preflight</button>
+          </div>
+          <div class="curl-wrap">
+            <pre class="curl" id="curl-options"></pre>
+            <button type="button" class="copy" data-copy="curl-options">Copy</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="errorTitle">
+        <div class="card-head">
+          <span class="method">GET</span>
+          <span class="path" id="errorTitle">/ingest</span>
+          <span class="tag">error shape</span>
+        </div>
+        <p class="hint">A <code>GET</code> on the write-only <code>/ingest</code> route is not handled, so it returns <code>404 {"ok":false,"error":"not-found"}</code>. That proves the JSON error shape without touching data. (Arbitrary paths on the Pages deployment fall through to the static landing page instead.)</p>
+        <form id="form-error" novalidate>
+          <div class="actions">
+            <button type="submit" class="primary">Send request</button>
+          </div>
+          <div class="curl-wrap">
+            <pre class="curl" id="curl-error"></pre>
+            <button type="button" class="copy" data-copy="curl-error">Copy</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <aside class="card response" aria-label="Response">
+      <div class="resp-head">
+        <span class="status" id="respStatus">READY</span>
+        <span class="path" id="respLabel">No request yet</span>
+        <button type="button" id="respClear" class="ghost shrink">Clear</button>
+      </div>
+      <div class="meta" id="respMeta">Send a request to see the status, timing, headers and body.</div>
+      <div id="respNote"></div>
+      <h3 class="sec" id="respHeadersTitle" hidden>Response headers</h3>
+      <table class="hdr" id="respHeaders" hidden></table>
+      <p class="hint" id="respHeadersHint" hidden>Cross-origin responses expose only safelisted headers here; the curl command shows all of them.</p>
+      <h3 class="sec" id="respBodyTitle" hidden>Response body</h3>
+      <pre class="body" id="respBody" hidden></pre>
+    </aside>
+  </div>
+</main>
+
+<footer>
+  <p>The live telemetry stream is MQTT, not HTTP &mdash; watch it on the <a href="../../">dashboard</a> or read <a href="../../doc/api/mqtt.html">mqtt.html</a>. The ingest key is described in <a href="../../doc/api/history.html">history.html</a> and lives in the gitignored <code>src/history_secret.h</code>. This page contains no secret: the key you type stays in this tab unless you tick the remember box.</p>
+</footer>
+
+<noscript><p style="max-width:1400px;margin:0 auto;padding:0 24px 40px;color:#f87171">This tester needs JavaScript. The API itself works without it.</p></noscript>
+<script src="app.js"></script>
+</body>
+</html>

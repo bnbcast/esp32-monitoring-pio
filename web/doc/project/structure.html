@@ -46,7 +46,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <div class="layout">
 <aside>
 <div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
-<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="on" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="on" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
 </aside>
 <main id="content"><h1 id="project-structure">Project Structure</h1>
 <pre><code>
@@ -72,10 +72,12 @@ esp32-monitoring-pio/
 │       └── history_secret.h # (gitignored) API keys
 ├── test/                    # Unit tests (node --test)
 │   ├── *.test.js            # GPS, MPU3D, charts, sessions, etc.
-│   └── ui.test.js           # Static HTML/CSS/JS invariants
+│   ├── ui.test.js           # Static HTML/CSS/JS invariants
+│   └── api-docs.test.js     # Interactive API tester invariants
 ├── web/                     # Dashboard (static site → GitHub Pages)
 │   ├── index.html           # Single-page app
 │   ├── manifest.webmanifest # PWA manifest
+│   ├── api/docs/            # Interactive API tester (/api/docs)
 │   ├── css/
 │   │   ├── tokens.css       # Design tokens, colors, cursors
 │   │   ├── base.css         # Base typography
@@ -131,6 +133,14 @@ esp32-monitoring-pio/
 <tr><td><code>mqtt-mini.js</code></td><td>Lightweight MQTT over WS client</td></tr>
 <tr><td><code>guard.js</code></td><td>Operator lock (long-press)</td></tr>
 </tbody></table></div>
+<h3 id="api-tester-web-api-docs">API tester (<code>web/api/docs/</code>)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+<tbody>
+<tr><td><code>index.html</code></td><td>Static tester page, one card per endpoint</td></tr>
+<tr><td><code>app.js</code></td><td>Request builder, fetch, status/timing/headers/body panel, curl preview</td></tr>
+</tbody></table></div>
+<p>The tester is static and outside <code>web/doc/</code>: it calls the base URL directly, never proxies, and never embeds the ingest key. <code>Verify key</code> posts an empty body so the auth check runs without writing a row.</p>
 <h3 id="styles-web-css">Styles (<code>web/css/</code>)</h3>
 <div class="table-wrap"><table>
 <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
@@ -160,7 +170,7 @@ ESP32 (1 Hz)
 <tr><td>Firmware</td><td><code>pio run -e esp32-mqtt-simple</code></td><td><code>.pio/build/.../firmware.bin</code></td></tr>
 <tr><td>Upload</td><td><code>pio run -e esp32-mqtt-simple -t upload</code></td><td>Flash via USB</td></tr>
 <tr><td>Dashboard (local)</td><td><code>npm run dev</code></td><td><code>http://localhost:5003/?dev</code></td></tr>
-<tr><td>Tests</td><td><code>npm test</code></td><td>120 unit tests</td></tr>
+<tr><td>Tests</td><td><code>npm test</code></td><td>127 unit tests</td></tr>
 <tr><td>Browser probes</td><td><code>node dev/check-*.mjs</code></td><td>Playwright screenshots</td></tr>
 <tr><td>Dashboard (prod)</td><td><code>git push</code> → GitHub Actions</td><td><code>https://bnbcast.github.io/...</code></td></tr>
 <tr><td>API (prod)</td><td><code>cd worker/pages &amp;&amp; npx wrangler pages deploy</code></td><td><code>https://race-tracker-history.pages.dev</code></td></tr>
