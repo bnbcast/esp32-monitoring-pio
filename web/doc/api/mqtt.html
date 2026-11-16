@@ -124,6 +124,7 @@ esp32-dash/&lt;TOPIC_KEY&gt;/status  online/offline  (retained, QoS 0, LWT)
     &quot;heap&quot;: 194560,
     &quot;heap_min&quot;: 188400,
     &quot;boot&quot;: 7,
+    &quot;brown&quot;: 0,
     &quot;rssi&quot;: -52,
     &quot;wifi&quot;: {
       &quot;ssid&quot;: &quot;Gi Joe&quot;,
@@ -175,6 +176,7 @@ esp32-dash/&lt;TOPIC_KEY&gt;/status  online/offline  (retained, QoS 0, LWT)
 <tr><td><code>lap.la</code>, <code>lap.lb</code></td><td>number[2]</td><td>deg</td><td>Gate endpoints</td></tr>
 <tr><td><code>sys.heap</code>, <code>sys.heap_min</code></td><td>integer</td><td>bytes</td><td>Free / minimum free heap</td></tr>
 <tr><td><code>sys.boot</code></td><td>integer</td><td>—</td><td>Boot counter (NVS)</td></tr>
+<tr><td><code>sys.brown</code></td><td>integer</td><td>—</td><td>Persisted brownout resets (NVS)</td></tr>
 <tr><td><code>sys.rssi</code></td><td>integer</td><td>dBm</td><td>Wi-Fi RSSI</td></tr>
 <tr><td><code>sys.wifi.*</code></td><td>mixed</td><td>—</td><td>SSID, BSSID, channel, status, IP, MAC</td></tr>
 </tbody></table></div>

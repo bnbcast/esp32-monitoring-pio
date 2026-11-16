@@ -118,6 +118,7 @@ The network stack is a non-blocking state machine (`WF_IDLE` â†’ `WF_SCANNING` â
 | `FW_NAME` | `"orion"` | Firmware name in banner |
 | `FW_VERSION` | `"1.4.0"` | Firmware version |
 | `PUBLISH_INTERVAL_MS` | `1000` | Publish cadence (ms) |
+| `WIFI_TX_POWER` | `WIFI_POWER_15dBm` | Radio TX power; lower peak current for battery/boost supplies |
 | `HISTORY_URL` | `""` | Pages Function URL (from `history_secret.h`) |
 | `HISTORY_KEY` | `""` | Ingest key (from `history_secret.h`) |
 | `HISTORY_DEVICE` | `"esp32-01"` | Device ID in D1 |
@@ -133,14 +134,14 @@ The network stack is a non-blocking state machine (`WF_IDLE` â†’ `WF_SCANNING` â
 ## Serial Output (115200 baud)
 
 ```
-orion 1.4.0
-WiFi: connected (SSID) RSSI -52 dB
-MQTT: connected to broker.hivemq.com
-MPU: OK (roll=0.1 pitch=-0.2)
-GPS: waiting for fix...
-[1700000001] GPS FIX lat=-6.200001 lng=106.800001 kmh=45.2 sats=8 hdop=0.8
-[1700000002] GPS FIX lat=-6.200002 lng=106.800003 kmh=46.1 sats=8 hdop=0.7
-History: uploaded 120 frames (2xx)
+ orion 1.4.0
+ reset power-on   mac 28:56:2F:49:B9:10   boot #274   brownouts 0
+ SYS ready - orion 1.4.0
+ NET connected 'ESP32'  ip=10.163.133.191  rssi=-37 dBm  ch=1  (slot 1)
+ MQTT session up, status=online (retained)
+ IMU MPU6050 at 0x68  gyro bias 0.21/0.61/0.20 dps
+ GPS waiting for fix...
+ HIST ON  queued 0  stored 0  sent 0  fail 0
 ```
 
 ---
@@ -153,6 +154,12 @@ History: uploaded 120 frames (2xx)
 | DEVICE | `online` field in status topic | LIVE / OFFLINE / NO SIGNAL |
 | MPU6050 | Self-test + valid data | OK / FAIL |
 | GPS | `gps.fix` + HDOP | FIX / WAIT / NO FIX |
+
+The boot banner also reports `reset <reason>` and `brownouts N` (persisted in
+NVS, also published as `sys.brown`). A rising count means the supply is sagging;
+see the power section in `hardware/schematic.md`. The IÂ²C bus is re-initialised
+after five consecutive MPU read failures, so a rail glitch does not leave the
+sensor stuck in FAIL until the next reboot.
 
 ---
 

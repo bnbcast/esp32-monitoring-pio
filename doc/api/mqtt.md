@@ -81,6 +81,7 @@ Published once per second, retained. Real shape (one line on the wire):
     "heap": 194560,
     "heap_min": 188400,
     "boot": 7,
+    "brown": 0,
     "rssi": -52,
     "wifi": {
       "ssid": "Gi Joe",
@@ -133,6 +134,7 @@ Published once per second, retained. Real shape (one line on the wire):
 | `lap.la`, `lap.lb` | number[2] | deg | Gate endpoints |
 | `sys.heap`, `sys.heap_min` | integer | bytes | Free / minimum free heap |
 | `sys.boot` | integer | — | Boot counter (NVS) |
+| `sys.brown` | integer | — | Persisted brownout resets (NVS) |
 | `sys.rssi` | integer | dBm | Wi-Fi RSSI |
 | `sys.wifi.*` | mixed | — | SSID, BSSID, channel, status, IP, MAC |
 

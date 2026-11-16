@@ -156,6 +156,7 @@ loop()
 <tr><td><code>FW_NAME</code></td><td><code>&quot;orion&quot;</code></td><td>Firmware name in banner</td></tr>
 <tr><td><code>FW_VERSION</code></td><td><code>&quot;1.4.0&quot;</code></td><td>Firmware version</td></tr>
 <tr><td><code>PUBLISH_INTERVAL_MS</code></td><td><code>1000</code></td><td>Publish cadence (ms)</td></tr>
+<tr><td><code>WIFI_TX_POWER</code></td><td><code>WIFI_POWER_15dBm</code></td><td>Radio TX power; lower peak current for battery/boost supplies</td></tr>
 <tr><td><code>HISTORY_URL</code></td><td><code>&quot;&quot;</code></td><td>Pages Function URL (from <code>history_secret.h</code>)</td></tr>
 <tr><td><code>HISTORY_KEY</code></td><td><code>&quot;&quot;</code></td><td>Ingest key (from <code>history_secret.h</code>)</td></tr>
 <tr><td><code>HISTORY_DEVICE</code></td><td><code>&quot;esp32-01&quot;</code></td><td>Device ID in D1</td></tr>
@@ -168,14 +169,14 @@ loop()
 <hr>
 <h2 id="serial-output-115200-baud">Serial Output (115200 baud)</h2>
 <pre><code>
-orion 1.4.0
-WiFi: connected (SSID) RSSI -52 dB
-MQTT: connected to broker.hivemq.com
-MPU: OK (roll=0.1 pitch=-0.2)
-GPS: waiting for fix...
-[1700000001] GPS FIX lat=-6.200001 lng=106.800001 kmh=45.2 sats=8 hdop=0.8
-[1700000002] GPS FIX lat=-6.200002 lng=106.800003 kmh=46.1 sats=8 hdop=0.7
-History: uploaded 120 frames (2xx)
+ orion 1.4.0
+ reset power-on   mac 28:56:2F:49:B9:10   boot #274   brownouts 0
+ SYS ready - orion 1.4.0
+ NET connected 'ESP32'  ip=10.163.133.191  rssi=-37 dBm  ch=1  (slot 1)
+ MQTT session up, status=online (retained)
+ IMU MPU6050 at 0x68  gyro bias 0.21/0.61/0.20 dps
+ GPS waiting for fix...
+ HIST ON  queued 0  stored 0  sent 0  fail 0
 </code></pre>
 <hr>
 <h2 id="status-pills-from-firmware-dashboard">Status Pills (from firmware → dashboard)</h2>
@@ -187,6 +188,7 @@ History: uploaded 120 frames (2xx)
 <tr><td>MPU6050</td><td>Self-test + valid data</td><td>OK / FAIL</td></tr>
 <tr><td>GPS</td><td><code>gps.fix</code> + HDOP</td><td>FIX / WAIT / NO FIX</td></tr>
 </tbody></table></div>
+<p>The boot banner also reports <code>reset &lt;reason&gt;</code> and <code>brownouts N</code> (persisted in NVS, also published as <code>sys.brown</code>). A rising count means the supply is sagging; see the power section in <code>hardware/schematic.md</code>. The I²C bus is re-initialised after five consecutive MPU read failures, so a rail glitch does not leave the sensor stuck in FAIL until the next reboot.</p>
 <hr>
 <h2 id="memory-map-approx">Memory Map (approx)</h2>
 <div class="table-wrap"><table>

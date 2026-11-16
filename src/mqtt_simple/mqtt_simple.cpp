@@ -79,6 +79,10 @@
 #define MQTT_WATCHDOG_MS      20000UL // connected but nothing delivered -> reconnect
 #define WIFI_RETRY_MS         10000UL // retry pause when idle
 #define WIFI_CONNECT_TIMEOUT  15000UL // give up one association attempt after this
+// The radio's TX burst is the largest current spike on the board. 19.5 dBm
+// (the default) is more than a pit-lane AP needs and makes a boost-fed rail
+// sag; 15 dBm cuts the peak by roughly a third and is still ~30 m indoors.
+#define WIFI_TX_POWER         WIFI_POWER_15dBm
 
 // Publishes that fail are kept here and re-sent, oldest first, as soon as the
 // broker is reachable again. 3 x 1 KB is ~3 KB of static RAM.
@@ -206,6 +210,7 @@ static uint8_t txqHead = 0, txqCount = 0;
 uint8_t MPU_ADDR = 0x68;
 bool mpuValid = false;
 unsigned long lastRetry = 0;
+uint8_t mpuFailStreak = 0;
 
 float gyroBiasX = 0, gyroBiasY = 0, gyroBiasZ = 0;
 float roll = 0, pitch = 0, yaw = 0, tilt = 0;
@@ -255,12 +260,18 @@ static void lapSaveCounters();  // defined with the NVS gate storage below
 // durable store this board already has, and one write per boot is nothing.
 uint32_t bootCount = 1;
 uint32_t minFreeHeap = 0xFFFFFFFFu;
+uint32_t brownoutCount = 0;     // persisted: proves a weak supply is resetting us
 
 static uint32_t bootCountInit() {
   Preferences prefs;
   if (!prefs.begin("sys", false)) return bootCount;
   bootCount = prefs.getUInt("boot", 0) + 1;
   prefs.putUInt("boot", bootCount);
+  brownoutCount = prefs.getUInt("brown", 0);
+  if (esp_reset_reason() == ESP_RST_BROWNOUT) {
+    brownoutCount++;
+    prefs.putUInt("brown", brownoutCount);
+  }
   prefs.end();
   return bootCount;
 }
@@ -716,11 +727,40 @@ bool mpuRead(float &ax, float &ay, float &az, float &temp,
   return mpuReadOnce(ax, ay, az, temp, gx, gy, gz);
 }
 
+// A supply glitch can leave the MPU or the bus holding SDA low. Re-init the
+// peripheral and clock the bus free so it recovers without a reboot.
+static void i2cRecover() {
+  Wire.end();
+  pinMode(I2C_SDA_PIN, INPUT_PULLUP);
+  pinMode(I2C_SCL_PIN, OUTPUT);
+  for (int i = 0; i < 9; i++) {
+    digitalWrite(I2C_SCL_PIN, LOW);  delayMicroseconds(5);
+    digitalWrite(I2C_SCL_PIN, HIGH); delayMicroseconds(5);
+  }
+  pinMode(I2C_SDA_PIN, OUTPUT);
+  digitalWrite(I2C_SDA_PIN, LOW);    delayMicroseconds(5);
+  digitalWrite(I2C_SCL_PIN, HIGH);   delayMicroseconds(5);
+  digitalWrite(I2C_SDA_PIN, HIGH);   delayMicroseconds(5);
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(100000);
+  mpuFind();
+  mpuInit();
+  logMsg(L_WARN, "IMU", "I2C bus recovered");
+}
+
 void updateMotion() {
   float ax, ay, az, t, gx, gy, gz;
   if (!mpuRead(ax, ay, az, t, gx, gy, gz)) {
     if (mpuValid) logMsg(L_ERR, "IMU", "MPU6050 stopped responding (I2C 0x%02X)", MPU_ADDR);
     mpuValid = false;
+    // A rail dip can wedge the bus. Retry the sensor a few times, then re-init
+    // the peripheral and clock SDA free instead of requiring a power cycle.
+    if (++mpuFailStreak >= 5) {
+      mpuFailStreak = 0;
+      i2cRecover();
+      lastRetry = millis();
+      return;
+    }
     if (millis() - lastRetry > 500) {
       lastRetry = millis();
       mpuFind();
@@ -728,6 +768,7 @@ void updateMotion() {
     }
     return;
   }
+  mpuFailStreak = 0;
   if (!mpuValid) {
     mpuValid = true;
     lastMicros = micros();
@@ -1451,7 +1492,7 @@ void publishData() {
     "\"utc_h\":%d,\"utc_m\":%d,\"utc_s\":%d,\"utc_y\":%d,\"utc_mo\":%d,\"utc_d\":%d},"
     "\"lap\":{\"on\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu,"
     "\"la\":[%.*f,%.*f],\"lb\":[%.*f,%.*f]},"
-    "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"rssi\":%d,"
+    "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d,"
     "\"wifi\":{\"ssid\":\"%.32s\",\"bssid\":\"%.17s\",\"channel\":%d,\"status\":\"%s\","
     "\"ip\":\"%.15s\",\"mac\":\"%.17s\"}}}",
     (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
@@ -1470,6 +1511,7 @@ void publishData() {
     GPS_DECIMALS, gateALat, GPS_DECIMALS, gateALng,
     GPS_DECIMALS, gateBLat, GPS_DECIMALS, gateBLng,
     (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
+    (unsigned long)brownoutCount,
     WiFi.RSSI(),
     WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), wifiStatusStr(),
     WiFi.localIP().toString().c_str(), WiFi.macAddress().c_str());
@@ -1488,7 +1530,7 @@ void publishData() {
       "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
       "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d},"
       "\"lap\":{\"on\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu},"
-      "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"rssi\":%d}}",
+      "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d}}",
       (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
       mpuValid ? "true" : "false", tRoll, tPitch, tYaw, tilt, level,
       (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt,
@@ -1500,7 +1542,7 @@ void publishData() {
       gateValid ? "true" : "false", (unsigned long)lapCount,
       (unsigned long)lapLastMs, (unsigned long)lapBestMs,
       (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
-      WiFi.RSSI());
+      (unsigned long)brownoutCount, WiFi.RSSI());
     if (n <= 0 || n >= (int)sizeof b) { txFail++; return; }
   }
 
@@ -1739,8 +1781,8 @@ void printBanner() {
                 ESP.getChipModel(), (unsigned)(rev / 100), (unsigned)(rev % 100),
                 ESP.getChipCores(), (unsigned)ESP.getCpuFreqMHz(),
                 (unsigned)(ESP.getFlashChipSize() / 1024), (unsigned)(ESP.getFreeHeap() / 1024));
-  Serial.printf(" reset %s   mac %s   boot #%lu\n", resetReasonStr(), macStr,
-                (unsigned long)bootCount);
+  Serial.printf(" reset %s   mac %s   boot #%lu   brownouts %lu\n", resetReasonStr(), macStr,
+                (unsigned long)bootCount, (unsigned long)brownoutCount);
   Serial.printf(" topic %s\n", TOPIC_DATA);
   Serial.printf(" broker %s:%d  keepalive %ds  publish %dms\n",
                 MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_S, PUBLISH_INTERVAL_MS);
@@ -1808,6 +1850,8 @@ void mqtt_simple_setup() {
   // No modem sleep: a full 5 Hz telemetry stream must not wait for a beacon
   // interval, and the receiver is on USB power for the whole session anyway.
   WiFi.setSleep(false);
+  // Reduce the 3.3 V TX current spike; see WIFI_TX_POWER above.
+  WiFi.setTxPower(WIFI_TX_POWER);
   logMsg(L_INFO, "NET", "scanning for a known network (async)");
   WiFi.scanNetworks(true /*async*/, false);
   wifiPhase = WF_SCANNING;

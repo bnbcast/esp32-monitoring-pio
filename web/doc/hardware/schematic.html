@@ -156,12 +156,54 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 </tbody></table></div>
 <blockquote>Not implemented in current firmware. Add if desired.</blockquote>
 <hr>
+<h2 id="power-stability-usb-vs-mt3608-boost">Power Stability: USB vs MT3608 Boost</h2>
+<p>The board behaves differently on USB and on a battery + MT3608 because the two sources have very different output impedance.</p>
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>USB-C from PC</th><th>5 V battery → MT3608</th></tr></thead>
+<tbody>
+<tr><td>Source</td><td>Regulated, 1–3 A available</td><td>Switching boost, limited output caps</td></tr>
+<tr><td>Wiring</td><td>Short, thick</td><td>Often long/thin dupont or breadboard</td></tr>
+<tr><td>Transient response</td><td>Stiff; bulk caps absorb Wi-Fi bursts</td><td>Sags on a 300–500 mA TX pulse</td></tr>
+<tr><td>Result</td><td>Stable Wi-Fi + I²C</td><td>Brownout resets, Wi-Fi drops, MPU NACKs</td></tr>
+</tbody></table></div>
+<p>The ESP32 radio draws short <strong>300–500 mA</strong> bursts at 3.3 V every beacon/TX window. The DevKit's AMS1117 needs ~1.1–1.3 V of headroom, so a 5.0 V boost set point is already marginal; if the MT3608 output dips to ~4.5 V the 3.3 V rail falls, the brownout detector trips, and the MPU6050 starts returning I²C NACKs. That is why the same firmware and the same open <code>ESP32</code> AP look stable on USB and “sometimes connected” on battery.</p>
+<h3 id="fix-checklist">Fix checklist</h3>
+<ol>
+<li><strong>Set the MT3608 to 5.3–5.5 V</strong>, measured at the ESP32 <code>5V</code>/<code>VIN</code> pin while</li>
+<p>the board is connected and transmitting — not open-circuit. Stay below 6 V.</p>
+<li><strong>Add bulk capacitance at the board</strong>: 470–1000 µF low-ESR electrolytic plus</li>
+<p>100 nF ceramic across <code>5V</code>/<code>GND</code>, and 100 µF + 100 nF across <code>3V3</code>/<code>GND</code> if the 3.3 V pin is accessible.</p>
+<li><strong>Add 22–47 µF</strong> at the MT3608 input and output if the module lacks them.</li>
+<li><strong>Use short, thick power wires</strong> (18–20 AWG), soldered or screw terminals.</li>
+<p>Do not run the boost output through a breadboard.</p>
+<li><strong>Battery must supply ≥1 A continuous and ≥2 A peaks.</strong> Small protected</li>
+<p>5 V packs and 9 V-style batteries sag or trip their protection.</p>
+<li><strong>Use one power path at a time.</strong> Do not connect USB and the boost to <code>5V</code></li>
+<p>together; use a Schottky (SS34) or ideal-diode OR-ing if both are needed.</p>
+<li><strong>Keep the boost inductor/switch node away</strong> from the GPS antenna and I²C</li>
+<p>wires. Twist SDA/SCL with a ground return and keep them under ~20 cm.</p>
+<li><strong>Measure with a scope, not a multimeter.</strong> A multimeter averages away the</li>
+<p>millisecond dips. Target: 5 V rail stays above 4.8 V, 3.3 V above 3.1 V during connect/TX.</p>
+</ol>
+<h3 id="firmware-mitigations-already-applied">Firmware mitigations (already applied)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Change</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Wi-Fi TX power set to 15 dBm</td><td>Cuts the dominant current peak by roughly a third</td></tr>
+<tr><td><code>sys.brown</code> / boot banner <code>brownouts N</code></td><td>Counts actual brownout resets in NVS</td></tr>
+<tr><td>I²C bus recovery after 5 failed reads</td><td>Re-inits the bus instead of staying in MPU FAIL</td></tr>
+</tbody></table></div>
+<p>These reduce the symptom; they do not replace the bulk capacitors and a correctly set boost output.</p>
+<hr>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <div class="table-wrap"><table>
 <thead><tr><th>Symptom</th><th>Check</th></tr></thead>
 <tbody>
 <tr><td>GPS never fixes</td><td>Antenna orientation, clear sky, 5+ min cold start</td></tr>
 <tr><td>MPU FAIL pill</td><td>I2C wiring (SDA/SCL), 0x68 address, 3.3V power</td></tr>
+<tr><td>MPU FAIL only on battery</td><td>3.3 V rail sag / boost ripple — add 100 µF + 100 nF, check LDO headroom</td></tr>
+<tr><td>WiFi connects then drops on battery</td><td>Boost output sag on TX bursts — set 5.3–5.5 V, add 1000 µF bulk cap, shorter power wires</td></tr>
+<tr><td><code>reset BROWNOUT</code> or rising <code>brownouts</code></td><td>Supply is sagging; USB is fine, fix the boost/battery path</td></tr>
 <tr><td>WiFi won't connect</td><td>SSID/password in <code>src/wifi_config.h</code>, 2.4 GHz only; serial log prints visible SSIDs</td></tr>
 <tr><td>MQTT won't connect</td><td>Device uses <code>broker.hivemq.com:1883</code> (TCP); browser uses <code>wss://...:8884/mqtt</code>. Check serial for <code>mqtt OK</code></td></tr>
 <tr><td>No history upload</td><td><code>HISTORY_URL</code> + <code>HISTORY_KEY</code> in <code>history_secret.h</code></td></tr>

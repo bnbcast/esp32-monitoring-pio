@@ -119,12 +119,67 @@
 
 ---
 
+## Power Stability: USB vs MT3608 Boost
+
+The board behaves differently on USB and on a battery + MT3608 because the two
+sources have very different output impedance.
+
+| | USB-C from PC | 5 V battery → MT3608 |
+|---|---|---|
+| Source | Regulated, 1–3 A available | Switching boost, limited output caps |
+| Wiring | Short, thick | Often long/thin dupont or breadboard |
+| Transient response | Stiff; bulk caps absorb Wi-Fi bursts | Sags on a 300–500 mA TX pulse |
+| Result | Stable Wi-Fi + I²C | Brownout resets, Wi-Fi drops, MPU NACKs |
+
+The ESP32 radio draws short **300–500 mA** bursts at 3.3 V every beacon/TX
+window. The DevKit's AMS1117 needs ~1.1–1.3 V of headroom, so a 5.0 V boost set
+point is already marginal; if the MT3608 output dips to ~4.5 V the 3.3 V rail
+falls, the brownout detector trips, and the MPU6050 starts returning I²C NACKs.
+That is why the same firmware and the same open `ESP32` AP look stable on USB
+and “sometimes connected” on battery.
+
+### Fix checklist
+
+1. **Set the MT3608 to 5.3–5.5 V**, measured at the ESP32 `5V`/`VIN` pin while
+   the board is connected and transmitting — not open-circuit. Stay below 6 V.
+2. **Add bulk capacitance at the board**: 470–1000 µF low-ESR electrolytic plus
+   100 nF ceramic across `5V`/`GND`, and 100 µF + 100 nF across `3V3`/`GND` if
+   the 3.3 V pin is accessible.
+3. **Add 22–47 µF** at the MT3608 input and output if the module lacks them.
+4. **Use short, thick power wires** (18–20 AWG), soldered or screw terminals.
+   Do not run the boost output through a breadboard.
+5. **Battery must supply ≥1 A continuous and ≥2 A peaks.** Small protected
+   5 V packs and 9 V-style batteries sag or trip their protection.
+6. **Use one power path at a time.** Do not connect USB and the boost to `5V`
+   together; use a Schottky (SS34) or ideal-diode OR-ing if both are needed.
+7. **Keep the boost inductor/switch node away** from the GPS antenna and I²C
+   wires. Twist SDA/SCL with a ground return and keep them under ~20 cm.
+8. **Measure with a scope, not a multimeter.** A multimeter averages away the
+   millisecond dips. Target: 5 V rail stays above 4.8 V, 3.3 V above 3.1 V
+   during connect/TX.
+
+### Firmware mitigations (already applied)
+
+| Change | Effect |
+|--------|--------|
+| Wi-Fi TX power set to 15 dBm | Cuts the dominant current peak by roughly a third |
+| `sys.brown` / boot banner `brownouts N` | Counts actual brownout resets in NVS |
+| I²C bus recovery after 5 failed reads | Re-inits the bus instead of staying in MPU FAIL |
+
+These reduce the symptom; they do not replace the bulk capacitors and a
+correctly set boost output.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Check |
 |---------|-------|
 | GPS never fixes | Antenna orientation, clear sky, 5+ min cold start |
 | MPU FAIL pill | I2C wiring (SDA/SCL), 0x68 address, 3.3V power |
+| MPU FAIL only on battery | 3.3 V rail sag / boost ripple — add 100 µF + 100 nF, check LDO headroom |
+| WiFi connects then drops on battery | Boost output sag on TX bursts — set 5.3–5.5 V, add 1000 µF bulk cap, shorter power wires |
+| `reset BROWNOUT` or rising `brownouts` | Supply is sagging; USB is fine, fix the boost/battery path |
 | WiFi won't connect | SSID/password in `src/wifi_config.h`, 2.4 GHz only; serial log prints visible SSIDs |
 | MQTT won't connect | Device uses `broker.hivemq.com:1883` (TCP); browser uses `wss://...:8884/mqtt`. Check serial for `mqtt OK` |
 | No history upload | `HISTORY_URL` + `HISTORY_KEY` in `history_secret.h` |
