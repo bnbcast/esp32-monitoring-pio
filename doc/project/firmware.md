@@ -82,6 +82,10 @@ use `millis()` deadlines, so a TLS upload or a scan cannot stall the others.
 - Topics: `esp32-dash/<key>/data`, `esp32-dash/<key>/status`
 - LWT: `offline` on `.../status` (retained); `online` is published retained on connect
 - Reconnect: exponential backoff (2s, 4s, 8s, max 30s)
+- A failed connect logs the resolved broker IP (or an explicit DNS failure)
+  and the state by name, e.g. `connect failed (state=-4, timeout)`. A bare
+  `-4` cannot tell a dead DNS from a filtered port 1883, and that difference
+  sends you to the wrong layer.
 
 ### Wi-Fi Reconnect Behavior
 The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` → `WF_CONNECTING`) driven from `networkService()`:

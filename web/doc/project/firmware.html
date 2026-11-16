@@ -122,6 +122,8 @@ loop()
 <li>Topics: <code>esp32-dash/&lt;key&gt;/data</code>, <code>esp32-dash/&lt;key&gt;/status</code></li>
 <li>LWT: <code>offline</code> on <code>.../status</code> (retained); <code>online</code> is published retained on connect</li>
 <li>Reconnect: exponential backoff (2s, 4s, 8s, max 30s)</li>
+<li>A failed connect logs the resolved broker IP (or an explicit DNS failure)</li>
+<p>and the state by name, e.g. <code>connect failed (state=-4, timeout)</code>. A bare <code>-4</code> cannot tell a dead DNS from a filtered port 1883, and that difference sends you to the wrong layer.</p>
 </ul>
 <h3 id="wi-fi-reconnect-behavior">Wi-Fi Reconnect Behavior</h3>
 <p>The network stack is a non-blocking state machine (<code>WF_IDLE</code> → <code>WF_SCANNING</code> → <code>WF_CONNECTING</code>) driven from <code>networkService()</code>:</p>

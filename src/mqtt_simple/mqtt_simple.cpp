@@ -1376,8 +1376,36 @@ const char* wifiStatusStr() {
   }
 }
 
+// PubSubClient's numeric states mean nothing in a log line; name them.
+static const char* mqttStateText(int s) {
+  switch (s) {
+    case -4: return "timeout";
+    case -3: return "connection lost";
+    case -2: return "connect failed";
+    case -1: return "disconnected";
+    case  0: return "connected";
+    case  1: return "bad protocol";
+    case  2: return "bad client id";
+    case  3: return "broker unavailable";
+    case  4: return "bad credentials";
+    case  5: return "unauthorized";
+    default: return "unknown";
+  }
+}
+
 bool connectMqtt() {
   logMsg(L_INFO, "MQTT", "connecting to %s:%d", MQTT_HOST, MQTT_PORT);
+  // PubSubClient only reports a numeric state, and -4 (timeout) looks the same
+  // whether DNS failed or the AP silently drops port 1883. Resolve first so the
+  // log says which one it is: no name means DNS, a name means the TCP path.
+  IPAddress brokerIp;
+  if (WiFi.hostByName(MQTT_HOST, brokerIp)) {
+    logMsg(L_INFO, "MQTT", "%s resolves to %s", MQTT_HOST,
+           brokerIp.toString().c_str());
+  } else {
+    logMsg(L_ERR, "MQTT", "DNS lookup for %s failed (no internet on this AP?)",
+           MQTT_HOST);
+  }
   // Last will: if Orion vanishes, the broker publishes "offline" for us
   if (mqtt.connect(clientId, nullptr, nullptr, TOPIC_STATUS, 0, true, "offline")) {
     mqtt.publish(TOPIC_STATUS, "online", true);
@@ -1387,8 +1415,8 @@ bool connectMqtt() {
     lastPublishOk = millis();          // watchdog baseline
     return true;
   }
-  logMsg(L_WARN, "MQTT", "connect failed (state=%d), retry in %lus",
-         mqtt.state(), mqttBackoff / 1000UL);
+  logMsg(L_WARN, "MQTT", "connect failed (state=%d, %s), retry in %lus",
+         mqtt.state(), mqttStateText(mqtt.state()), mqttBackoff / 1000UL);
   return false;
 }
 
