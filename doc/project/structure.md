@@ -56,7 +56,6 @@ esp32-monitoring-pio/
 ├── package.json             # Node deps, test scripts
 ├── package-lock.json
 ├── platformio.ini           # PlatformIO environments
-├── CMakeLists.txt           # (unused, legacy)
 └── README.md                # Project overview
 ```
 
@@ -119,7 +118,7 @@ ESP32 (1 Hz)
 | Firmware | `pio run -e esp32-mqtt-simple` | `.pio/build/.../firmware.bin` |
 | Upload | `pio run -e esp32-mqtt-simple -t upload` | Flash via USB |
 | Dashboard (local) | `npm run dev` | `http://localhost:5003/?dev` |
-| Tests | `npm test` | 115 unit tests |
+| Tests | `npm test` | 120 unit tests |
 | Browser probes | `node dev/check-*.mjs` | Playwright screenshots |
 | Dashboard (prod) | `git push` → GitHub Actions | `https://bnbcast.github.io/...` |
 | API (prod) | `cd worker/pages && npx wrangler pages deploy` | `https://race-tracker-history.pages.dev` |
@@ -130,7 +129,7 @@ ESP32 (1 Hz)
 
 | Artifact | Version Location |
 |----------|------------------|
-| Dashboard assets | `?v=53` in `index.html` (all 21 refs) |
+| Dashboard assets | `?v=54` in `index.html` (all 21 refs) |
 | Firmware | `FW_VERSION "1.4.0"` in `mqtt_simple.cpp` |
 | MQTT client ID | `orion-<MAC>` at boot |
 | API | No version (backwards compatible) |
