@@ -182,6 +182,7 @@
 #define LAP_AUTO_HOLD_MS  5000UL  // sustained for this long before it is used
 #define LAP_AUTO_HALF_M   15.0f   // each side of the launch point (30 m wide)
 #define LAP_AUTO_KEEP_M   500.0f  // boot elsewhere -> drop a stored auto gate
+#define LAP_AUTO_STOP_MS  180000UL // a 3 min stop elsewhere re-arms the line
 
 // ============ GLOBALS ============
 TinyGPSPlus gps;
@@ -279,6 +280,7 @@ static void gpsClearGates();
 static uint32_t autoArmMs = 0;
 static float    autoArmLat = 0, autoArmLng = 0;
 static bool     autoGateChecked = false;  // distance check done after this boot
+static uint32_t stoppedSinceMs = 0;       // for the long-stop re-arm rule
 
 // Uptime diagnostics. minFreeHeap catches a slow leak long before the board
 // actually runs out. bootCount must survive a reset to make a reboot loop
@@ -953,6 +955,26 @@ void updateGpsPositioning() {
     }
   } else if (usable) {
     holdValid = false;
+  }
+
+  // A long stop followed by motion somewhere else means the previous auto line
+  // belongs to another venue: home, then a drive to the track without a reboot.
+  // Only an automatic line moves this way; a manual gate is never dropped.
+  const bool rolling = gps.speed.isValid() && gps.speed.kmph() >= LAP_AUTO_KMH;
+  if (usable && !rolling) {
+    if (stoppedSinceMs == 0) stoppedSinceMs = now;
+  } else if (usable) {
+    if (gateValid && gateAuto && stoppedSinceMs != 0 &&
+        now - stoppedSinceMs >= LAP_AUTO_STOP_MS) {
+      const float cLat = (float)((gateALat + gateBLat) * 0.5);
+      const float cLng = (float)((gateALng + gateBLng) * 0.5);
+      const float away = haversineM(cLat, cLng, lat, lng);
+      if (away > LAP_AUTO_KEEP_M) {
+        gpsClearGates();
+        logMsg(L_INFO, "LAP", "auto gate moved: %.0f m from the last line", away);
+      }
+    }
+    stoppedSinceMs = 0;
   }
 
   // Automatic finish line. With nothing stored (and no manual a/b in progress)

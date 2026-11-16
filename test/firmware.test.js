@@ -53,6 +53,8 @@ test('a lap needs no keystrokes: the board arms its own finish line', () => {
   // Sustained motion, not a single fast fix, is what picks the line.
   assert.match(SRC, /#define LAP_AUTO_HOLD_MS\s+5000UL/);
   assert.match(SRC, /#define LAP_AUTO_KMH\s+5\.0f/);
+  assert.match(SRC, /#define LAP_AUTO_STOP_MS\s+180000UL/,
+    'a powered trip to another venue would keep the old line');
   assert.match(SRC, /autoArmMs = now;/);
   assert.match(SRC, /autoArmMs = 0;\s+\/\/ a stop restarts the window/,
     'a stop must clear the arm window');

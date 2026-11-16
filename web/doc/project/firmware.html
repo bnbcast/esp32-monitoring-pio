@@ -178,7 +178,7 @@ loop()
 <ul>
 <li><strong>Manual gate</strong>: serial <code>a</code> at one end of the line and <code>b</code> at the other, both captured from the current fix. <code>k</code> prints the stored gate and counters, <code>l</code> clears it.</li>
 <li><strong>Auto-arm</strong>: with no gate stored (and no manual capture in progress), the first motion above 5 km/h sustained for 5 s arms a line through the launch fix, perpendicular to the heading, 30 m wide. The lap clock starts at that launch fix, so the first return crossing times lap 1 rather than only arming the gate.</li>
-<li><strong>Persistence</strong>: both kinds of gate live in NVS. A stored auto line is dropped when the first fix after boot is more than 500 m away (a different track); manual gates are never dropped.</li>
+<li><strong>Persistence</strong>: both kinds of gate live in NVS. A stored auto line is dropped when the first fix after boot is more than 500 m away (a different track), or after a stop of 3 minutes or more followed by motion more than 500 m away (powered transport to another venue). Manual gates are never dropped.</li>
 <li><strong>Counting</strong>: the segment between two accepted fixes must cross A→B forward, above 5 km/h, at least 3 s after the previous crossing. The crossing time is interpolated inside the segment.</li>
 <li><strong>Payload</strong>: <code>lap.on</code> (armed), <code>lap.auto</code> (came from auto-arm), <code>lap.n</code>, <code>lap.last_ms</code>, <code>lap.best_ms</code>, <code>lap.la</code>/<code>lb</code>. History rows carry <code>lap_n</code>, <code>lap_last_ms</code> and <code>lap_best_ms</code> so the server can log one row per completed lap.</li>
 </ul>
