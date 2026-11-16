@@ -91,6 +91,12 @@ test('the UI mirrors the ingestion limits and the verify-key trick', () => {
   assert.match(JS, /401 unauthorized/);
 });
 
+test('the tester script is cache-busted and can reveal its result', () => {
+  assert.match(HTML, /<script src="app\.js\?v=\d+"><\/script>/,
+    'app.js has no version query, so a deploy can serve stale JS');
+  assert.match(JS, /scrollIntoView\(\{ behavior: 'auto'/, 'an off-screen result is never revealed');
+});
+
 test('the docs site links to the tester, and the renderer cannot wipe it', () => {
   const endpoints = read('doc/api/endpoints.md');
   assert.match(endpoints, /https:\/\/bnbcast\.github\.io\/esp32-monitoring-pio\/api\/docs\//,

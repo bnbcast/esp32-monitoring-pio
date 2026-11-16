@@ -131,7 +131,7 @@ ESP32 (1 Hz)
 | Firmware | `pio run -e esp32-mqtt-simple` | `.pio/build/.../firmware.bin` |
 | Upload | `pio run -e esp32-mqtt-simple -t upload` | Flash via USB |
 | Dashboard (local) | `npm run dev` | `http://localhost:5003/?dev` |
-| Tests | `npm test` | 127 unit tests |
+| Tests | `npm test` | 128 unit tests |
 | Browser probes | `node dev/check-*.mjs` | Playwright screenshots |
 | Dashboard (prod) | `git push` → GitHub Actions | `https://bnbcast.github.io/...` |
 | API (prod) | `cd worker/pages && npx wrangler pages deploy` | `https://race-tracker-history.pages.dev` |

@@ -396,7 +396,7 @@
     // On a narrow screen the panel sits below the cards, so a result the user
     // cannot see looks like nothing happened.
     if (rect.top >= window.innerHeight || rect.bottom <= 0) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.scrollIntoView({ behavior: 'auto', block: 'start' });
     }
   }
 
