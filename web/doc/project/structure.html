@@ -105,7 +105,6 @@ esp32-monitoring-pio/
 ├── package.json             # Node deps, test scripts
 ├── package-lock.json
 ├── platformio.ini           # PlatformIO environments
-├── CMakeLists.txt           # (unused, legacy)
 └── README.md                # Project overview
 </code></pre>
 <hr>
@@ -161,7 +160,7 @@ ESP32 (1 Hz)
 <tr><td>Firmware</td><td><code>pio run -e esp32-mqtt-simple</code></td><td><code>.pio/build/.../firmware.bin</code></td></tr>
 <tr><td>Upload</td><td><code>pio run -e esp32-mqtt-simple -t upload</code></td><td>Flash via USB</td></tr>
 <tr><td>Dashboard (local)</td><td><code>npm run dev</code></td><td><code>http://localhost:5003/?dev</code></td></tr>
-<tr><td>Tests</td><td><code>npm test</code></td><td>115 unit tests</td></tr>
+<tr><td>Tests</td><td><code>npm test</code></td><td>120 unit tests</td></tr>
 <tr><td>Browser probes</td><td><code>node dev/check-*.mjs</code></td><td>Playwright screenshots</td></tr>
 <tr><td>Dashboard (prod)</td><td><code>git push</code> → GitHub Actions</td><td><code>https://bnbcast.github.io/...</code></td></tr>
 <tr><td>API (prod)</td><td><code>cd worker/pages &amp;&amp; npx wrangler pages deploy</code></td><td><code>https://race-tracker-history.pages.dev</code></td></tr>
@@ -171,7 +170,7 @@ ESP32 (1 Hz)
 <div class="table-wrap"><table>
 <thead><tr><th>Artifact</th><th>Version Location</th></tr></thead>
 <tbody>
-<tr><td>Dashboard assets</td><td><code>?v=53</code> in <code>index.html</code> (all 21 refs)</td></tr>
+<tr><td>Dashboard assets</td><td><code>?v=54</code> in <code>index.html</code> (all 21 refs)</td></tr>
 <tr><td>Firmware</td><td><code>FW_VERSION &quot;1.4.0&quot;</code> in <code>mqtt_simple.cpp</code></td></tr>
 <tr><td>MQTT client ID</td><td><code>orion-&lt;MAC&gt;</code> at boot</td></tr>
 <tr><td>API</td><td>No version (backwards compatible)</td></tr>
