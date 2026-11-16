@@ -144,10 +144,17 @@
     return '/history' + (qs ? '?' + qs : '');
   }
 
+  function liveQuery() {
+    const key = $('lKey').value.trim();
+    const p = new URLSearchParams();
+    if (key) p.set('key', key);
+    const qs = p.toString();
+    return '/live' + (qs ? '?' + qs : '');
+  }
+
   function curlGet(url) {
     return 'curl -sS -i ' + shellQuote(url);
   }
-
   function curlOptions(url) {
     return 'curl -sS -i -X OPTIONS ' + shellQuote(url);
   }
@@ -169,6 +176,7 @@
     const base = readBase();
     setText('curl-health', curlGet(base + '/health'));
     setText('curl-history', curlGet(base + historyQuery()));
+    setText('curl-live', curlGet(base + liveQuery()));
     setText('curl-ingest', curlIngest(base + '/ingest'));
     setText('curl-options', curlOptions(base + $('oPath').value));
     setText('curl-error', curlGet(base + '/ingest'));
@@ -269,6 +277,18 @@
 
   function clearHistoryError() {
     const el = $('historyErr');
+    el.textContent = '';
+    el.hidden = true;
+  }
+
+  function showLiveError(message) {
+    const el = $('liveErr');
+    el.textContent = message;
+    el.hidden = false;
+  }
+
+  function clearLiveError() {
+    const el = $('liveErr');
     el.textContent = '';
     el.hidden = true;
   }
@@ -496,8 +516,49 @@
     return parts.length ? { text: parts.join(' \u00b7 '), tone: 'good' } : null;
   }
 
-  function ingestNote(r) {
+  function liveNote(r) {
     if (r.error) return null;
+    const j = json(r);
+
+    if (r.status !== 200 || !j || j.ok !== true) {
+      if (r.status === 400) {
+        return { text: 'Topic keys may only use letters, digits, "_" and "-" (1-32 characters).', tone: 'bad' };
+      }
+      if (r.status === 504) {
+        return { text: 'No retained frame arrived in time. If the device never published to this topic, there is nothing to replay; check the key.', tone: 'bad' };
+      }
+      if (r.status === 502) {
+        return { text: 'The relay could not get through to the MQTT broker. Try again in a moment.', tone: 'bad' };
+      }
+      return null;
+    }
+
+    const f = j.frame;
+    if (!f || typeof f !== 'object') {
+      return { text: 'The broker returned a payload that is not a JSON frame.', tone: 'bad' };
+    }
+
+    const g = f.gps && typeof f.gps === 'object' ? f.gps : {};
+    const s = f.sys && typeof f.sys === 'object' ? f.sys : {};
+    const parts = [];
+
+    parts.push(j.online === true ? 'device online'
+      : j.online === false ? 'device offline'
+      : 'online state unknown');
+    parts.push(g.fix ? 'GPS fix' + (g.sats != null ? ' (' + g.sats + ' sats)' : '') : 'no GPS fix');
+    if (g.fix && g.kmh != null) parts.push(g.kmh + ' km/h');
+    if (f.roll != null && f.pitch != null) parts.push('roll ' + f.roll + '\u00b0 / pitch ' + f.pitch + '\u00b0');
+    if (f.mpu === false) parts.push('MPU not detected');
+    if (f.temp != null) parts.push('MPU ' + f.temp + ' \u00b0C');
+    if (s.temp_c != null) parts.push('chip ' + s.temp_c + ' \u00b0C');
+    if (s.rssi != null) parts.push('Wi-Fi ' + s.rssi + ' dBm');
+    if (f.seq != null) parts.push('seq ' + f.seq);
+    if (j.retained === false) parts.push('not retained');
+
+    return { text: parts.join(' \u00b7 '), tone: j.online === false ? 'bad' : 'good' };
+  }
+
+  function ingestNote(r) {    if (r.error) return null;
     const j = json(r);
     if (r.status === 200 && j && j.ok) {
       const rejected = Array.isArray(j.rejected) ? j.rejected.length : 0;
@@ -644,6 +705,24 @@
         path: historyQuery(),
         intent: 'history',
         note: historyNote
+      });
+    });
+
+    // GET /live
+    on($('lKey'), 'input', updateCurls);
+    on($('form-live'), 'submit', function (e) {
+      e.preventDefault();
+      const key = $('lKey').value.trim();
+      if (key && !/^[A-Za-z0-9_-]{1,32}$/.test(key)) {
+        return showLiveError('Topic keys may only use letters, digits, "_" and "-" (1-32 characters).');
+      }
+      clearLiveError();
+      run({
+        label: 'GET /live',
+        method: 'GET',
+        path: liveQuery(),
+        intent: 'live',
+        note: liveNote
       });
     });
 

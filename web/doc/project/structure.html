@@ -46,7 +46,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <div class="layout">
 <aside>
 <div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
-<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="on" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/live.html">GET /live — current sensor data</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="on" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
 </aside>
 <main id="content"><h1 id="project-structure">Project Structure</h1>
 <pre><code>
@@ -97,11 +97,17 @@ esp32-monitoring-pio/
 │   ├── icons/               # Favicon/app icons (32–512)
 │   └── vendor/              # MapLibre GL (CSP-safe)
 ├── worker/                  # Cloudflare Pages Function
+│   ├── src/
+│   │   ├── index.js            # API handlers (D1 + /live)
+│   │   ├── mqtt-wire.js        # MQTT 3.1.1 packet codec
+│   │   ├── live.js             # /live protocol state machine
+│   │   └── live-tcp.js         # /live TCP transport (cloudflare:sockets)
+│   ├── test/
+│   │   ├── ingest.test.mjs     # ingest/history rules
+│   │   └── live.test.mjs       # /live codec, relay and route rules
 │   └── pages/
-│       ├── functions/[[path]].js  # API router
+│       ├── functions/[[path]].js  # API router (allowlist)
 │       ├── public/index.html       # Landing page
-│       ├── src/index.js            # API handlers (D1)
-│       ├── test/ingest.test.mjs    # API tests
 │       └── wrangler.toml           # Pages config
 ├── .gitignore
 ├── package.json             # Node deps, test scripts
@@ -132,6 +138,15 @@ esp32-monitoring-pio/
 <tr><td><code>info-data.js</code></td><td>Glossary content (69 terms, 8 groups)</td></tr>
 <tr><td><code>mqtt-mini.js</code></td><td>Lightweight MQTT over WS client</td></tr>
 <tr><td><code>guard.js</code></td><td>Operator lock (long-press)</td></tr>
+</tbody></table></div>
+<h3 id="history-api-worker-src">History API (<code>worker/src/</code>)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+<tbody>
+<tr><td><code>index.js</code></td><td>Routes, D1 ingest/history, <code>/live</code> handler</td></tr>
+<tr><td><code>mqtt-wire.js</code></td><td>MQTT 3.1.1 CONNECT/SUBSCRIBE/PUBLISH bytes (pure)</td></tr>
+<tr><td><code>live.js</code></td><td>CONNACK → SUBSCRIBE → retained PUBLISH state machine (no sockets)</td></tr>
+<tr><td><code>live-tcp.js</code></td><td>One short-lived TCP session to HiveMQ via <code>cloudflare:sockets</code></td></tr>
 </tbody></table></div>
 <h3 id="api-tester-web-api-docs">API tester (<code>web/api/docs/</code>)</h3>
 <div class="table-wrap"><table>
@@ -170,7 +185,7 @@ ESP32 (1 Hz)
 <tr><td>Firmware</td><td><code>pio run -e esp32-mqtt-simple</code></td><td><code>.pio/build/.../firmware.bin</code></td></tr>
 <tr><td>Upload</td><td><code>pio run -e esp32-mqtt-simple -t upload</code></td><td>Flash via USB</td></tr>
 <tr><td>Dashboard (local)</td><td><code>npm run dev</code></td><td><code>http://localhost:5003/?dev</code></td></tr>
-<tr><td>Tests</td><td><code>npm test</code></td><td>128 unit tests</td></tr>
+<tr><td>Tests</td><td><code>npm test</code></td><td>129 unit tests</td></tr>
 <tr><td>Browser probes</td><td><code>node dev/check-*.mjs</code></td><td>Playwright screenshots</td></tr>
 <tr><td>Dashboard (prod)</td><td><code>git push</code> → GitHub Actions</td><td><code>https://bnbcast.github.io/...</code></td></tr>
 <tr><td>API (prod)</td><td><code>cd worker/pages &amp;&amp; npx wrangler pages deploy</code></td><td><code>https://race-tracker-history.pages.dev</code></td></tr>

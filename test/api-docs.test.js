@@ -20,13 +20,17 @@ const JS = read('web/api/docs/app.js');
 
 test('the tester exposes every documented endpoint', () => {
   // One card per endpoint, plus the response panel the user actually reads.
-  for (const id of ['healthTitle', 'historyTitle', 'ingestTitle', 'optionsTitle',
+  for (const id of ['healthTitle', 'historyTitle', 'liveTitle', 'ingestTitle', 'optionsTitle',
                     'errorTitle', 'respStatus', 'respMeta', 'respHeaders', 'respBody']) {
     assert.match(HTML, new RegExp(`id="${id}"`), `#${id} is missing`);
   }
 
   assert.match(JS, /path: '\/health'/, 'GET /health is never sent');
   assert.match(JS, /path: historyQuery\(\)/, 'GET /history is never sent');
+  assert.match(JS, /path: liveQuery\(\)/, 'GET /live is never sent');
+  assert.match(JS, /intent: 'live'/, 'the live probe is not identified');
+  assert.match(JS, /p\.set\('key'/, 'GET /live never sets the topic key');
+  assert.match(HTML, /<option>\/live<\/option>/, '/live is missing from the preflight picker');
   assert.match(JS, /path: '\/ingest'/, 'POST /ingest is never sent');
   assert.match(JS, /method: 'OPTIONS'/, 'OPTIONS is never sent');
   // The error shape is a wrong method on a real path: Pages serves the
@@ -89,6 +93,18 @@ test('the UI mirrors the ingestion limits and the verify-key trick', () => {
   assert.match(JS, /body: '\{\}'/, 'the no-write key check is missing');
   assert.match(JS, /no-frames/, 'the key-check response is not explained');
   assert.match(JS, /401 unauthorized/);
+});
+
+test('the live card explains the sensor summary and its failures', () => {
+  assert.match(HTML, /broker's retained message/, 'the card does not say where the frame comes from');
+  assert.match(JS, /online state unknown/, 'the unknown-device state is not explained');
+  assert.match(JS, /no GPS fix/, 'a frame without a fix is not explained');
+  assert.match(JS, /chip '/, 'the chip temperature is not summarised');
+  assert.match(JS, /r\.status === 504/, 'the live timeout is not explained');
+  assert.match(JS, /r\.status === 502/, 'the broker failure is not explained');
+  assert.match(JS, /Topic keys may only use letters/, 'the bad-key rule is not explained');
+  // The key is validated client-side before spending a broker round trip.
+  assert.match(JS, /\^\[A-Za-z0-9_-\]\{1,32\}\$/);
 });
 
 test('the tester script is cache-busted and can reveal its result', () => {

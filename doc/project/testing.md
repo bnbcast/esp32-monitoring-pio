@@ -12,7 +12,7 @@ Three layers of testing ensure correctness without a device farm.
 
 ---
 
-## Unit Tests (120 tests)
+## Unit Tests (129 tests)
 
 Run: `npm test`
 
@@ -29,6 +29,15 @@ Run: `npm test`
 | `test/led.test.js` | Danger LED state machine |
 | `test/guard.test.js` | Operator lock logic |
 | `test/ui.test.js` | Static HTML/CSS/JS invariants |
+| `test/api-docs.test.js` | API tester: every endpoint card, no key leak, CSP, live summary |
+
+Worker tests run separately, because they exercise the Cloudflare handler with
+a fake D1 and a socket-free MQTT codec:
+
+```bash
+node --test worker/test/ingest.test.mjs   # ingest, history, retention
+node --test worker/test/live.test.mjs     # /live codec, relay and route
+```
 
 ### Key Invariants (ui.test.js)
 - All 21 asset refs share same `?v=` version
@@ -92,20 +101,9 @@ npm run capture
 | Workflow | Trigger | Steps |
 |----------|---------|-------|
 | `deploy-pages.yml` | push to main | Build → GitHub Pages deploy |
-| `test.yml` | push/PR | `npm test` (Node 22) |
-
-```yaml
-# .github/workflows/test.yml
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm' }
-      - run: npm ci
-      - run: npm test
-```
+| `ci.yml` / `firmware` | push/PR | PlatformIO build, flash-size report |
+| `ci.yml` / `dashboard` | push/PR | `npm test` (Node 22) |
+| `ci.yml` / `worker` | push/PR | `node --check`, then both `worker/test/*.mjs` files |
 
 ---
 

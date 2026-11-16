@@ -22,6 +22,8 @@ esp32-dash/<TOPIC_KEY>/status  online/offline  (retained, QoS 0, LWT)
 - The dashboard derives the key from the URL hash: `#t=<key>`
 - Data is retained: a new subscriber immediately receives the last frame
 - Status uses the broker Last Will: if the device drops, HiveMQ publishes `offline`
+- `GET /live` on the history API returns the retained frame over HTTPS without
+  a browser MQTT client — see [live.md](live.md)
 
 ---
 

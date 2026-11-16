@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GET /live — current sensor data - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="on" href="../api/live.html">GET /live — current sensor data</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1 id="get-live-current-sensor-data">GET /live — current sensor data</h1>
+<p>Everything the device is reporting <em>right now</em>, in one request: the newest frame published on the MQTT data topic, plus whether the device is online.</p>
+<p>This is the same data the live dashboard shows. Nothing is stored and nothing is written to D1.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Method</th><th><code>GET</code></th></tr></thead>
+<tbody>
+<tr><td>Path</td><td><code>/live</code></td></tr>
+<tr><td>Auth</td><td>none (public read)</td></tr>
+<tr><td>CORS</td><td><code>access-control-allow-origin: *</code></td></tr>
+<tr><td>Cache</td><td><code>no-store</code> — always the moment of the request</td></tr>
+<tr><td>Typical time</td><td>0.7–1.5 s; up to ~6 s when the first session is retried</td></tr>
+</tbody></table></div>
+<p><strong>Try it:</strong> <a href="https://bnbcast.github.io/esp32-monitoring-pio/api/docs/">API Tester → Live sensors</a> — the card sends the request and summarises online state, GPS fix, speed, satellites, roll/pitch, MPU temperature and chip temperature.</p>
+<hr>
+<h2 id="request">Request</h2>
+<pre><code>
+GET /live?key=race-tracker HTTP/1.1
+Host: race-tracker-history.pages.dev
+</code></pre>
+<p>No headers are required and no body is sent.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Query</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>key</code></td><td>string</td><td><code>race-tracker</code></td><td>MQTT topic key, 1–32 chars of <code>A-Z a-z 0-9 _ -</code></td></tr>
+</tbody></table></div>
+<p>The key selects the topics <code>esp32-dash/&lt;key&gt;/data</code> and <code>esp32-dash/&lt;key&gt;/status</code>; it is <strong>not</strong> a secret. The device's ingest key (<code>X-Ingest-Key</code>) has nothing to do with this endpoint and is never used here.</p>
+<p>curl:</p>
+<pre><code>
+curl -sS -i &quot;https://race-tracker-history.pages.dev/live?key=race-tracker&quot;
+</code></pre>
+<hr>
+<h2 id="response-200">Response — 200</h2>
+<pre><code>
+{
+  &quot;ok&quot;: true,
+  &quot;topic&quot;: &quot;esp32-dash/race-tracker/data&quot;,
+  &quot;online&quot;: true,
+  &quot;retained&quot;: true,
+  &quot;retrieved_ms&quot;: 1763000000123,
+  &quot;frame&quot;: {
+    &quot;seq&quot;: 48213,
+    &quot;ts&quot;: 1763000000,
+    &quot;up&quot;: 15342,
+    &quot;boot&quot;: 7,
+    &quot;mpu&quot;: true,
+    &quot;roll&quot;: 4.1,
+    &quot;pitch&quot;: -2.1,
+    &quot;yaw&quot;: 12.3,
+    &quot;tilt&quot;: 4.6,
+    &quot;ax&quot;: 0.02,
+    &quot;ay&quot;: -0.01,
+    &quot;az&quot;: 1.0,
+    &quot;temp&quot;: 31.5,
+    &quot;lvl&quot;: 0,
+    &quot;warn&quot;: false,
+    &quot;danger&quot;: false,
+    &quot;maxTilt&quot;: 21.4,
+    &quot;gps&quot;: {
+      &quot;fix&quot;: true,
+      &quot;sats&quot;: 9,
+      &quot;lat&quot;: -6.200001,
+      &quot;lng&quot;: 106.800001,
+      &quot;alt&quot;: 42.5,
+      &quot;kmh&quot;: 23.4,
+      &quot;cog&quot;: 187.5,
+      &quot;hdop&quot;: 0.8,
+      &quot;q&quot;: 4,
+      &quot;snr&quot;: 38,
+      &quot;dist_m&quot;: 1240.5,
+      &quot;ttff_s&quot;: 12,
+      &quot;mode&quot;: 3,
+      &quot;still&quot;: false
+    },
+    &quot;lap&quot;: { &quot;on&quot;: true, &quot;n&quot;: 3, &quot;last_ms&quot;: 61234, &quot;best_ms&quot;: 59870 },
+    &quot;sys&quot;: {
+      &quot;heap&quot;: 120000,
+      &quot;heap_min&quot;: 98000,
+      &quot;boot&quot;: 7,
+      &quot;rssi&quot;: -71,
+      &quot;temp_c&quot;: 64.2,
+      &quot;wifi&quot;: { &quot;status&quot;: &quot;Connected&quot;, &quot;ip&quot;: &quot;192.168.1.20&quot; }
+    }
+  }
+}
+</code></pre>
+<h3 id="top-level-fields">Top-level fields</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>ok</code></td><td>boolean</td><td>Always <code>true</code> on 200</td></tr>
+<tr><td><code>topic</code></td><td>string</td><td>The data topic that was read</td></tr>
+<tr><td><code>online</code></td><td>boolean \</td><td>null</td><td><code>true</code> = the device's retained status is <code>online</code>; <code>false</code> = last will says <code>offline</code>; <code>null</code> = no status retained yet (unknown)</td></tr>
+<tr><td><code>retained</code></td><td>boolean</td><td><code>true</code> when the frame came from the broker's retained slot, i.e. the latest published frame even if the device is now offline</td></tr>
+<tr><td><code>retrieved_ms</code></td><td>number</td><td>Epoch milliseconds when the relay collected the frame</td></tr>
+<tr><td><code>frame</code></td><td>object</td><td>The MQTT payload, exactly as published; see <a href="mqtt.html">mqtt.md</a> for every field</td></tr>
+</tbody></table></div>
+<p><code>frame</code> and its blocks are the device's own JSON, so a field the firmware does not send is simply absent. If the payload were ever not JSON, <code>frame</code> would be the raw string instead of an object.</p>
+<p>The two temperatures are different sensors:</p>
+<ul>
+<li><code>frame.temp</code> — MPU6050 die temperature, normal range roughly 25–45 °C</li>
+<li><code>frame.sys.temp_c</code> — ESP32 chip temperature, often 50–85 °C; the junction</li>
+<p>limit is 125 °C</p>
+</ul>
+<p><code>frame.ts</code> is the device clock in epoch seconds, so a frame can be a second or two old even when <code>online</code> is <code>true</code>.</p>
+<hr>
+<h2 id="errors">Errors</h2>
+<p>All errors use the API's JSON shape <code>{&quot;ok&quot;:false,&quot;error&quot;:&quot;&lt;code&gt;&quot;}</code>.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Status</th><th><code>error</code></th><th>Cause</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td>400</td><td><code>bad-key</code></td><td><code>key</code> fails the 1–32 char <code>[A-Za-z0-9_-]</code> rule</td><td>Fix the query string</td></tr>
+<tr><td>502</td><td><code>broker-unreachable</code></td><td>The relay could not open a TCP connection to the public broker</td><td>Retry in a moment</td></tr>
+<tr><td>502</td><td><code>broker-refused</code></td><td>The broker answered CONNACK with a non-zero code</td><td>Retry; if it persists the broker is refusing new sessions</td></tr>
+<tr><td>504</td><td><code>live-timeout</code></td><td>No data frame after two capped attempts (~6 s)</td><td>The key may be wrong, or the device has never published a retained frame on that topic</td></tr>
+</tbody></table></div>
+<p>A topic that has never been used returns <code>504 live-timeout</code>, not <code>404</code>: the broker has nothing retained to send, so there is no frame to return.</p>
+<p>Example:</p>
+<pre><code>
+{ &quot;ok&quot;: false, &quot;error&quot;: &quot;bad-key&quot; }
+</code></pre>
+<hr>
+<h2 id="how-it-works">How it works</h2>
+<pre><code>
+GET /live ──▶ Pages Function ──▶ MQTT CONNECT ──▶ broker.hivemq.com:1883
+                                      │
+                                      ├─ SUBSCRIBE esp32-dash/&lt;key&gt;/data
+                                      └─ SUBSCRIBE esp32-dash/&lt;key&gt;/status
+                                      ▼
+                          retained DATA + STATUS ──▶ JSON response
+                                      ▼
+                                  DISCONNECT
+</code></pre>
+<ul>
+<li>One outbound TCP session per attempt (at most two), opened with the runtime's</li>
+<p><code>cloudflare:sockets</code> API and closed as soon as the retained frame arrives.</p>
+<li>No D1 read, no D1 write, no new topic, no firmware change: the broker already</li>
+<p>keeps the last message, so there is nothing to copy.</p>
+<li>The status subscribe is best-effort: a frame still returns with</li>
+<p><code>&quot;online&quot;: null</code> if the status message does not arrive within 300 ms.</p>
+<li>Each attempt is capped at 3 s, and the public broker's habit of accepting a</li>
+<p>TCP connection and then going quiet is covered by one retry with a fresh session (~6 s worst case). Because every call opens a broker session, poll at most about once per second — the device only publishes once per second, so faster polling just repeats the same frame.</p>
+</ul>
+<p>The implementation is split into a pure packet codec (<code>worker/src/mqtt-wire.js</code>), a socket-free state machine (<code>worker/src/live.js</code>) and the TCP transport (<code>worker/src/live-tcp.js</code>), which is imported lazily so the Node tests never need <code>cloudflare:sockets</code>.</p></main>
+</div>
+</body>
+</html>

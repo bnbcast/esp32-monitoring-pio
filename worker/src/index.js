@@ -9,6 +9,7 @@
  *   POST /ingest    X-Ingest-Key: <secret>
  *                   {"device":"esp32-01","frames":[<mqtt payload>, ...]}
  *   GET  /history   ?device=&from=<epoch>&to=<epoch>&limit=<n>
+ *   GET  /live      ?key=<topic-key>     newest retained MQTT frame
  *   GET  /health
  *
  * Storage policy - 365 days must fit the free 5 GB D1:
@@ -44,6 +45,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    if (url.pathname === '/live' && request.method === 'GET') return live(url);
     if (url.pathname === '/health') return json({ ok: true, service: 'race-tracker-history' });
     if (url.pathname === '/history' && request.method === 'GET') return history(url, env);
     if (url.pathname === '/ingest' && request.method === 'POST') return ingest(request, env);
@@ -283,6 +285,37 @@ async function history(url, env) {
   });
 }
 
+// Newest retained telemetry frame, read straight from the public broker.
+// Nothing is stored: the broker already keeps the last message on the topic,
+// so this is a read-only view of exactly what the device is publishing.
+// The TCP transport is imported lazily so Node tests (and any runtime without
+// cloudflare:sockets) can still load this module.
+async function live(url) {
+  const key = url.searchParams.get('key') || 'race-tracker';
+  if (!isTopicKey(key)) return json({ ok: false, error: 'bad-key' }, 400);
+
+  let result;
+  try {
+    const { readLive } = await import('./live-tcp.js');
+    result = await readLive(key);
+  } catch (e) {
+    return json({ ok: false, error: 'broker-unreachable' }, 502);
+  }
+
+  if (result.error === 'live-timeout') return json({ ok: false, error: 'live-timeout' }, 504);
+  if (result.error === 'broker-refused') return json({ ok: false, error: 'broker-refused' }, 502);
+  if (result.error) return json({ ok: false, error: 'broker-unreachable' }, 502);
+
+  return json({
+    ok: true,
+    topic: result.topic,
+    online: result.online,
+    retained: result.retained,
+    retrieved_ms: result.retrieved_ms,
+    frame: result.frame
+  });
+}
+
 // Returns null when the frame is acceptable, otherwise a reason string.
 // "duplicate" is special: it is skipped, not counted as an error.
 function checkFrame(f, prev, nowS) {
@@ -337,6 +370,14 @@ function bootOf(f) {
 
 function isNum(v) {
   return typeof v === 'number' && isFinite(v);
+}
+
+// The key is pasted into the MQTT topic path, so allow only the characters the
+// firmware and dashboard already use. The character test is what rejects a
+// trailing newline: /^[...]+$/ would accept "abc\n", because $ also matches
+// before a final line break.
+function isTopicKey(key) {
+  return key.length >= 1 && key.length <= 32 && !/[^A-Za-z0-9_-]/.test(key);
 }
 
 function numOrNull(v) {

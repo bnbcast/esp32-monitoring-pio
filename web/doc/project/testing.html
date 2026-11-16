@@ -46,7 +46,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <div class="layout">
 <aside>
 <div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
-<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="on" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/live.html">GET /live — current sensor data</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="on" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
 </aside>
 <main id="content"><h1 id="testing-documentation">Testing Documentation</h1>
 <h2 id="overview">Overview</h2>
@@ -59,7 +59,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <tr><td>Integration</td><td>Manual</td><td>Live MQTT + dashboard</td><td><code>npm run dev</code></td></tr>
 </tbody></table></div>
 <hr>
-<h2 id="unit-tests-120-tests">Unit Tests (120 tests)</h2>
+<h2 id="unit-tests-129-tests">Unit Tests (129 tests)</h2>
 <p>Run: <code>npm test</code></p>
 <h3 id="test-files">Test Files</h3>
 <div class="table-wrap"><table>
@@ -75,7 +75,13 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <tr><td><code>test/led.test.js</code></td><td>Danger LED state machine</td></tr>
 <tr><td><code>test/guard.test.js</code></td><td>Operator lock logic</td></tr>
 <tr><td><code>test/ui.test.js</code></td><td>Static HTML/CSS/JS invariants</td></tr>
+<tr><td><code>test/api-docs.test.js</code></td><td>API tester: every endpoint card, no key leak, CSP, live summary</td></tr>
 </tbody></table></div>
+<p>Worker tests run separately, because they exercise the Cloudflare handler with a fake D1 and a socket-free MQTT codec:</p>
+<pre><code>
+node --test worker/test/ingest.test.mjs   # ingest, history, retention
+node --test worker/test/live.test.mjs     # /live codec, relay and route
+</code></pre>
 <h3 id="key-invariants-ui-test-js">Key Invariants (ui.test.js)</h3>
 <ul>
 <li>All 21 asset refs share same <code>?v=</code> version</li>
@@ -134,20 +140,10 @@ npm run capture
 <thead><tr><th>Workflow</th><th>Trigger</th><th>Steps</th></tr></thead>
 <tbody>
 <tr><td><code>deploy-pages.yml</code></td><td>push to main</td><td>Build → GitHub Pages deploy</td></tr>
-<tr><td><code>test.yml</code></td><td>push/PR</td><td><code>npm test</code> (Node 22)</td></tr>
+<tr><td><code>ci.yml</code> / <code>firmware</code></td><td>push/PR</td><td>PlatformIO build, flash-size report</td></tr>
+<tr><td><code>ci.yml</code> / <code>dashboard</code></td><td>push/PR</td><td><code>npm test</code> (Node 22)</td></tr>
+<tr><td><code>ci.yml</code> / <code>worker</code></td><td>push/PR</td><td><code>node --check</code>, then both <code>worker/test/*.mjs</code> files</td></tr>
 </tbody></table></div>
-<pre><code>
-# .github/workflows/test.yml
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm' }
-      - run: npm ci
-      - run: npm test
-</code></pre>
 <hr>
 <h2 id="adding-a-test">Adding a Test</h2>
 <ol>

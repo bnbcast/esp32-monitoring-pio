@@ -46,7 +46,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <div class="layout">
 <aside>
 <div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
-<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="on" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="on" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/live.html">GET /live — current sensor data</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
 </aside>
 <main id="content"><h1 id="api-endpoints-reference">API Endpoints Reference</h1>
 <p>Base URL: <strong>https://race-tracker-history.pages.dev</strong> (Cloudflare Pages Function).</p>
@@ -57,11 +57,12 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <tbody>
 <tr><td>GET</td><td><code>/health</code></td><td>—</td><td>Liveness</td></tr>
 <tr><td>GET</td><td><code>/history</code></td><td>—</td><td>Stored fixes + laps</td></tr>
+<tr><td>GET</td><td><code>/live</code></td><td>—</td><td>Newest sensor frame, right now</td></tr>
 <tr><td>POST</td><td><code>/ingest</code></td><td><code>X-Ingest-Key</code></td><td>Device batch upload</td></tr>
 <tr><td>OPTIONS</td><td>any</td><td>—</td><td>CORS preflight, <code>204</code></td></tr>
 </tbody></table></div>
 <p>Unknown paths on the Pages deployment fall through to the static landing page (<code>200</code>, HTML), because Pages treats a missing <code>404.html</code> as a single-page app. The JSON error shape applies to the Worker entry and to a known path called with the wrong method: <code>404 { &quot;ok&quot;: false, &quot;error&quot;: &quot;not-found&quot; }</code>.</p>
-<p>Full request/response detail lives in <a href="history.html">history.md</a>; the live telemetry stream is documented in <a href="mqtt.html">mqtt.md</a>.</p>
+<p>Full request/response detail lives in <a href="history.html">history.md</a> and <a href="live.html">live.md</a>; the telemetry payload itself is documented in <a href="mqtt.html">mqtt.md</a>.</p>
 <hr>
 <h2 id="quick-reference">Quick Reference</h2>
 <h3 id="get-health">GET /health</h3>
@@ -91,6 +92,32 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <li>Lap tuple: <code>[ts, n, dur_ms, best_ms]</code></li>
 <li>Invalid window: <code>400 { &quot;ok&quot;: false, &quot;error&quot;: &quot;bad-window&quot; }</code></li>
 </ul>
+<h3 id="get-live">GET /live</h3>
+<p>Newest frame the device published, read from the broker's retained message — the same data as the live dashboard. No database read or write.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>key</code></td><td>string</td><td><code>race-tracker</code></td><td>1–32 chars of <code>A-Z a-z 0-9 _ -</code></td></tr>
+</tbody></table></div>
+<pre><code>
+{
+  &quot;ok&quot;: true,
+  &quot;topic&quot;: &quot;esp32-dash/race-tracker/data&quot;,
+  &quot;online&quot;: true,
+  &quot;retained&quot;: true,
+  &quot;retrieved_ms&quot;: 1763000000123,
+  &quot;frame&quot;: { &quot;seq&quot;: 48213, &quot;ts&quot;: 1763000000, &quot;gps&quot;: { &quot;fix&quot;: true, &quot;sats&quot;: 9, &quot;kmh&quot;: 23.4 }, &quot;sys&quot;: { &quot;temp_c&quot;: 64.2 } }
+}
+</code></pre>
+<div class="table-wrap"><table>
+<thead><tr><th>Status</th><th><code>error</code></th><th>Cause</th></tr></thead>
+<tbody>
+<tr><td>400</td><td><code>bad-key</code></td><td><code>key</code> outside <code>[A-Za-z0-9_-]{1,32}</code></td></tr>
+<tr><td>502</td><td><code>broker-unreachable</code></td><td>Broker TCP connect failed</td></tr>
+<tr><td>502</td><td><code>broker-refused</code></td><td>Broker rejected the MQTT session</td></tr>
+<tr><td>504</td><td><code>live-timeout</code></td><td>No retained frame after two capped attempts</td></tr>
+</tbody></table></div>
+<p><code>online</code> is <code>true</code>, <code>false</code> or <code>null</code> (no status retained yet). A topic with no retained frame returns <code>504</code>, not <code>404</code>. Full field and error detail: <a href="live.html">live.md</a>.</p>
 <h3 id="post-ingest">POST /ingest</h3>
 <pre><code>
 {

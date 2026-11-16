@@ -10,6 +10,7 @@ Public read. Writes require `X-Ingest-Key`. All responses are JSON.
 |--------|------|------|---------|
 | GET | `/health` | — | Liveness |
 | GET | `/history` | — | Stored fixes + laps |
+| GET | `/live` | — | Newest sensor frame, right now |
 | POST | `/ingest` | `X-Ingest-Key` | Device batch upload |
 | OPTIONS | any | — | CORS preflight, `204` |
 
@@ -18,8 +19,9 @@ Unknown paths on the Pages deployment fall through to the static landing page
 The JSON error shape applies to the Worker entry and to a known path called
 with the wrong method: `404 { "ok": false, "error": "not-found" }`.
 
-Full request/response detail lives in [history.md](history.md); the live
-telemetry stream is documented in [mqtt.md](mqtt.md).
+Full request/response detail lives in [history.md](history.md) and
+[live.md](live.md); the telemetry payload itself is documented in
+[mqtt.md](mqtt.md).
 
 ---
 
@@ -53,6 +55,37 @@ telemetry stream is documented in [mqtt.md](mqtt.md).
 - Point tuple: `[ts, lat, lon, kmh, cog, hdop, roll, pitch, boot]`
 - Lap tuple: `[ts, n, dur_ms, best_ms]`
 - Invalid window: `400 { "ok": false, "error": "bad-window" }`
+
+### GET /live
+
+Newest frame the device published, read from the broker's retained message —
+the same data as the live dashboard. No database read or write.
+
+| Param | Type | Default | Notes |
+|-------|------|---------|-------|
+| `key` | string | `race-tracker` | 1–32 chars of `A-Z a-z 0-9 _ -` |
+
+```json
+{
+  "ok": true,
+  "topic": "esp32-dash/race-tracker/data",
+  "online": true,
+  "retained": true,
+  "retrieved_ms": 1763000000123,
+  "frame": { "seq": 48213, "ts": 1763000000, "gps": { "fix": true, "sats": 9, "kmh": 23.4 }, "sys": { "temp_c": 64.2 } }
+}
+```
+
+| Status | `error` | Cause |
+|--------|---------|-------|
+| 400 | `bad-key` | `key` outside `[A-Za-z0-9_-]{1,32}` |
+| 502 | `broker-unreachable` | Broker TCP connect failed |
+| 502 | `broker-refused` | Broker rejected the MQTT session |
+| 504 | `live-timeout` | No retained frame after two capped attempts |
+
+`online` is `true`, `false` or `null` (no status retained yet). A topic with no
+retained frame returns `504`, not `404`. Full field and error detail:
+[live.md](live.md).
 
 ### POST /ingest
 

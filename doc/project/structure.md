@@ -48,11 +48,17 @@ esp32-monitoring-pio/
 │   ├── icons/               # Favicon/app icons (32–512)
 │   └── vendor/              # MapLibre GL (CSP-safe)
 ├── worker/                  # Cloudflare Pages Function
+│   ├── src/
+│   │   ├── index.js            # API handlers (D1 + /live)
+│   │   ├── mqtt-wire.js        # MQTT 3.1.1 packet codec
+│   │   ├── live.js             # /live protocol state machine
+│   │   └── live-tcp.js         # /live TCP transport (cloudflare:sockets)
+│   ├── test/
+│   │   ├── ingest.test.mjs     # ingest/history rules
+│   │   └── live.test.mjs       # /live codec, relay and route rules
 │   └── pages/
-│       ├── functions/[[path]].js  # API router
+│       ├── functions/[[path]].js  # API router (allowlist)
 │       ├── public/index.html       # Landing page
-│       ├── src/index.js            # API handlers (D1)
-│       ├── test/ingest.test.mjs    # API tests
 │       └── wrangler.toml           # Pages config
 ├── .gitignore
 ├── package.json             # Node deps, test scripts
@@ -86,6 +92,15 @@ esp32-monitoring-pio/
 | `info-data.js` | Glossary content (69 terms, 8 groups) |
 | `mqtt-mini.js` | Lightweight MQTT over WS client |
 | `guard.js` | Operator lock (long-press) |
+
+### History API (`worker/src/`)
+
+| File | Responsibility |
+|------|----------------|
+| `index.js` | Routes, D1 ingest/history, `/live` handler |
+| `mqtt-wire.js` | MQTT 3.1.1 CONNECT/SUBSCRIBE/PUBLISH bytes (pure) |
+| `live.js` | CONNACK → SUBSCRIBE → retained PUBLISH state machine (no sockets) |
+| `live-tcp.js` | One short-lived TCP session to HiveMQ via `cloudflare:sockets` |
 
 ### API tester (`web/api/docs/`)
 
@@ -131,7 +146,7 @@ ESP32 (1 Hz)
 | Firmware | `pio run -e esp32-mqtt-simple` | `.pio/build/.../firmware.bin` |
 | Upload | `pio run -e esp32-mqtt-simple -t upload` | Flash via USB |
 | Dashboard (local) | `npm run dev` | `http://localhost:5003/?dev` |
-| Tests | `npm test` | 128 unit tests |
+| Tests | `npm test` | 129 unit tests |
 | Browser probes | `node dev/check-*.mjs` | Playwright screenshots |
 | Dashboard (prod) | `git push` → GitHub Actions | `https://bnbcast.github.io/...` |
 | API (prod) | `cd worker/pages && npx wrangler pages deploy` | `https://race-tracker-history.pages.dev` |

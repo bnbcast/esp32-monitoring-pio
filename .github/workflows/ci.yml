@@ -64,6 +64,11 @@ jobs:
       - name: Syntax check
         run: |
           node --check worker/src/index.js
+          node --check worker/src/mqtt-wire.js
+          node --check worker/src/live.js
+          node --check worker/src/live-tcp.js
           node --check "worker/pages/functions/[[path]].js"
       - name: Ingest and history rules
         run: node --test worker/test/ingest.test.mjs
+      - name: Live relay rules
+        run: node --test worker/test/live.test.mjs

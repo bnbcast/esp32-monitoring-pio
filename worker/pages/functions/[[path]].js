@@ -11,7 +11,7 @@
  */
 import worker from '../../src/index.js';
 
-const API = new Set(['/health', '/history', '/ingest']);
+const API = new Set(['/health', '/history', '/live', '/ingest']);
 
 export const onRequest = (context) => {
   const { pathname } = new URL(context.request.url);

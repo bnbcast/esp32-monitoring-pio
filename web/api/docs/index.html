@@ -173,6 +173,31 @@ footer{max-width:1400px;margin:0 auto;padding:0 24px 48px;color:var(--muted);fon
         </form>
       </section>
 
+      <section class="card" aria-labelledby="liveTitle">
+        <div class="card-head">
+          <span class="method">GET</span>
+          <span class="path" id="liveTitle">/live</span>
+          <span class="tag">no auth &middot; read</span>
+        </div>
+        <p class="hint">Everything the sensors are reporting right now: the newest frame the device published, read from the broker's retained message. Same fields as the live payload &mdash; GPS fix, speed, satellites, roll/pitch/yaw, tilt, MPU temperature and chip temperature. Nothing is written to the database.</p>
+        <form id="form-live" novalidate>
+          <div class="row">
+            <div>
+              <label for="lKey">Topic key</label>
+              <input id="lKey" value="race-tracker" maxlength="32" spellcheck="false" autocomplete="off">
+            </div>
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary">Send request</button>
+          </div>
+          <div class="err" id="liveErr" hidden></div>
+          <div class="curl-wrap">
+            <pre class="curl" id="curl-live"></pre>
+            <button type="button" class="copy" data-copy="curl-live">Copy</button>
+          </div>
+        </form>
+      </section>
+
       <section class="card" aria-labelledby="ingestTitle">
         <div class="card-head">
           <span class="method post">POST</span>
@@ -221,6 +246,7 @@ footer{max-width:1400px;margin:0 auto;padding:0 24px 48px;color:var(--muted);fon
           <select id="oPath">
             <option>/health</option>
             <option>/history</option>
+            <option>/live</option>
             <option>/ingest</option>
             <option>/nope</option>
           </select>
