@@ -144,6 +144,15 @@ test('the camera lock and the folded sheet survive a reload', () => {
   }
 });
 
+test('the gate row says when the line is automatic', () => {
+  assert.match(APP, /lap\.auto \? 'AUTO armed' : 'armed'/,
+    'the HUD cannot tell an automatic line from a manual one');
+  assert.match(APP, /auto: arms on motion/,
+    'the waiting state does not say the line will arm itself');
+  const INFO = fs.readFileSync(path.join(root, 'web/ui/info-data.js'), 'utf8');
+  assert.match(INFO, /AUTO armed/, 'the glossary does not explain the automatic gate');
+});
+
 test('every asset is requested at one version', () => {
   const versions = [...HTML.matchAll(/\?v=(\d+)/g)].map(m => m[1]);
   assert.ok(versions.length > 5, 'no asset versions found');

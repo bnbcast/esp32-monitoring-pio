@@ -116,6 +116,7 @@ esp32-dash/&lt;TOPIC_KEY&gt;/status  online/offline  (retained, QoS 0, LWT)
   },
   &quot;lap&quot;: {
     &quot;on&quot;: false,
+    &quot;auto&quot;: false,
     &quot;n&quot;: 2,
     &quot;last_ms&quot;: 45230,
     &quot;best_ms&quot;: 44210,
@@ -174,10 +175,19 @@ esp32-dash/&lt;TOPIC_KEY&gt;/status  online/offline  (retained, QoS 0, LWT)
 <tr><td><code>gps.mode</code></td><td>integer</td><td>—</td><td>NMEA fix mode</td></tr>
 <tr><td><code>gps.utc_*</code></td><td>integer</td><td>—</td><td>UTC broken down for the dashboard clock</td></tr>
 <tr><td><code>lap.on</code></td><td>boolean</td><td>—</td><td>Timing gate armed</td></tr>
+<tr><td><code>lap.auto</code></td><td>boolean</td><td>—</td><td>Line was armed automatically (no stored gate)</td></tr>
 <tr><td><code>lap.n</code></td><td>integer</td><td>—</td><td>Lap count</td></tr>
 <tr><td><code>lap.last_ms</code>, <code>lap.best_ms</code></td><td>integer</td><td>ms</td><td>Last and best lap</td></tr>
 <tr><td><code>lap.la</code>, <code>lap.lb</code></td><td>number[2]</td><td>deg</td><td>Gate endpoints</td></tr>
-<tr><td><code>sys.heap</code>, <code>sys.heap_min</code></td><td>integer</td><td>bytes</td><td>Free / minimum free heap</td></tr>
+</tbody></table></div>
+<blockquote>With no gate stored (and no manual <code>a</code>/<code>b</code> in progress) the board arms one</blockquote>
+<blockquote>itself on the first sustained motion: 5 s above 5 km/h. The line passes</blockquote>
+<blockquote>through the launch fix, perpendicular to the heading, 30 m wide. <code>lap.auto</code></blockquote>
+<blockquote>says where it came from. Manual <code>a</code>/<code>b</code> always overrides, and a stored auto</blockquote>
+<blockquote>line is dropped when the first fix after boot is more than 500 m away.</blockquote>
+<div class="table-wrap"><table>
+<thead><tr><th><code>sys.heap</code>, <code>sys.heap_min</code></th><th>integer</th><th>bytes</th><th>Free / minimum free heap</th></tr></thead>
+<tbody>
 <tr><td><code>sys.boot</code></td><td>integer</td><td>—</td><td>Boot counter (NVS)</td></tr>
 <tr><td><code>sys.brown</code></td><td>integer</td><td>—</td><td>Persisted brownout resets (NVS)</td></tr>
 <tr><td><code>sys.rssi</code></td><td>integer</td><td>dBm</td><td>Wi-Fi RSSI</td></tr>

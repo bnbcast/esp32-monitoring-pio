@@ -126,12 +126,28 @@ The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` �
 | `HISTORY_URL` | `""` | Pages Function URL (from `history_secret.h`) |
 | `HISTORY_KEY` | `""` | Ingest key (from `history_secret.h`) |
 | `HISTORY_DEVICE` | `"esp32-01"` | Device ID in D1 |
+| `LAP_AUTO_KMH` | `5.0` | Speed that can arm an automatic finish line |
+| `LAP_AUTO_HOLD_MS` | `5000` | Sustained motion required before arming |
+| `LAP_AUTO_HALF_M` | `15.0` | Half-width of the automatic line (30 m gate) |
+| `LAP_AUTO_KEEP_M` | `500.0` | Boot further than this drops a stored auto gate |
 
 ### Secrets (`src/mqtt_simple/history_secret.h` — **gitignored**)
 ```cpp
 #define HISTORY_URL "https://race-tracker-history.pages.dev/ingest"
 #define HISTORY_KEY "your-ingest-key-here"
 ```
+
+---
+
+## Lap Timing
+
+The board counts laps; the dashboard only mirrors the result.
+
+- **Manual gate**: serial `a` at one end of the line and `b` at the other, both captured from the current fix. `k` prints the stored gate and counters, `l` clears it.
+- **Auto-arm**: with no gate stored (and no manual capture in progress), the first motion above 5 km/h sustained for 5 s arms a line through the launch fix, perpendicular to the heading, 30 m wide. The lap clock starts at that launch fix, so the first return crossing times lap 1 rather than only arming the gate.
+- **Persistence**: both kinds of gate live in NVS. A stored auto line is dropped when the first fix after boot is more than 500 m away (a different track); manual gates are never dropped.
+- **Counting**: the segment between two accepted fixes must cross A→B forward, above 5 km/h, at least 3 s after the previous crossing. The crossing time is interpolated inside the segment.
+- **Payload**: `lap.on` (armed), `lap.auto` (came from auto-arm), `lap.n`, `lap.last_ms`, `lap.best_ms`, `lap.la`/`lb`. History rows carry `lap_n`, `lap_last_ms` and `lap_best_ms` so the server can log one row per completed lap.
 
 ---
 

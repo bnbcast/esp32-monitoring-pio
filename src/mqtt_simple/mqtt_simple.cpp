@@ -174,6 +174,15 @@
 #define LAP_MIN_MS       3000UL   // ignore re-crossings closer than this
 #define LAP_MIN_KMH      5.0f     // a lap cannot be walked across the line
 
+// With no gate stored, the first sustained motion after boot defines one, so a
+// lap needs no keystrokes. It is a guess: the line is put where the drive
+// started, perpendicular to the heading, not on a painted line. Manual a/b
+// always wins and is never dropped automatically.
+#define LAP_AUTO_KMH      5.0f    // motion that can arm the line
+#define LAP_AUTO_HOLD_MS  5000UL  // sustained for this long before it is used
+#define LAP_AUTO_HALF_M   15.0f   // each side of the launch point (30 m wide)
+#define LAP_AUTO_KEEP_M   500.0f  // boot elsewhere -> drop a stored auto gate
+
 // ============ GLOBALS ============
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(2);
@@ -256,10 +265,20 @@ uint32_t gpsTtffMs = 0;         // time to first usable fix after boot
 
 // ---- finish line --------------------------------------------------------
 bool     gateValid = false;
+bool     gateAuto = false;      // line came from auto-arm, not from a/b
+bool     gateASet = false, gateBSet = false;
 double   gateALat = 0, gateALng = 0, gateBLat = 0, gateBLng = 0;
 uint32_t lapCount = 0, lapLastMs = 0, lapBestMs = 0;
 uint32_t lapCrossMs = 0;        // interpolated time of the last crossing
 static void lapSaveCounters();  // defined with the NVS gate storage below
+static void gpsSaveGates();     // same, needed by the auto-arm below
+static void gpsClearGates();
+
+// Auto-arm state. One window per stop: a fix that drops below LAP_AUTO_KMH
+// clears it, so only sustained motion can pick a line.
+static uint32_t autoArmMs = 0;
+static float    autoArmLat = 0, autoArmLng = 0;
+static bool     autoGateChecked = false;  // distance check done after this boot
 
 // Uptime diagnostics. minFreeHeap catches a slow leak long before the board
 // actually runs out. bootCount must survive a reset to make a reboot loop
@@ -891,6 +910,22 @@ void updateGpsPositioning() {
 
   if (usable && gpsTtffMs == 0) gpsTtffMs = now;
 
+  // A stored automatic line belongs to one place. If the first fix after boot
+  // is somewhere else, it is last trip's guess: drop it and let the next drive
+  // arm a fresh one. Manual gates are never dropped this way.
+  if (usable && !autoGateChecked) {
+    autoGateChecked = true;
+    if (gateValid && gateAuto) {
+      const float cLat = (float)((gateALat + gateBLat) * 0.5);
+      const float cLng = (float)((gateALng + gateBLng) * 0.5);
+      const float away = haversineM(cLat, cLng, lat, lng);
+      if (away > LAP_AUTO_KEEP_M) {
+        gpsClearGates();
+        logMsg(L_INFO, "LAP", "auto gate dropped: %.0f m from the stored line", away);
+      }
+    }
+  }
+
   // Jump gate: a fix that needs more than GPS_MAX_KMH to be true is noise.
   if (usable && fixHasPrev) {
     uint32_t dt = now - fixPrevMs;
@@ -918,6 +953,61 @@ void updateGpsPositioning() {
     }
   } else if (usable) {
     holdValid = false;
+  }
+
+  // Automatic finish line. With nothing stored (and no manual a/b in progress)
+  // the first sustained motion of this boot puts a line through the launch
+  // point, perpendicular to the heading. The clock starts at that launch fix,
+  // so the first return crossing times lap 1 instead of only arming the gate.
+  if (!gateValid && !gateASet && !gateBSet && usable) {
+    const bool fast = gps.speed.isValid() && gps.speed.kmph() >= LAP_AUTO_KMH;
+    if (!fast) {
+      autoArmMs = 0;                       // a stop restarts the window
+    } else if (autoArmMs == 0) {
+      autoArmMs = now;
+      autoArmLat = lat;
+      autoArmLng = lng;
+    } else if (now - autoArmMs >= LAP_AUTO_HOLD_MS) {
+      // Prefer the module's own course; fall back to the chord of the window.
+      const uint32_t startMs = autoArmMs;
+      double heading = 0.0;
+      bool haveHeading = false;
+      if (gps.course.isValid()) {
+        heading = gps.course.deg();
+        haveHeading = true;
+      } else {
+        const double dEast  = (lng - autoArmLng) * 111320.0 * cos(autoArmLat * PI / 180.0);
+        const double dNorth = (lat - autoArmLat) * 110540.0;
+        if (fabs(dEast) + fabs(dNorth) >= 3.0) {
+          heading = atan2(dEast, dNorth) * 180.0 / PI;   // 0 = north, 90 = east
+          haveHeading = true;
+        }
+      }
+      autoArmMs = 0;                       // one attempt per motion window
+      if (haveHeading) {
+        // A is left of the heading and B is right, so gateSide() is negative
+        // behind the line and positive ahead of it: A->B crossing is forward.
+        const double rad = heading * PI / 180.0;
+        const double kx = 111320.0 * cos(autoArmLat * PI / 180.0);
+        const double ky = 110540.0;
+        const double rx = cos(rad);        // east component of "right"
+        const double ry = -sin(rad);       // north component of "right"
+        gateALat = autoArmLat - (ry * LAP_AUTO_HALF_M) / ky;
+        gateALng = autoArmLng - (rx * LAP_AUTO_HALF_M) / kx;
+        gateBLat = autoArmLat + (ry * LAP_AUTO_HALF_M) / ky;
+        gateBLng = autoArmLng + (rx * LAP_AUTO_HALF_M) / kx;
+        gateASet = gateBSet = gateValid = true;
+        gateAuto = true;
+        autoGateChecked = true;
+        lapCount = lapLastMs = lapBestMs = 0;
+        lapCrossMs = startMs;              // lap 1 is timed from the launch fix
+        gpsSaveGates();
+        lapSaveCounters();
+        logMsg(L_OK, "LAP",
+               "auto gate armed at %.6f,%.6f  heading %.0f deg  width %.0f m",
+               autoArmLat, autoArmLng, heading, 2.0 * LAP_AUTO_HALF_M);
+      }
+    }
   }
 
   // Finish line: does the segment P0->P1 cross A->B in the forward direction?
@@ -1147,8 +1237,8 @@ static bool gpsUbxConfigure() {
 
 // ============ FINISH LINE STORAGE ============
 // Two points, captured from the console while the vehicle sits on each end of
-// the line, kept in NVS so a reboot does not lose the track.
-static bool gateASet = false, gateBSet = false;
+// the line, kept in NVS so a reboot does not lose the track. With no line
+// stored, updateGpsPositioning() arms one automatically after sustained motion.
 
 // Counters are written once per completed lap, not per fix: roughly one NVS
 // commit every 90 s at race pace, which is nowhere near the flash endurance
@@ -1167,6 +1257,7 @@ static void gpsSaveGates() {
   if (!prefs.begin("lap", false)) return;
   prefs.putBool("aSet", gateASet);
   prefs.putBool("bSet", gateBSet);
+  prefs.putBool("auto", gateAuto);
   prefs.putInt("alat", (int32_t)lround(gateALat * 1e7));
   prefs.putInt("alng", (int32_t)lround(gateALng * 1e7));
   prefs.putInt("blat", (int32_t)lround(gateBLat * 1e7));
@@ -1179,6 +1270,7 @@ void gpsLoadGates() {
   if (!prefs.begin("lap", true)) return;
   gateASet = prefs.getBool("aSet", false);
   gateBSet = prefs.getBool("bSet", false);
+  gateAuto = prefs.getBool("auto", false);
   gateALat = prefs.getInt("alat", 0) / 1e7;
   gateALng = prefs.getInt("alng", 0) / 1e7;
   gateBLat = prefs.getInt("blat", 0) / 1e7;
@@ -1191,7 +1283,8 @@ void gpsLoadGates() {
   // The line re-arms on the next forward crossing; finished laps survive.
   lapCrossMs = 0;
   gateValid = gateASet && gateBSet && haversineM(gateALat, gateALng, gateBLat, gateBLng) > 1.0f;
-  if (gateValid) logMsg(L_OK, "LAP", "gate loaded: A %.6f,%.6f  B %.6f,%.6f",
+  if (gateValid) logMsg(L_OK, "LAP", "%s gate loaded: A %.6f,%.6f  B %.6f,%.6f",
+                        gateAuto ? "auto" : "manual",
                         gateALat, gateALng, gateBLat, gateBLng);
   if (lapCount) logMsg(L_OK, "LAP", "%lu lap(s) restored, last %lu.%02lu s, best %lu.%02lu s",
                        (unsigned long)lapCount,
@@ -1203,8 +1296,10 @@ static void gpsClearGates() {
   Preferences prefs;
   if (prefs.begin("lap", false)) { prefs.clear(); prefs.end(); }
   gateASet = gateBSet = gateValid = false;
+  gateAuto = false;
+  autoArmMs = 0;
   lapCount = lapLastMs = lapBestMs = lapCrossMs = 0;
-  logMsg(L_OK, "LAP", "gate cleared");
+  logMsg(L_OK, "LAP", "gate cleared (auto-arm takes over on the next drive)");
 }
 
 static void gpsCaptureGate(char which) {
@@ -1216,6 +1311,10 @@ static void gpsCaptureGate(char which) {
   if (which == 'a') { gateALat = lat; gateALng = lng; gateASet = true; }
   else              { gateBLat = lat; gateBLng = lng; gateBSet = true; }
   gateValid = gateASet && gateBSet && haversineM(gateALat, gateALng, gateBLat, gateBLng) > 1.0f;
+  // Any manual capture takes ownership: the auto-arm must never overwrite it.
+  gateAuto = false;
+  autoArmMs = 0;
+  autoGateChecked = true;
   gpsSaveGates();
   if (gateValid) {
     const float width = haversineM(gateALat, gateALng, gateBLat, gateBLng);
@@ -1229,8 +1328,13 @@ static void gpsCaptureGate(char which) {
 }
 
 static void gpsShowGates() {
-  if (!gateValid) { logMsg(L_INFO, "LAP", "no gate set: press a at one end, b at the other"); return; }
-  logMsg(L_INFO, "LAP", "A %.6f,%.6f  B %.6f,%.6f  width %.1f m  laps %lu  last %lu.%02lu s  best %lu.%02lu s",
+  if (!gateValid) {
+    logMsg(L_INFO, "LAP", "no gate set - auto-arms after 5 s above 5 km/h; "
+                          "press a at one end, b at the other to set it now");
+    return;
+  }
+  logMsg(L_INFO, "LAP", "%s gate  A %.6f,%.6f  B %.6f,%.6f  width %.1f m  laps %lu  last %lu.%02lu s  best %lu.%02lu s",
+         gateAuto ? "auto" : "manual",
          gateALat, gateALng, gateBLat, gateBLng,
          haversineM(gateALat, gateALng, gateBLat, gateBLng), (unsigned long)lapCount,
          (unsigned long)(lapLastMs / 1000UL), (unsigned long)((lapLastMs % 1000UL) / 10UL),
@@ -1545,7 +1649,7 @@ void publishData() {
     "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
     "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d,"
     "\"utc_h\":%d,\"utc_m\":%d,\"utc_s\":%d,\"utc_y\":%d,\"utc_mo\":%d,\"utc_d\":%d},"
-    "\"lap\":{\"on\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu,"
+    "\"lap\":{\"on\":%s,\"auto\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu,"
     "\"la\":[%.*f,%.*f],\"lb\":[%.*f,%.*f]},"
     "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d,"
     "\"temp_c\":%.1f,"
@@ -1562,7 +1666,8 @@ void publishData() {
     (unsigned long)(gpsTtffMs / 1000UL), (unsigned long)gpsRejected,
     holdValid ? "true" : "false", (int)gm.fixMode,
     utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d,
-    gateValid ? "true" : "false", (unsigned long)lapCount,
+    gateValid ? "true" : "false", gateAuto ? "true" : "false",
+    (unsigned long)lapCount,
     (unsigned long)lapLastMs, (unsigned long)lapBestMs,
     GPS_DECIMALS, gateALat, GPS_DECIMALS, gateALng,
     GPS_DECIMALS, gateBLat, GPS_DECIMALS, gateBLng,
@@ -1585,7 +1690,7 @@ void publishData() {
       "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
       "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
       "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d},"
-      "\"lap\":{\"on\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu},"
+      "\"lap\":{\"on\":%s,\"auto\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu},"
       "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d,"
       "\"temp_c\":%.1f}}",
       (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
@@ -1596,7 +1701,8 @@ void publishData() {
       fix ? "true" : "false", lat, lng, alt, spd, cog, hdop, gpsDistTotalM,
       (unsigned long)(gpsTtffMs / 1000UL), (unsigned long)gpsRejected,
       holdValid ? "true" : "false", (int)gm.fixMode,
-      gateValid ? "true" : "false", (unsigned long)lapCount,
+      gateValid ? "true" : "false", gateAuto ? "true" : "false",
+      (unsigned long)lapCount,
       (unsigned long)lapLastMs, (unsigned long)lapBestMs,
       (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
       (unsigned long)brownoutCount, WiFi.RSSI(), chipTempC);

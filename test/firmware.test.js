@@ -48,3 +48,24 @@ test('a short I2C glitch is not reported as MPU FAIL', () => {
     /if \(millis\(\) - mpuRecoverAt >= MPU_FAULT_GRACE_MS\)/,
     'the I2C bus is re-initialised on every failed loop');
 });
+
+test('a lap needs no keystrokes: the board arms its own finish line', () => {
+  // Sustained motion, not a single fast fix, is what picks the line.
+  assert.match(SRC, /#define LAP_AUTO_HOLD_MS\s+5000UL/);
+  assert.match(SRC, /#define LAP_AUTO_KMH\s+5\.0f/);
+  assert.match(SRC, /autoArmMs = now;/);
+  assert.match(SRC, /autoArmMs = 0;\s+\/\/ a stop restarts the window/,
+    'a stop must clear the arm window');
+  // The line is anchored to the launch fix so the first return crossing times
+  // lap 1 instead of only arming the gate.
+  assert.match(SRC, /lapCrossMs = startMs;/,
+    'lap 1 would be lost unless the clock starts at the launch fix');
+  assert.match(SRC, /gateAuto = true;/);
+  // Manual a/b takes ownership back and is never dropped by the distance rule.
+  assert.match(SRC, /Any manual capture takes ownership/);
+  assert.match(SRC, /gateAuto = false;/);
+  // Both payloads must say where the line came from.
+  const flags = SRC.match(/\\"auto\\":%s/g) || [];
+  assert.strictEqual(flags.length, 2,
+    `expected the auto flag in the full and slim payloads, found ${flags.length}`);
+});

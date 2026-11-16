@@ -73,6 +73,7 @@ Published once per second, retained. Real shape (one line on the wire):
   },
   "lap": {
     "on": false,
+    "auto": false,
     "n": 2,
     "last_ms": 45230,
     "best_ms": 44210,
@@ -132,9 +133,16 @@ Published once per second, retained. Real shape (one line on the wire):
 | `gps.mode` | integer | — | NMEA fix mode |
 | `gps.utc_*` | integer | — | UTC broken down for the dashboard clock |
 | `lap.on` | boolean | — | Timing gate armed |
+| `lap.auto` | boolean | — | Line was armed automatically (no stored gate) |
 | `lap.n` | integer | — | Lap count |
 | `lap.last_ms`, `lap.best_ms` | integer | ms | Last and best lap |
 | `lap.la`, `lap.lb` | number[2] | deg | Gate endpoints |
+
+> With no gate stored (and no manual `a`/`b` in progress) the board arms one
+> itself on the first sustained motion: 5 s above 5 km/h. The line passes
+> through the launch fix, perpendicular to the heading, 30 m wide. `lap.auto`
+> says where it came from. Manual `a`/`b` always overrides, and a stored auto
+> line is dropped when the first fix after boot is more than 500 m away.
 | `sys.heap`, `sys.heap_min` | integer | bytes | Free / minimum free heap |
 | `sys.boot` | integer | — | Boot counter (NVS) |
 | `sys.brown` | integer | — | Persisted brownout resets (NVS) |

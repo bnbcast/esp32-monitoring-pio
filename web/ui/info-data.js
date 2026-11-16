@@ -72,7 +72,7 @@ window.INFO_GROUPS = [
       { "t": "Rejected", "d": "Fixes the firmware threw away because they implied a speed no vehicle can reach (over 200 km/h). Each one is a multipath jump, not real movement, and counting them keeps the map and the stored history clean." },
       { "t": "Laps", "d": "Completed crossings of the virtual finish line, counted on the board. The first forward crossing arms the timer; every later crossing must also be at least 3 s and 5 km/h apart." },
       { "t": "Last / Best", "d": "The most recent lap and the fastest lap since the gate was set, in seconds. The time is interpolated to the exact crossing point, so it is not rounded to the 5 Hz fix interval." },
-      { "t": "Gate", "d": "<b>armed</b> = two ends are stored on the board. Set them over serial: drive to one end of the line and press <b>a</b>, drive to the other and press <b>b</b>; <b>k</b> shows the gate, <b>l</b> clears it." }
+      { "t": "Gate", "d": "<b>AUTO armed</b> = no gate was stored, so the board put the line where the vehicle started moving (5 s above 5 km/h). <b>armed</b> = two ends are stored on the board, set over serial: drive to one end of the line and press <b>a</b>, drive to the other and press <b>b</b>. <b>k</b> shows the gate, <b>l</b> clears it." }
     ]
   },
   {
