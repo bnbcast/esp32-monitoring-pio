@@ -389,6 +389,17 @@
     return out;
   }
 
+  function revealResponse() {
+    const el = document.querySelector('.response');
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    // On a narrow screen the panel sits below the cards, so a result the user
+    // cannot see looks like nothing happened.
+    if (rect.top >= window.innerHeight || rect.bottom <= 0) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
   function show(r) {
     const failed = !!r.error;
     setStatus(failed ? 'bad' : statusClass(r.status),
@@ -442,6 +453,8 @@
     bodyEl.hidden = body == null;
     bodyTitle.hidden = body == null;
     bodyEl.textContent = body == null ? '' : body;
+
+    revealResponse();
   }
 
   function clearResponse() {
