@@ -111,12 +111,18 @@ async function ingest(request, env) {
       // one row the first time this lap number appears: the per-batch Set stops
       // the 40 frames of the same lap from writing 40 rows, and INSERT OR
       // IGNORE makes a retried batch harmless.
+      //
+      // The key is the session generation, not the boot counter: the board
+      // keeps its lap counters in NVS across a reset, so after a reboot it
+      // still reports "lap 5" while the boot number has moved on. Keying on
+      // boot would log that lap a second time.
       const ln = intOrNull(f.lap_n);
-      if (ln && ln > 0 && !lapSeen.has(ln)) {
-        lapSeen.add(ln);
+      const gen = isNum(f.lap_gen) ? Math.round(f.lap_gen) : bootOf(f);
+      if (ln && ln > 0 && !lapSeen.has(gen + ':' + ln)) {
+        lapSeen.add(gen + ':' + ln);
         const dur = intOrNull(f.lap_last_ms);
         if (dur && dur > 0) {
-          lapRows.push({ n: ln, ts: f.ts, dur, best: intOrNull(f.lap_best_ms), boot: bootOf(f) });
+          lapRows.push({ gen, n: ln, ts: f.ts, dur, best: intOrNull(f.lap_best_ms) });
         }
       }
 
@@ -148,11 +154,14 @@ async function ingest(request, env) {
   if (lapRows.length) {
     try {
       const stmt = env.DB.prepare(
-        `INSERT OR IGNORE INTO laps (device, boot, n, ts, dur_ms, best_ms, received)
+        `INSERT OR IGNORE INTO laps (device, gen, n, ts, dur_ms, best_ms, received)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       );
-      await env.DB.batch(lapRows.map(l => stmt.bind(device, l.boot, l.n, l.ts, l.dur, l.best, nowS)));
-      laps = lapRows.length;
+      const results = await env.DB.batch(
+        lapRows.map(l => stmt.bind(device, l.gen, l.n, l.ts, l.dur, l.best, nowS)));
+      // Report rows actually written, not attempts: a retried frame that the
+      // server already has is not a new lap.
+      laps = results.reduce((sum, r) => sum + ((r && r.meta && r.meta.changes) || 0), 0);
     } catch (e) {
       laps = -1;                      // migration not applied yet
     }

@@ -5,9 +5,9 @@
 //
 // A session is a run of fixes with no gap longer than DEFAULT_GAP_S. The board
 // publishes at 1 Hz, so a 2 minute silence means the tracker was off, out of
-// range or rebooted; that is the boundary the timeline draws. D1 also stores
-// `boot`, which would split a reboot even when it is quick, but /history does
-// not return that column yet - the gap is what we can use without a deploy.
+// range or rebooted; that is the boundary the timeline draws. `/history` also
+// returns the boot counter at point index 8, so a quick reboot inside the gap
+// window is still marked as its own event instead of vanishing.
 //
 // Deliberately free of DOM and map code so it can be unit-tested under node:
 // see test/sessions.test.js. Loaded as a classic script, so `SESSIONS` is a

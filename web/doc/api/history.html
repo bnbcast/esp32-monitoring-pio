@@ -161,7 +161,7 @@ X-Ingest-Key: &lt;secret&gt;
       &quot;fix&quot;: true, &quot;lat&quot;: -6.200001, &quot;lng&quot;: 106.800001, &quot;alt&quot;: 120.4,
       &quot;kmh&quot;: 45.2, &quot;cog&quot;: 90.5, &quot;hdop&quot;: 0.8, &quot;sats&quot;: 8,
       &quot;dist_m&quot;: 1520.4, &quot;roll&quot;: 4.1, &quot;pitch&quot;: -2.1,
-      &quot;lap_n&quot;: 1, &quot;lap_last_ms&quot;: 45230, &quot;lap_best_ms&quot;: 44210
+      &quot;lap_n&quot;: 1, &quot;lap_last_ms&quot;: 45230, &quot;lap_best_ms&quot;: 44210, &quot;lap_gen&quot;: 3
     }
   ]
 }
@@ -185,6 +185,7 @@ X-Ingest-Key: &lt;secret&gt;
 <tr><td><code>roll</code>, <code>pitch</code></td><td>number</td><td>no</td><td>IMU degrees</td></tr>
 <tr><td><code>lap_n</code></td><td>integer</td><td>no</td><td>Lap number; a new value writes one lap row</td></tr>
 <tr><td><code>lap_last_ms</code>, <code>lap_best_ms</code></td><td>integer</td><td>no</td><td>Lap duration / best</td></tr>
+<tr><td><code>lap_gen</code></td><td>integer</td><td>no</td><td>Session generation; with <code>lap_n</code> it keys the lap row, so a reboot does not log the last lap twice. Absent on older firmware, which falls back to <code>boot</code></td></tr>
 </tbody></table></div>
 <h3 id="frame-rejection-reasons">Frame Rejection Reasons</h3>
 <p><code>shape</code>, <code>clock</code>, <code>stale-boot</code>, <code>stale-seq</code>, <code>range</code>, <code>speed</code>, <code>hdop</code>, <code>teleport</code>, and <code>duplicate</code> (skipped, not counted as an error).</p>

@@ -365,12 +365,14 @@ void task(void*) {
         "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"boot\":%u,\"fix\":true,"
         "\"lat\":%.6f,\"lng\":%.6f,\"alt\":%.0f,\"kmh\":%.1f,\"cog\":%.1f,"
         "\"hdop\":%.2f,\"sats\":%u,\"dist_m\":%.1f,"
-        "\"roll\":%.1f,\"pitch\":%.1f,\"lap_n\":%lu,\"lap_last_ms\":%lu,\"lap_best_ms\":%lu}\n",
+        "\"roll\":%.1f,\"pitch\":%.1f,"
+        "\"lap_n\":%lu,\"lap_last_ms\":%lu,\"lap_best_ms\":%lu,\"lap_gen\":%lu}\n",
         (unsigned long)f.seq, (unsigned long)f.ts, (unsigned long)f.up,
         (unsigned)f.boot, f.lat, f.lng, f.alt, f.kmh, f.cog,
         f.hdop, (unsigned)f.sats, f.dist_m,
         f.roll, f.pitch,
-        (unsigned long)f.lap_n, (unsigned long)f.lap_last_ms, (unsigned long)f.lap_best_ms);
+        (unsigned long)f.lap_n, (unsigned long)f.lap_last_ms, (unsigned long)f.lap_best_ms,
+        (unsigned long)f.lap_gen);
       if (n > 0 && n < (int)sizeof line) {
         pending += line;
         pendingLines++;

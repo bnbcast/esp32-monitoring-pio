@@ -75,6 +75,7 @@ Published once per second, retained. Real shape (one line on the wire):
     "on": false,
     "auto": false,
     "n": 2,
+    "gen": 3,
     "last_ms": 45230,
     "best_ms": 44210,
     "la": [-6.2001, 106.8001],
@@ -135,6 +136,7 @@ Published once per second, retained. Real shape (one line on the wire):
 | `lap.on` | boolean | — | Timing gate armed |
 | `lap.auto` | boolean | — | Line was armed automatically (no stored gate) |
 | `lap.n` | integer | — | Lap count |
+| `lap.gen` | integer | — | Session generation: changes when the counters restart, survives a reboot |
 | `lap.last_ms`, `lap.best_ms` | integer | ms | Last and best lap |
 | `lap.la`, `lap.lb` | number[2] | deg | Gate endpoints |
 

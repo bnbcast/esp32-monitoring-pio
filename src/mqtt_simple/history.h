@@ -32,7 +32,10 @@ struct HistoryFix {
   // Finish-line and IMU state at this fix. They travel with the frame so the
   // server can log a lap row and a lean trace without a second request.
   float    roll, pitch;
-  uint32_t lap_n, lap_last_ms, lap_best_ms;
+  // lap_gen is the session generation: it stays the same across a reboot but
+  // changes when the counters are reset, so the server can key a lap on
+  // (device, gen, n) and not log the last lap twice after a power cycle.
+  uint32_t lap_n, lap_last_ms, lap_best_ms, lap_gen;
 };
 
 struct HistoryStats {

@@ -15,6 +15,33 @@ const root = path.join(__dirname, '..');
 const SRC = fs.readFileSync(
   path.join(root, 'src', 'mqtt_simple', 'mqtt_simple.cpp'), 'utf8');
 
+test('a lap is keyed to a session generation that survives a reboot', () => {
+  // The board keeps its counters in NVS across a reset, so the server must key
+  // the lap row on something that does not change on boot. `boot` does; `gen`
+  // does not.
+  assert.match(SRC, /uint32_t lapGen = 1;/);
+  assert.match(SRC, /lapGen = sid\.getUInt\("gen", 1\)/,
+    'the generation is not restored after a reboot');
+  assert.match(SRC, /static void lapBumpGen\(\)/);
+  assert.match(SRC, /prefs\.putUInt\("gen", lapGen\)/);
+  // Every place the counters start over must start a new generation.
+  const capture = SRC.slice(SRC.indexOf('static void gpsCaptureGate(char which)'),
+                            SRC.indexOf('static void gpsShowGates'));
+  const clear = SRC.slice(SRC.indexOf('static void gpsClearGates()'),
+                          SRC.indexOf('static void gpsCaptureGate'));
+  assert.match(capture, /lapBumpGen\(\);/, 'a new manual gate reuses the old generation');
+  assert.match(clear, /lapBumpGen\(\);/, 'clearing the gate reuses the old generation');
+  assert.match(SRC, /lapBumpGen\(\);\s+\/\/ a fresh session, new generation/,
+    'auto-arm reuses the old generation');
+  // Both payloads and the history frame must carry it.
+  const flags = SRC.match(/\\"gen\\":%lu/g) || [];
+  assert.strictEqual(flags.length, 2,
+    `expected lap.gen in the full and slim payloads, found ${flags.length}`);
+  assert.match(SRC, /hf\.lap_gen = lapGen;/);
+  const HIST = fs.readFileSync(path.join(root, 'src', 'mqtt_simple', 'history.cpp'), 'utf8');
+  assert.match(HIST, /\\"lap_gen\\":%lu/, 'history frames do not carry the generation');
+});
+
 test('the live payload carries the ESP32 die temperature', () => {
   assert.match(SRC, /const float chipTempC = temperatureRead\(\);/,
     'the temperature is not sampled once per publish');

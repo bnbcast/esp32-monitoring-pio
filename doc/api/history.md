@@ -137,7 +137,7 @@ X-Ingest-Key: <secret>
       "fix": true, "lat": -6.200001, "lng": 106.800001, "alt": 120.4,
       "kmh": 45.2, "cog": 90.5, "hdop": 0.8, "sats": 8,
       "dist_m": 1520.4, "roll": 4.1, "pitch": -2.1,
-      "lap_n": 1, "lap_last_ms": 45230, "lap_best_ms": 44210
+      "lap_n": 1, "lap_last_ms": 45230, "lap_best_ms": 44210, "lap_gen": 3
     }
   ]
 }
@@ -164,6 +164,7 @@ accepts both the flat device form and the nested live-MQTT form.
 | `roll`, `pitch` | number | no | IMU degrees |
 | `lap_n` | integer | no | Lap number; a new value writes one lap row |
 | `lap_last_ms`, `lap_best_ms` | integer | no | Lap duration / best |
+| `lap_gen` | integer | no | Session generation; with `lap_n` it keys the lap row, so a reboot does not log the last lap twice. Absent on older firmware, which falls back to `boot` |
 
 ### Frame Rejection Reasons
 

@@ -270,8 +270,13 @@ bool     gateAuto = false;      // line came from auto-arm, not from a/b
 bool     gateASet = false, gateBSet = false;
 double   gateALat = 0, gateALng = 0, gateBLat = 0, gateBLng = 0;
 uint32_t lapCount = 0, lapLastMs = 0, lapBestMs = 0;
+// Session generation. It survives a reboot (so a lap is never logged twice)
+// and changes whenever the counters start over (a new gate, a clear), so the
+// server can tell lap 1 of this session from lap 1 of the last one.
+uint32_t lapGen = 1;
 uint32_t lapCrossMs = 0;        // interpolated time of the last crossing
 static void lapSaveCounters();  // defined with the NVS gate storage below
+static void lapBumpGen();       // new session -> new generation
 static void gpsSaveGates();     // same, needed by the auto-arm below
 static void gpsClearGates();
 
@@ -1022,6 +1027,7 @@ void updateGpsPositioning() {
         gateAuto = true;
         autoGateChecked = true;
         lapCount = lapLastMs = lapBestMs = 0;
+        lapBumpGen();                      // a fresh session, new generation
         lapCrossMs = startMs;              // lap 1 is timed from the launch fix
         gpsSaveGates();
         lapSaveCounters();
@@ -1274,6 +1280,17 @@ static void lapSaveCounters() {
   prefs.end();
 }
 
+// A generation lives in its own namespace: gpsClearGates() wipes "lap" whole,
+// and a generation that wrapped back to 1 would collide with the oldest rows
+// in the server's lap table.
+static void lapBumpGen() {
+  lapGen++;
+  Preferences prefs;
+  if (!prefs.begin("lapid", false)) return;
+  prefs.putUInt("gen", lapGen);
+  prefs.end();
+}
+
 static void gpsSaveGates() {
   Preferences prefs;
   if (!prefs.begin("lap", false)) return;
@@ -1301,6 +1318,11 @@ void gpsLoadGates() {
   lapLastMs = prefs.getUInt("last", 0);
   lapBestMs = prefs.getUInt("best", 0);
   prefs.end();
+  Preferences sid;
+  if (sid.begin("lapid", true)) {
+    lapGen = sid.getUInt("gen", 1);
+    sid.end();
+  }
   // millis() restarts at boot, so a stored crossing time would be meaningless.
   // The line re-arms on the next forward crossing; finished laps survive.
   lapCrossMs = 0;
@@ -1321,6 +1343,7 @@ static void gpsClearGates() {
   gateAuto = false;
   autoArmMs = 0;
   lapCount = lapLastMs = lapBestMs = lapCrossMs = 0;
+  lapBumpGen();
   logMsg(L_OK, "LAP", "gate cleared (auto-arm takes over on the next drive)");
 }
 
@@ -1341,6 +1364,7 @@ static void gpsCaptureGate(char which) {
   if (gateValid) {
     const float width = haversineM(gateALat, gateALng, gateBLat, gateBLng);
     lapCount = lapLastMs = lapBestMs = lapCrossMs = 0;
+    lapBumpGen();
     lapSaveCounters();   // persist the reset; otherwise a reboot revives the old session
     logMsg(L_OK, "LAP", "gate armed: %c %.6f,%.6f  width %.1f m - cross A->B to start",
            which, lat, lng, width);
@@ -1654,6 +1678,7 @@ void publishData() {
     hf.lap_n = lapCount;
     hf.lap_last_ms = lapLastMs;
     hf.lap_best_ms = lapBestMs;
+    hf.lap_gen = lapGen;
     historyEnqueue(hf);
   }
 #endif
@@ -1671,7 +1696,7 @@ void publishData() {
     "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
     "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d,"
     "\"utc_h\":%d,\"utc_m\":%d,\"utc_s\":%d,\"utc_y\":%d,\"utc_mo\":%d,\"utc_d\":%d},"
-    "\"lap\":{\"on\":%s,\"auto\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu,"
+    "\"lap\":{\"on\":%s,\"auto\":%s,\"n\":%lu,\"gen\":%lu,\"last_ms\":%lu,\"best_ms\":%lu,"
     "\"la\":[%.*f,%.*f],\"lb\":[%.*f,%.*f]},"
     "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d,"
     "\"temp_c\":%.1f,"
@@ -1689,7 +1714,7 @@ void publishData() {
     holdValid ? "true" : "false", (int)gm.fixMode,
     utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d,
     gateValid ? "true" : "false", gateAuto ? "true" : "false",
-    (unsigned long)lapCount,
+    (unsigned long)lapCount, (unsigned long)lapGen,
     (unsigned long)lapLastMs, (unsigned long)lapBestMs,
     GPS_DECIMALS, gateALat, GPS_DECIMALS, gateALng,
     GPS_DECIMALS, gateBLat, GPS_DECIMALS, gateBLng,
@@ -1712,7 +1737,7 @@ void publishData() {
       "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
       "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
       "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d},"
-      "\"lap\":{\"on\":%s,\"auto\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu},"
+      "\"lap\":{\"on\":%s,\"auto\":%s,\"n\":%lu,\"gen\":%lu,\"last_ms\":%lu,\"best_ms\":%lu},"
       "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d,"
       "\"temp_c\":%.1f}}",
       (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
@@ -1724,7 +1749,7 @@ void publishData() {
       (unsigned long)(gpsTtffMs / 1000UL), (unsigned long)gpsRejected,
       holdValid ? "true" : "false", (int)gm.fixMode,
       gateValid ? "true" : "false", gateAuto ? "true" : "false",
-      (unsigned long)lapCount,
+      (unsigned long)lapCount, (unsigned long)lapGen,
       (unsigned long)lapLastMs, (unsigned long)lapBestMs,
       (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
       (unsigned long)brownoutCount, WiFi.RSSI(), chipTempC);

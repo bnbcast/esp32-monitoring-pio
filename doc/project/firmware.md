@@ -147,7 +147,7 @@ The board counts laps; the dashboard only mirrors the result.
 - **Auto-arm**: with no gate stored (and no manual capture in progress), the first motion above 5 km/h sustained for 5 s arms a line through the launch fix, perpendicular to the heading, 30 m wide. The lap clock starts at that launch fix, so the first return crossing times lap 1 rather than only arming the gate.
 - **Persistence**: both kinds of gate live in NVS. A stored auto line is dropped when the first fix after boot is more than 500 m away (a different track), or after a stop of 3 minutes or more followed by motion more than 500 m away (powered transport to another venue). Manual gates are never dropped.
 - **Counting**: the segment between two accepted fixes must cross A→B forward, above 5 km/h, at least 3 s after the previous crossing. The crossing time is interpolated inside the segment.
-- **Payload**: `lap.on` (armed), `lap.auto` (came from auto-arm), `lap.n`, `lap.last_ms`, `lap.best_ms`, `lap.la`/`lb`. History rows carry `lap_n`, `lap_last_ms` and `lap_best_ms` so the server can log one row per completed lap.
+- **Payload**: `lap.on` (armed), `lap.auto` (came from auto-arm), `lap.n`, `lap.gen`, `lap.last_ms`, `lap.best_ms`, `lap.la`/`lb`. History rows carry `lap_n`, `lap_last_ms`, `lap_best_ms` and `lap_gen` so the server can log one row per completed lap. `lap_gen` is the session generation: it survives a reboot, so the board saying "lap 5" again after a reset does not write a duplicate row, and it increments whenever the counters start over.
 
 ---
 

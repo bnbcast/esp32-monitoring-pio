@@ -33,15 +33,19 @@ CREATE INDEX IF NOT EXISTS idx_fixes_device_ts ON fixes (device, ts);
 -- One row per completed lap, written when the device's lap counter moves.
 -- The frame carries the counter and the duration, so the server only has to
 -- notice the change; INSERT OR IGNORE makes a retried batch harmless.
+--
+-- The key uses `gen`, the device's session generation, not `boot`. The board
+-- keeps lap counters across a reset, so a reboot in the middle of a race still
+-- reports the last lap at the new boot number; keying on boot logged it twice.
 CREATE TABLE IF NOT EXISTS laps (
   device   TEXT    NOT NULL,
-  boot     INTEGER NOT NULL,
+  gen      INTEGER NOT NULL DEFAULT 1, -- session generation from the device
   n        INTEGER NOT NULL,           -- lap number from the device
   ts       INTEGER NOT NULL,           -- UTC epoch of the frame that carried it
   dur_ms   INTEGER NOT NULL,           -- that lap's time
   best_ms  INTEGER,                    -- best at that moment
   received INTEGER NOT NULL,
-  PRIMARY KEY (device, boot, n)
+  PRIMARY KEY (device, gen, n)
 );
 
 CREATE INDEX IF NOT EXISTS idx_laps_device_ts ON laps (device, ts);

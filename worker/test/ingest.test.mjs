@@ -108,10 +108,10 @@ function fakeD1() {
         },
         _insert() {
           if (sql.includes('INSERT OR IGNORE INTO laps')) {
-            // device, boot, n, ts, dur_ms, best_ms, received
-            const [device, boot, n, ts, dur, best, received] = args;
-            if (laps.some(l => l.device === device && l.boot === boot && l.n === n)) return { meta: { changes: 0 } };
-            laps.push({ device, boot, n, ts, dur_ms: dur, best_ms: best, received });
+            // device, gen, n, ts, dur_ms, best_ms, received
+            const [device, gen, n, ts, dur, best, received] = args;
+            if (laps.some(l => l.device === device && l.gen === gen && l.n === n)) return { meta: { changes: 0 } };
+            laps.push({ device, gen, n, ts, dur_ms: dur, best_ms: best, received });
             return { meta: { changes: 1 } };
           }
           // device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, roll, pitch, received
@@ -206,6 +206,53 @@ test('a repeated seq is a duplicate, not an error', async () => {
   assert.equal(body.stored, 0);
   assert.deepEqual(body.rejected, []);
 });
+
+test('a lap is logged once, not once per frame in the batch', async () => {
+  const e = env();
+  const t = now();
+  const withLap = (seq, ts) => frame({
+    seq, ts, lap_n: 4, lap_last_ms: 45000, lap_best_ms: 44000, lap_gen: 7
+  });
+  const body = await (await post(e, [withLap(1, t), withLap(2, t + 1), withLap(3, t + 2)])).json();
+  assert.equal(body.laps, 1);
+  assert.equal(e.DB.laps.length, 1);
+  assert.equal(e.DB.laps[0].n, 4);
+  assert.equal(e.DB.laps[0].gen, 7);
+});
+
+test('a reboot does not log the last lap a second time', async () => {
+  const e = env();
+  const t = now();
+  const lap = { lap_n: 5, lap_last_ms: 41200, lap_best_ms: 41200, lap_gen: 9 };
+  await post(e, [frame({ seq: 1, ts: t, boot: 11, ...lap })]);
+  // Power cycle: the counters survive in NVS, so the board still reports lap 5
+  // while boot has moved to 12. Same generation -> same lap row.
+  const body = await (await post(e, [frame({ seq: 1, ts: t + 8, boot: 12, ...lap })])).json();
+  assert.equal(body.laps, 0, 'the already-logged lap must not be counted as written');
+  assert.equal(e.DB.laps.length, 1);
+});
+
+test('a new session generation may restart at lap 1', async () => {
+  const e = env();
+  const t = now();
+  const lap = { lap_n: 1, lap_last_ms: 38000, lap_best_ms: 38000 };
+  await post(e, [frame({ seq: 1, ts: t, boot: 1, ...lap, lap_gen: 1 })]);
+  const body = await (await post(e, [
+    frame({ seq: 1, ts: t + 30, boot: 2, ...lap, lap_gen: 2 })
+  ])).json();
+  assert.equal(body.laps, 1, 'lap 1 of the next session is a new row');
+  assert.deepEqual(e.DB.laps.map(l => [l.gen, l.n]), [[1, 1], [2, 1]]);
+});
+
+test('older firmware without lap_gen falls back to the boot number', async () => {
+  const e = env();
+  const body = await (await post(e, [
+    frame({ seq: 1, ts: now(), boot: 3, lap_n: 2, lap_last_ms: 50000 })
+  ])).json();
+  assert.equal(body.laps, 1);
+  assert.equal(e.DB.laps[0].gen, 3);
+});
+
 
 test('stale seq after the anchor is rejected', async () => {
   const e = env();
