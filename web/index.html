@@ -6,20 +6,20 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline' 'self'; manifest-src 'self'; connect-src wss://broker.hivemq.com:8884 ws://localhost:5003 http://localhost:5003 https://race-tracker-history.pages.dev https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://nominatim.openstreetmap.org https://tiles.openfreemap.org; img-src 'self' data: blob: http://localhost:5003 https://server.arcgisonline.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://tiles.openfreemap.org; worker-src blob: 'self'; base-uri 'none'; form-action 'none'">
-<link rel="icon" type="image/png" sizes="64x64" href="icons/orion-64.png?v=53">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/orion-32.png?v=53">
-<link rel="apple-touch-icon" sizes="180x180" href="icons/orion-180.png?v=53">
-<link rel="manifest" href="manifest.webmanifest?v=53">
+<link rel="icon" type="image/png" sizes="64x64" href="icons/orion-64.png?v=54">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/orion-32.png?v=54">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/orion-180.png?v=54">
+<link rel="manifest" href="manifest.webmanifest?v=54">
 <meta name="theme-color" content="#ffe600">
 <meta name="application-name" content="Orion Project">
 <meta name="apple-mobile-web-app-title" content="Orion">
 <meta name="description" content="Orion Project - live GPS and telemetry for one vehicle.">
-<link rel="stylesheet" href="css/tokens.css?v=53">
-<link rel="stylesheet" href="css/base.css?v=53">
-<link rel="stylesheet" href="css/components.css?v=53">
-<link rel="stylesheet" href="css/layout.css?v=53">
-<link rel="stylesheet" href="css/map.css?v=53">
-<link rel="stylesheet" href="vendor/maplibre-gl.css?v=53">
+<link rel="stylesheet" href="css/tokens.css?v=54">
+<link rel="stylesheet" href="css/base.css?v=54">
+<link rel="stylesheet" href="css/components.css?v=54">
+<link rel="stylesheet" href="css/layout.css?v=54">
+<link rel="stylesheet" href="css/map.css?v=54">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=54">
 <title>Orion Project</title>
 </head>
 <body class="locked">
@@ -30,7 +30,7 @@
     <div class="top-bar">
       <div class="flex items-center gap-4">
         <h1 class="brand">
-          <img class="brand-mascot" src="assets/orion.png?v=53" alt="" width="540" height="680">
+          <img class="brand-mascot" src="assets/orion.png?v=54" alt="" width="540" height="680">
           <span>Orion<br><span id="brandState">LIVE</span></span>
         </h1>
         <span class="label-tag" id="sim-badge">SIMULATED</span>
@@ -163,6 +163,7 @@
             <div class="hud-item"><div class="lbl">Uptime</div><div class="val" id="sUp">--</div><div class="lbl"></div></div>
             <div class="hud-item"><div class="lbl">RSSI</div><div class="val" id="sRssi">--</div><div class="lbl">dBm</div></div>
             <div class="hud-item"><div class="lbl">Heap</div><div class="val" id="sHeap">--</div><div class="lbl">KB</div></div>
+            <div class="hud-item"><div class="lbl">Chip Temp</div><div class="val" id="sTemp">--</div><div class="lbl">&deg;C</div></div>
             <div class="hud-item"><div class="lbl">GPS Sats</div><div class="val" id="gSat">--</div><div class="lbl"></div></div>
             <div class="hud-item"><div class="lbl">Fix Mode</div><div class="val" id="gMode">--</div><div class="lbl"></div></div>
             <div class="hud-item"><div class="lbl">TTFF</div><div class="val" id="gTtff">--</div><div class="lbl">s</div></div>
@@ -215,6 +216,7 @@
             <div class="hud-item"><div class="lbl">WiFi RSSI</div><div class="val" id="wifiRssi">--</div><div class="lbl">dBm</div></div>
             <div class="hud-item"><div class="lbl">Free Heap</div><div class="val" id="wifiHeap">--</div><div class="lbl">KB</div></div>
             <div class="hud-item"><div class="lbl">Min Heap</div><div class="val" id="wifiHeapMin">--</div><div class="lbl">KB</div></div>
+            <div class="hud-item"><div class="lbl">Chip Temp</div><div class="val" id="wifiTemp">--</div><div class="lbl">&deg;C</div></div>
             <div class="hud-item"><div class="lbl">Boots</div><div class="val" id="wifiBoot">--</div><div class="lbl"></div></div>
             <div class="hud-item"><div class="lbl">Last Update</div><div class="val" id="wifiLast">--</div><div class="lbl"></div></div>
           </div>
@@ -239,9 +241,9 @@
           </div>
           <div class="chart-box">
             <canvas id="wifiChart" height="120" role="img"
-                    aria-label="WiFi signal strength and free heap over time"></canvas>
+                    aria-label="WiFi signal strength, free heap and ESP32 chip temperature over time"></canvas>
           </div>
-          <p class="chart-note">last 300 frames · RSSI (black, top) and free heap (red)</p>
+          <p class="chart-note">last 300 frames · RSSI (black, top), free heap (red), chip temp (green)</p>
         </div>
       </div>
 
@@ -401,15 +403,15 @@
 
 </div>
 
-<script src="vendor/maplibre-gl-csp.js?v=53"></script>
-<script src="ui/guard.js?v=53"></script>
-<script src="ui/map.js?v=53"></script>
-<script src="ui/mqtt-mini.js?v=53"></script>
-<script src="ui/info-data.js?v=53"></script>
-<script src="ui/info.js?v=53"></script>
-<script src="ui/sessions.js?v=53"></script>
-<script src="ui/charts.js?v=53"></script>
-<script src="ui/mpu3d.js?v=53"></script>
-<script src="ui/app.js?v=53"></script>
+<script src="vendor/maplibre-gl-csp.js?v=54"></script>
+<script src="ui/guard.js?v=54"></script>
+<script src="ui/map.js?v=54"></script>
+<script src="ui/mqtt-mini.js?v=54"></script>
+<script src="ui/info-data.js?v=54"></script>
+<script src="ui/info.js?v=54"></script>
+<script src="ui/sessions.js?v=54"></script>
+<script src="ui/charts.js?v=54"></script>
+<script src="ui/mpu3d.js?v=54"></script>
+<script src="ui/app.js?v=54"></script>
 </body>
 </html>

@@ -399,6 +399,7 @@ function startSimulator() {
           heap_min: 180000,
           boot: 1,
           rssi: Math.round(-52 - 14 * Math.abs(Math.sin(angle * 2))),
+          temp_c: Math.round((38 + 4 * Math.sin(angle)) * 10) / 10,
           wifi: {
             ssid: 'SIM-WIFI',
             bssid: 'aa:bb:cc:dd:ee:ff',

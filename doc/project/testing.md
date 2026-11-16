@@ -12,13 +12,14 @@ Three layers of testing ensure correctness without a device farm.
 
 ---
 
-## Unit Tests (115 tests)
+## Unit Tests (119 tests)
 
 Run: `npm test`
 
 ### Test Files
 | File | Focus |
 |------|-------|
+| `test/firmware.test.js` | Wire contract: `sys.temp_c`, MPU NACK debounce |
 | `test/gps.test.js` | NMEA parsing, coordinate math |
 | `test/mpu3d.test.js` | 3D rotation, projection math |
 | `test/charts.test.js` | Canvas helpers (autoMax, bands, lines) |

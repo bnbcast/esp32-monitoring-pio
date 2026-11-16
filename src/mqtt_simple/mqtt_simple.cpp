@@ -212,6 +212,15 @@ bool mpuValid = false;
 unsigned long lastRetry = 0;
 uint8_t mpuFailStreak = 0;
 
+// A single NACK right after a Wi-Fi TX burst is not a dead sensor, but it used
+// to flip mpuValid, strobe all three LEDs through ledsFault() and make the
+// dashboard shout "check wiring". Hold the last good attitude for a short grace
+// window instead; only a fault that outlives it becomes a real MPU FAIL.
+#define MPU_FAULT_GRACE_MS 2000UL
+static bool mpuFaulted = false;
+static unsigned long mpuFaultSince = 0;
+static unsigned long mpuRecoverAt = 0;
+
 float gyroBiasX = 0, gyroBiasY = 0, gyroBiasZ = 0;
 float roll = 0, pitch = 0, yaw = 0, tilt = 0;
 float lax = 0, lay = 0, laz = 0, lt = 0;
@@ -751,13 +760,26 @@ static void i2cRecover() {
 void updateMotion() {
   float ax, ay, az, t, gx, gy, gz;
   if (!mpuRead(ax, ay, az, t, gx, gy, gz)) {
-    if (mpuValid) logMsg(L_ERR, "IMU", "MPU6050 stopped responding (I2C 0x%02X)", MPU_ADDR);
-    mpuValid = false;
+    if (!mpuFaulted) {
+      mpuFaulted = true;
+      mpuFaultSince = millis();
+    }
+    // Keep publishing the last good attitude inside the grace window. A real
+    // dead sensor still becomes FAIL, just two seconds later.
+    if (mpuValid && millis() - mpuFaultSince >= MPU_FAULT_GRACE_MS) {
+      mpuValid = false;
+      logMsg(L_ERR, "IMU", "MPU6050 stopped responding (I2C 0x%02X)", MPU_ADDR);
+    }
     // A rail dip can wedge the bus. Retry the sensor a few times, then re-init
     // the peripheral and clock SDA free instead of requiring a power cycle.
     if (++mpuFailStreak >= 5) {
       mpuFailStreak = 0;
-      i2cRecover();
+      // One bus recovery every two seconds is enough; hammering it turns a dead
+      // sensor into a serial-log flood.
+      if (millis() - mpuRecoverAt >= MPU_FAULT_GRACE_MS) {
+        mpuRecoverAt = millis();
+        i2cRecover();
+      }
       lastRetry = millis();
       return;
     }
@@ -769,6 +791,7 @@ void updateMotion() {
     return;
   }
   mpuFailStreak = 0;
+  mpuFaulted = false;
   if (!mpuValid) {
     mpuValid = true;
     lastMicros = micros();
@@ -1482,6 +1505,10 @@ void publishData() {
 #endif
 
   char b[1200];
+  // ESP32 die temperature. Read once per publish so the full and slim forms
+  // carry the same value; on a classic ESP32 it is uncalibrated, so it is a
+  // "how hot is the chip" indicator, not ambient or engine temperature.
+  const float chipTempC = temperatureRead();
   int n = snprintf(b, sizeof b,
     "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"mpu\":%s,\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"tilt\":%.2f,"
     "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"temp\":%.1f,\"lvl\":%d,"
@@ -1493,6 +1520,7 @@ void publishData() {
     "\"lap\":{\"on\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu,"
     "\"la\":[%.*f,%.*f],\"lb\":[%.*f,%.*f]},"
     "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d,"
+    "\"temp_c\":%.1f,"
     "\"wifi\":{\"ssid\":\"%.32s\",\"bssid\":\"%.17s\",\"channel\":%d,\"status\":\"%s\","
     "\"ip\":\"%.15s\",\"mac\":\"%.17s\"}}}",
     (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
@@ -1512,7 +1540,7 @@ void publishData() {
     GPS_DECIMALS, gateBLat, GPS_DECIMALS, gateBLng,
     (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
     (unsigned long)brownoutCount,
-    WiFi.RSSI(),
+    WiFi.RSSI(), chipTempC,
     WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), (int)WiFi.channel(), wifiStatusStr(),
     WiFi.localIP().toString().c_str(), WiFi.macAddress().c_str());
 
@@ -1530,7 +1558,8 @@ void publishData() {
       "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
       "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d},"
       "\"lap\":{\"on\":%s,\"n\":%lu,\"last_ms\":%lu,\"best_ms\":%lu},"
-      "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d}}",
+      "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d,"
+      "\"temp_c\":%.1f}}",
       (unsigned long)txSeq, (unsigned long)epoch, (unsigned long)(millis() / 1000),
       mpuValid ? "true" : "false", tRoll, tPitch, tYaw, tilt, level,
       (int)WARN_ANGLE, (int)DANGER_ANGLE, maxTilt,
@@ -1542,7 +1571,7 @@ void publishData() {
       gateValid ? "true" : "false", (unsigned long)lapCount,
       (unsigned long)lapLastMs, (unsigned long)lapBestMs,
       (unsigned)ESP.getFreeHeap(), (unsigned)minFreeHeap, (unsigned long)bootCount,
-      (unsigned long)brownoutCount, WiFi.RSSI());
+      (unsigned long)brownoutCount, WiFi.RSSI(), chipTempC);
     if (n <= 0 || n >= (int)sizeof b) { txFail++; return; }
   }
 
@@ -1654,11 +1683,12 @@ static void printStatus() {
   Serial.printf("\n%s+------------------------------------------------------------------------------%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
 
-  Serial.printf("%s|%s SYS   up %s   heap %uK   rssi %d dBm   ch %d   ip %s\n",
+  Serial.printf("%s|%s SYS   up %s   heap %uK   rssi %d dBm   ch %d   chip %.1fC   ip %s\n",
                 A(ANSI_DIM), A(ANSI_RESET), up,
                 (unsigned)(ESP.getFreeHeap() / 1024),
                 wifiOk ? (int)WiFi.RSSI() : 0,
                 wifiOk ? (int)WiFi.channel() : 0,
+                temperatureRead(),
                 wifiOk ? WiFi.localIP().toString().c_str() : "-");
 
   Serial.printf("%s|%s LINK  wifi %s%-4s%s  mqtt %s%-4s%s  tx %lu  ok %lu  fail %lu  drop %lu  q %u\n",

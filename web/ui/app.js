@@ -98,7 +98,7 @@ function drawTiltChart() {
 // Kept in memory only; nothing here is a second upload path. The board sends
 // at 1 Hz (the dev simulator faster), so a sample cap is also a time window.
 const LIVE_HIST = { speed: [], max: 180 };   // [t, km/h, hdop]
-const WIFI_HIST = { rssi: [], heap: [], max: 300 };
+const WIFI_HIST = { rssi: [], heap: [], temp: [], max: 300 };
 const MPU_HIST = { accel: [], max: 180 };
 const RX_TIMES = { pts: [], max: 240 };
 
@@ -150,17 +150,23 @@ function renderLiveSummary() {
   putText('livePeak', n ? peak.toFixed(0) : '--');
 }
 
-// RSSI and free heap on independent scales: signal strength explains a dropout,
-// heap explains a slow leak. Both are already in every sys block.
+// RSSI, free heap and the ESP32 die temperature on independent scales: signal
+// strength explains a dropout, heap explains a slow leak, and the chip
+// temperature exposes a hot enclosure or a radio working too hard. All three
+// are in every sys block, so an older firmware simply leaves the temp line out.
 function renderWifiChart() {
   if (!WIFI_HIST.rssi.length) return;
   const heapMax = CHARTS.niceMax(
     CHARTS.autoMax(WIFI_HIST.heap.map(p => p[1]), 200), 50);
+  const temps = WIFI_HIST.temp.map(p => p[1]);
+  const tempLo = temps.length ? Math.floor((Math.min(...temps) - 2) / 5) * 5 : 20;
+  const tempHi = CHARTS.niceMax(CHARTS.autoMax(temps, tempLo + 10) + 2, 5);
   CHARTS.drawSeries($('wifiChart'), {
     height: 120,
     series: [
       { pts: WIFI_HIST.rssi, min: -100, max: -30, color: '#000', width: 2 },
-      { pts: WIFI_HIST.heap, min: 0, max: heapMax, color: '#ff3b1f', width: 1.5 }
+      { pts: WIFI_HIST.heap, min: 0, max: heapMax, color: '#ff3b1f', width: 1.5 },
+      { pts: WIFI_HIST.temp, min: tempLo, max: tempHi, color: '#00875a', width: 1.5 }
     ],
     gapS: 6,
     topText: 'RSSI -30 (top) to -100 dBm',
@@ -240,6 +246,13 @@ function renderMpuSummary() {
 // tab is opened or the window changes size.
 let mpuAtt = { roll: 0, pitch: 0, yaw: 0, valid: false };
 let mpuDrawnAt = 0;
+
+// One bad I2C sample is not a wiring fault. The firmware already holds the
+// last attitude for two seconds; the page adds a little more slack and says
+// "recovering" instead of flashing the red "check MPU6050 wiring" banner.
+const MPU_RECOVER_MS = 4000;
+let mpuSeenOk = false;
+let mpuLostAt = 0;
 
 function drawMpu3d(force) {
   const canvas = $('mpu3d');
@@ -581,9 +594,15 @@ function updateSignalDOM() {
 function renderData(d) {
   warn = d.warn; danger = d.danger;
   const ok = !!d.mpu, gps = d.gps, sys = d.sys;
+  const nowMs = Date.now();
+  if (ok) { mpuSeenOk = true; mpuLostAt = 0; }
+  else if (!mpuLostAt) mpuLostAt = nowMs;
+  const mpuRecovering = !ok && mpuSeenOk &&
+    (nowMs - (mpuLostAt || nowMs)) < MPU_RECOVER_MS;
 
   // Pills
-  setPill($('pMpu'), ok ? "MPU OK" : "MPU FAIL", ok ? "ok" : "bad");
+  setPill($('pMpu'), ok ? "MPU OK" : (mpuRecovering ? "MPU RECOVERING" : "MPU FAIL"),
+    ok ? "ok" : (mpuRecovering ? "wait" : "bad"));
   setPill($('pGps'), gps.fix ? "GPS FIX" : (gps.chars < 10 ? "GPS NO DATA" : "GPS WAIT"),
     gps.fix ? "ok" : (gps.chars < 10 ? "bad" : "wait"));
 
@@ -656,6 +675,9 @@ function renderData(d) {
     pushSample(WIFI_HIST.heap, [nowS, Math.round(Number(sys.heap) / 1024)],
       WIFI_HIST.max);
   }
+  if (num(sys.temp_c)) {
+    pushSample(WIFI_HIST.temp, [nowS, Number(sys.temp_c)], WIFI_HIST.max);
+  }
   if (WIFI_HIST.rssi.length) renderWifiChart();
   renderWifiSummary();
 
@@ -707,12 +729,14 @@ function renderData(d) {
   set('sUp', num(d.up) ? uptime(d.up) : '--');
   set('sRssi', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
   set('sHeap', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
+  set('sTemp', num(sys.temp_c) ? Number(sys.temp_c).toFixed(1) : '--');
 
   // WiFi tab values (desktop)
   set('wifiUp', num(d.up) ? uptime(d.up) : '--');
   set('wifiRssi', num(sys.rssi) ? sys.rssi + ' dBm' : '--');
   set('wifiHeap', num(sys.heap) ? Math.round(sys.heap / 1024) + ' KB' : '--');
   set('wifiHeapMin', num(sys.heap_min) ? Math.round(sys.heap_min / 1024) + ' KB' : '--');
+  set('wifiTemp', num(sys.temp_c) ? Number(sys.temp_c).toFixed(1) : '--');
   set('wifiBoot', num(sys.boot) ? sys.boot : '--');
   set('wifiLast', new Date().toLocaleTimeString());
 
@@ -791,6 +815,11 @@ function renderBanner() {
     strip.classList.add('stale');
     text.textContent = last ? "NO SIGNAL" : "WAITING";
     sub.textContent = last ? "no live data, showing last known values" : "waiting for first reading";
+  } else if (!last.mpu && mpuSeenOk && mpuLostAt &&
+             (Date.now() - mpuLostAt) < MPU_RECOVER_MS) {
+    strip.classList.add('stale');
+    text.textContent = "MPU RECOVERING";
+    sub.textContent = "last sample missed, retrying I2C";
   } else if (!last.mpu) {
     strip.classList.add('nofix');
     text.textContent = "NO MPU DATA";

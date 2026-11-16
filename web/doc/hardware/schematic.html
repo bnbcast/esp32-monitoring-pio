@@ -194,6 +194,11 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <tr><td>I²C bus recovery after 5 failed reads</td><td>Re-inits the bus instead of staying in MPU FAIL</td></tr>
 </tbody></table></div>
 <p>These reduce the symptom; they do not replace the bulk capacitors and a correctly set boost output.</p>
+<h3 id="when-every-sensor-shares-the-mt3608-5-v-rail">When every sensor shares the MT3608 5 V rail</h3>
+<p>Feeding the GPS and MPU6050 from the same 5 V boost output adds their regulator dropout and switching noise to a rail the ESP32 is already sagging. Move both to the DevKit <code>3V3</code> pin when their breakout accepts 3.3 V (GY-521 and most NEO-6M boards do). That removes their load from the boost and leaves the whole 5 V headroom to the ESP32's AMS1117.</p>
+<p>The MPU6050 is the canary: a rail dip shows up as I2C NACKs long before the brownout detector trips. The firmware now holds the last attitude for 2 s (<code>MPU_FAULT_GRACE_MS</code>), so a short glitch no longer blinks all three LEDs or shows &quot;check wiring&quot;. A longer outage still does, and that blink is a <strong>power</strong> symptom, not automatically a bad SDA/SCL joint.</p>
+<p>Add 100 uF + 100 nF at the MPU VCC/GND when its wires are longer than a few centimetres, and keep SDA/SCL twisted with a ground return away from the boost inductor and switch node.</p>
+<p>The permanent fix for a boost-fed DevKit is to stop stacking two regulators: a 3.3 V <strong>buck</strong> (for example MP1584 set to 3.3 V) into the <code>3V3</code> pin bypasses the AMS1117, or use a 5 V/2 A buck-boost with a real transient rating. Never feed <code>3V3</code> and USB at the same time.</p>
 <hr>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <div class="table-wrap"><table>
@@ -202,6 +207,8 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <tr><td>GPS never fixes</td><td>Antenna orientation, clear sky, 5+ min cold start</td></tr>
 <tr><td>MPU FAIL pill</td><td>I2C wiring (SDA/SCL), 0x68 address, 3.3V power</td></tr>
 <tr><td>MPU FAIL only on battery</td><td>3.3 V rail sag / boost ripple — add 100 µF + 100 nF, check LDO headroom</td></tr>
+<tr><td>All three LEDs blink together</td><td><code>ledsFault()</code> because the MPU is invalid, or active-low wiring mistaken for active-high - press <code>y</code> in the monitor; on battery suspect the 5 V rail first</td></tr>
+<tr><td>MPU FAIL + red &quot;check wiring&quot; on battery</td><td>Boost ripple / 3.3 V sag on I2C, not a loose jumper - move the MPU to <code>3V3</code>, add 100 uF at its VCC, set the boost to 5.3-5.5 V</td></tr>
 <tr><td>WiFi connects then drops on battery</td><td>Boost output sag on TX bursts — set 5.3–5.5 V, add 1000 µF bulk cap, shorter power wires</td></tr>
 <tr><td><code>reset BROWNOUT</code> or rising <code>brownouts</code></td><td>Supply is sagging; USB is fine, fix the boost/battery path</td></tr>
 <tr><td>WiFi won't connect</td><td>SSID/password in <code>src/wifi_config.h</code>, 2.4 GHz only; serial log prints visible SSIDs</td></tr>

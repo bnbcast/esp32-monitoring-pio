@@ -169,6 +169,29 @@ and “sometimes connected” on battery.
 These reduce the symptom; they do not replace the bulk capacitors and a
 correctly set boost output.
 
+### When every sensor shares the MT3608 5 V rail
+
+Feeding the GPS and MPU6050 from the same 5 V boost output adds their regulator
+dropout and switching noise to a rail the ESP32 is already sagging. Move both
+to the DevKit `3V3` pin when their breakout accepts 3.3 V (GY-521 and most
+NEO-6M boards do). That removes their load from the boost and leaves the whole
+5 V headroom to the ESP32's AMS1117.
+
+The MPU6050 is the canary: a rail dip shows up as I2C NACKs long before the
+brownout detector trips. The firmware now holds the last attitude for 2 s
+(`MPU_FAULT_GRACE_MS`), so a short glitch no longer blinks all three LEDs or
+shows "check wiring". A longer outage still does, and that blink is a **power**
+symptom, not automatically a bad SDA/SCL joint.
+
+Add 100 uF + 100 nF at the MPU VCC/GND when its wires are longer than a few
+centimetres, and keep SDA/SCL twisted with a ground return away from the boost
+inductor and switch node.
+
+The permanent fix for a boost-fed DevKit is to stop stacking two regulators: a
+3.3 V **buck** (for example MP1584 set to 3.3 V) into the `3V3` pin bypasses the
+AMS1117, or use a 5 V/2 A buck-boost with a real transient rating. Never feed
+`3V3` and USB at the same time.
+
 ---
 
 ## Troubleshooting
@@ -178,6 +201,8 @@ correctly set boost output.
 | GPS never fixes | Antenna orientation, clear sky, 5+ min cold start |
 | MPU FAIL pill | I2C wiring (SDA/SCL), 0x68 address, 3.3V power |
 | MPU FAIL only on battery | 3.3 V rail sag / boost ripple — add 100 µF + 100 nF, check LDO headroom |
+| All three LEDs blink together | `ledsFault()` because the MPU is invalid, or active-low wiring mistaken for active-high - press `y` in the monitor; on battery suspect the 5 V rail first |
+| MPU FAIL + red "check wiring" on battery | Boost ripple / 3.3 V sag on I2C, not a loose jumper - move the MPU to `3V3`, add 100 uF at its VCC, set the boost to 5.3-5.5 V |
 | WiFi connects then drops on battery | Boost output sag on TX bursts — set 5.3–5.5 V, add 1000 µF bulk cap, shorter power wires |
 | `reset BROWNOUT` or rising `brownouts` | Supply is sagging; USB is fine, fix the boost/battery path |
 | WiFi won't connect | SSID/password in `src/wifi_config.h`, 2.4 GHz only; serial log prints visible SSIDs |

@@ -59,9 +59,9 @@ Single-page vanilla JS dashboard served statically from GitHub Pages.
 MQTT message
     │
     ├─ ingestGPS(payload)
-    │    ├─ Parse GPS, MPU, sys
+    │    ├─ Parse GPS, MPU, sys (heap, RSSI, chip temp)
     │    ├─ Update GPS object (circular buffers)
-    │    ├─ Update pills (BROKER, DEVICE, MPU, GPS)
+    │    ├─ Update pills (BROKER, DEVICE, MPU OK/RECOVERING/FAIL, GPS)
     │    ├─ Update HUD values
     │    ├─ MAP.updateMarker() + trail
     │    ├─ Update charts (if LIVE tab open)
@@ -142,8 +142,8 @@ MQTT message
 ## UI State
 
 ### Tabs
-- `LIVE` — real-time HUD, charts, map
-- `WIFI` — RSSI + heap chart, link stats
+- `LIVE` — real-time HUD (including chip temp), charts, map
+- `WIFI` — RSSI + heap + chip-temp chart, link stats
 - `MPU` — 3D attitude, tilt chart, accel chart
 - `HIST` — sessions timeline, laps, export, playback
 - `INFO` — glossary (search, chips, expand)
@@ -164,15 +164,18 @@ MQTT message
 ### LIVE Tab
 - Speed line (180 frames) — red where HDOP > 3
 - Stats: avg moving speed, stopped %, peak
+- Device row includes chip temp (`sys.temp_c`), RSSI, heap and uptime
 
 ### WIFI Tab
-- RSSI (black) + free heap (red) — dual axis
+- RSSI (black) + free heap (red) + chip temp (green) — independent axes
+- Chip temp is `sys.temp_c` from `temperatureRead()`; the MPU6050's own `temp` is separate
 - Link quality: strong/fair/weak (current RSSI)
 - Msg rate (15s), max gap (60s)
 
 ### MPU Tab
 - Accel magnitude |a| with 1g ref line
 - Peak |a|, peak tilt
+- A missed frame shows MPU RECOVERING for up to 4 s; only a longer outage shows MPU FAIL and the wiring hint
 - Tilt chart (30° floor)
 
 ### HIST Tab

@@ -185,10 +185,12 @@ loop()
 <tbody>
 <tr><td>BROKER</td><td>MQTT conn state</td><td>OK / ... / OFFLINE</td></tr>
 <tr><td>DEVICE</td><td><code>online</code> field in status topic</td><td>LIVE / OFFLINE / NO SIGNAL</td></tr>
-<tr><td>MPU6050</td><td>Self-test + valid data</td><td>OK / FAIL</td></tr>
+<tr><td>MPU6050</td><td>Self-test + valid data</td><td>OK / FAIL (page adds RECOVERING for a short gap)</td></tr>
 <tr><td>GPS</td><td><code>gps.fix</code> + HDOP</td><td>FIX / WAIT / NO FIX</td></tr>
 </tbody></table></div>
 <p>The boot banner also reports <code>reset &lt;reason&gt;</code> and <code>brownouts N</code> (persisted in NVS, also published as <code>sys.brown</code>). A rising count means the supply is sagging; see the power section in <code>hardware/schematic.md</code>. The I²C bus is re-initialised after five consecutive MPU read failures, so a rail glitch does not leave the sensor stuck in FAIL until the next reboot.</p>
+<p><code>sys.temp_c</code> carries the ESP32 <strong>die</strong> temperature from <code>temperatureRead()</code>, sampled once per publish (full and slim payloads). It is uncalibrated on the classic ESP32, so use it as a relative chip-heating signal, not ambient or engine temperature.</p>
+<p>An I2C NACK is debounced: <code>mpuValid</code> stays true for a 2-second <code>MPU_FAULT_GRACE_MS</code> window and the last attitude keeps being published. Only a fault that outlives the window flips the payload to <code>mpu:false</code> and starts the all-three-LED fault blink. Bus recovery is rate-limited to once every two seconds so a genuinely dead sensor cannot flood the serial log.</p>
 <hr>
 <h2 id="memory-map-approx">Memory Map (approx)</h2>
 <div class="table-wrap"><table>

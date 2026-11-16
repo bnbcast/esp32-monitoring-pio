@@ -20,7 +20,7 @@ window.INFO_GROUPS = [
     "terms": [
       { "t": "BROKER", "d": "<b>BROKER OK</b> = this page's WebSocket to the broker is open. <b>BROKER ...</b> = still connecting, or reconnecting after a drop." },
       { "t": "DEVICE", "d": "<b>DEVICE LIVE</b> = a frame arrived in the last 6 seconds. <b>NO SIGNAL</b> = the link is fine but the board went quiet. <b>DEVICE OFFLINE</b> = the board announced it is going away (shutdown, Wi-Fi loss, power cut)." },
-      { "t": "MPU6050", "d": "<b>MPU OK</b> = the tilt sensor answered and its numbers passed the range check. <b>MPU FAIL</b> = missing or unreadable, so tilt and the danger lights are unknown." },
+      { "t": "MPU6050", "d": "<b>MPU OK</b> = the tilt sensor answered and its numbers passed the range check. <b>MPU RECOVERING</b> = one I2C sample was missed and the page is holding the last attitude for a few seconds. <b>MPU FAIL</b> = missing or unreadable for longer than that, so tilt and the danger lights are unknown." },
       { "t": "GPS", "d": "<b>GPS FIX</b> = the receiver has a valid position. <b>GPS WAIT</b> = serial data is arriving but there is no fix yet (indoors, or a cold start: can take minutes). <b>GPS NO DATA</b> = nothing on the serial line (wiring or baud rate)." }
     ]
   },
@@ -65,6 +65,7 @@ window.INFO_GROUPS = [
       { "t": "Uptime", "d": "Seconds since the board booted. A number that starts over means it rebooted." },
       { "t": "RSSI", "d": "Wi-Fi signal at the board, in dBm. &minus;50 is excellent, &minus;70 is fine, &minus;85 is weak, below &minus;90 causes dropouts." },
       { "t": "Heap", "d": "Free RAM right now, in KB. High hundreds is healthy on this build; a value that keeps shrinking over hours means a leak." },
+      { "t": "Chip Temp", "d": "The ESP32's internal <b>die</b> temperature in &deg;C, not the air or engine. It is uncalibrated and reads a few degrees above ambient; a steady rise means the board is working hard or the enclosure is hot. The MPU6050 has its own, separate temperature." },
       { "t": "GPS Sats", "d": "Satellite count again, straight from the receiver." },
       { "t": "Fix Mode", "d": "<b>3D</b> = latitude, longitude and altitude are solved, which is what the firmware requires. <b>2D</b> = no altitude constraint, so the horizontal position is much less trustworthy and is deliberately not published." },
       { "t": "TTFF", "d": "Time to first fix, in seconds after boot: how long the receiver needed for a position the firmware accepted. A warm start with a charged backup battery is a few seconds; a cold start outdoors is around 30 s." },
@@ -94,6 +95,7 @@ window.INFO_GROUPS = [
       { "t": "WiFi RSSI", "d": "Signal strength at the board in dBm (&minus;50 great &rarr; &minus;90 unusable)." },
       { "t": "Free Heap", "d": "Free RAM right now, in KB. Healthy readings sit well above the lowest point this build has ever needed." },
       { "t": "Min Heap", "d": "The <b>lowest</b> free RAM since boot. This is the leak detector: Free Heap bounces, Min Heap only falls." },
+      { "t": "Chip Temp (WIFI)", "d": "Temperature of the ESP32 chip itself, in &deg;C. It is the green line on the chart and the same value as LIVE. It is not ambient, engine, or the MPU6050 temperature." },
       { "t": "Boots", "d": "How many times the board has started. Climbing on its own means crashes or brownouts." },
       { "t": "Last Update", "d": "Local time this browser last received a frame." },
       { "t": "SSID / BSSID", "d": "Wi-Fi network name, and the MAC of the access point it is attached to (useful when a venue has several identical hotspots)." },
@@ -111,7 +113,7 @@ window.INFO_GROUPS = [
     "title": "MPU tab",
     "short": "MPU",
     "terms": [
-      { "t": "Temp", "d": "Chip temperature in &deg;C, a few degrees above ambient. It is not engine or air temperature." },
+      { "t": "Temp", "d": "The <b>MPU6050's</b> own chip temperature in &deg;C, a few degrees above ambient. It is not engine or air temperature, and it is not the ESP32 Chip Temp shown on LIVE and WIFI." },
       { "t": "Roll / Pitch", "d": "Lean left-right (roll) and nose up-down (pitch) in degrees, from gravity." },
       { "t": "Yaw", "d": "Turn around the vertical axis, in degrees, integrated from the gyro. It drifts over time because there is no magnetometer, so trust GPS HEADING when moving." },
       { "t": "Max Tilt", "d": "The largest tilt seen since boot. It survives nothing: a reboot clears it." },

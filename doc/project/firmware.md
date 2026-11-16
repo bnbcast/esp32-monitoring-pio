@@ -152,7 +152,7 @@ The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` �
 |------|--------|--------|
 | BROKER | MQTT conn state | OK / ... / OFFLINE |
 | DEVICE | `online` field in status topic | LIVE / OFFLINE / NO SIGNAL |
-| MPU6050 | Self-test + valid data | OK / FAIL |
+| MPU6050 | Self-test + valid data | OK / FAIL (page adds RECOVERING for a short gap) |
 | GPS | `gps.fix` + HDOP | FIX / WAIT / NO FIX |
 
 The boot banner also reports `reset <reason>` and `brownouts N` (persisted in
@@ -160,6 +160,17 @@ NVS, also published as `sys.brown`). A rising count means the supply is sagging;
 see the power section in `hardware/schematic.md`. The I²C bus is re-initialised
 after five consecutive MPU read failures, so a rail glitch does not leave the
 sensor stuck in FAIL until the next reboot.
+
+`sys.temp_c` carries the ESP32 **die** temperature from `temperatureRead()`,
+sampled once per publish (full and slim payloads). It is uncalibrated on the
+classic ESP32, so use it as a relative chip-heating signal, not ambient or
+engine temperature.
+
+An I2C NACK is debounced: `mpuValid` stays true for a 2-second
+`MPU_FAULT_GRACE_MS` window and the last attitude keeps being published. Only a
+fault that outlives the window flips the payload to `mpu:false` and starts the
+all-three-LED fault blink. Bus recovery is rate-limited to once every two
+seconds so a genuinely dead sensor cannot flood the serial log.
 
 ---
 

@@ -174,3 +174,22 @@ test('the page, icons and manifest carry the Orion brand', () => {
     assert.ok(fs.statSync(file).size > 500, `${p} looks empty`);
   }
 });
+
+test('the ESP32 chip temperature is on LIVE, WIFI and the link chart', () => {
+  for (const id of ['sTemp', 'wifiTemp', 'wifiChart']) {
+    assert.match(HTML, new RegExp(`id="${id}"`), `#${id} is missing`);
+  }
+  assert.match(HTML, /chip temp \(green\)/, 'the chart legend does not name the temp line');
+  assert.match(APP, /sys\.temp_c/, 'the payload field is never read');
+  assert.match(APP, /WIFI_HIST\.temp/, 'the chart has no temperature history');
+  assert.match(APP, /set\('sTemp'/, 'LIVE never prints the temperature');
+  assert.match(APP, /set\('wifiTemp'/, 'WIFI never prints the temperature');
+});
+
+test('a missed MPU frame is recovering, not a wiring fault', () => {
+  assert.match(APP, /const MPU_RECOVER_MS = 4000/,
+    'the page has no grace window for an I2C glitch');
+  assert.match(APP, /MPU RECOVERING/, 'the status strip never shows the soft state');
+  // A sensor that never answered still gets the hard message.
+  assert.match(APP, /check MPU6050 wiring/);
+});

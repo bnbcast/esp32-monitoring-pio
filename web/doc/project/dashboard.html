@@ -102,9 +102,9 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 MQTT message
     │
     ├─ ingestGPS(payload)
-    │    ├─ Parse GPS, MPU, sys
+    │    ├─ Parse GPS, MPU, sys (heap, RSSI, chip temp)
     │    ├─ Update GPS object (circular buffers)
-    │    ├─ Update pills (BROKER, DEVICE, MPU, GPS)
+    │    ├─ Update pills (BROKER, DEVICE, MPU OK/RECOVERING/FAIL, GPS)
     │    ├─ Update HUD values
     │    ├─ MAP.updateMarker() + trail
     │    ├─ Update charts (if LIVE tab open)
@@ -176,8 +176,8 @@ MQTT message
 <h2 id="ui-state">UI State</h2>
 <h3 id="tabs">Tabs</h3>
 <ul>
-<li><code>LIVE</code> — real-time HUD, charts, map</li>
-<li><code>WIFI</code> — RSSI + heap chart, link stats</li>
+<li><code>LIVE</code> — real-time HUD (including chip temp), charts, map</li>
+<li><code>WIFI</code> — RSSI + heap + chip-temp chart, link stats</li>
 <li><code>MPU</code> — 3D attitude, tilt chart, accel chart</li>
 <li><code>HIST</code> — sessions timeline, laps, export, playback</li>
 <li><code>INFO</code> — glossary (search, chips, expand)</li>
@@ -199,10 +199,12 @@ MQTT message
 <ul>
 <li>Speed line (180 frames) — red where HDOP &gt; 3</li>
 <li>Stats: avg moving speed, stopped %, peak</li>
+<li>Device row includes chip temp (<code>sys.temp_c</code>), RSSI, heap and uptime</li>
 </ul>
 <h3 id="wifi-tab">WIFI Tab</h3>
 <ul>
-<li>RSSI (black) + free heap (red) — dual axis</li>
+<li>RSSI (black) + free heap (red) + chip temp (green) — independent axes</li>
+<li>Chip temp is <code>sys.temp_c</code> from <code>temperatureRead()</code>; the MPU6050's own <code>temp</code> is separate</li>
 <li>Link quality: strong/fair/weak (current RSSI)</li>
 <li>Msg rate (15s), max gap (60s)</li>
 </ul>
@@ -210,6 +212,7 @@ MQTT message
 <ul>
 <li>Accel magnitude |a| with 1g ref line</li>
 <li>Peak |a|, peak tilt</li>
+<li>A missed frame shows MPU RECOVERING for up to 4 s; only a longer outage shows MPU FAIL and the wiring hint</li>
 <li>Tilt chart (30° floor)</li>
 </ul>
 <h3 id="hist-tab">HIST Tab</h3>

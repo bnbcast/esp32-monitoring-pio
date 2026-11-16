@@ -83,6 +83,7 @@ Published once per second, retained. Real shape (one line on the wire):
     "boot": 7,
     "brown": 0,
     "rssi": -52,
+    "temp_c": 41.8,
     "wifi": {
       "ssid": "Gi Joe",
       "bssid": "aa:bb:cc:dd:ee:ff",
@@ -136,10 +137,17 @@ Published once per second, retained. Real shape (one line on the wire):
 | `sys.boot` | integer | — | Boot counter (NVS) |
 | `sys.brown` | integer | — | Persisted brownout resets (NVS) |
 | `sys.rssi` | integer | dBm | Wi-Fi RSSI |
-| `sys.wifi.*` | mixed | — | SSID, BSSID, channel, status, IP, MAC |
+| `sys.temp_c` | number | deg C | ESP32 **die** temperature (`temperatureRead()`) |
+| `sys.wifi.*` | mixed | - | SSID, BSSID, channel, status, IP, MAC |
 
 > `sys.wifi.status` is `Connected`, `Disconnected`, `No SSID`, `Connect failed`,
 > `Idle` or `Unknown`. When not connected, `ssid` is empty and `ip` is `-`.
+
+> `sys.temp_c` is the ESP32's internal **die** sensor, sampled once per publish.
+> On a classic ESP32 it is uncalibrated: read it as "the chip is heating up",
+> not as ambient or engine temperature. The top-level `temp` field is the
+> MPU6050's separate on-chip sensor. Older firmware omits `sys.temp_c`, and the
+> dashboard simply leaves the chip-temperature row and line empty.
 
 ---
 
