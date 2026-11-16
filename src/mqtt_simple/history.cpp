@@ -360,7 +360,9 @@ void task(void*) {
   for (;;) {
     HistoryFix f;
     if (xQueueReceive(queue, &f, pdMS_TO_TICKS(500)) == pdTRUE) {
-      char line[320];
+      // Wide enough for every field at its worst case: a truncated frame is
+      // silently skipped, and a dropped lap is worse than a wasted 80 bytes.
+      char line[384];
       int n = snprintf(line, sizeof line,
         "{\"seq\":%lu,\"ts\":%lu,\"up\":%lu,\"boot\":%u,\"fix\":true,"
         "\"lat\":%.6f,\"lng\":%.6f,\"alt\":%.0f,\"kmh\":%.1f,\"cog\":%.1f,"
@@ -377,6 +379,8 @@ void task(void*) {
         pending += line;
         pendingLines++;
         stats.queued++;
+      } else {
+        stats.dropped++;               // never silently lose a frame
       }
     }
 

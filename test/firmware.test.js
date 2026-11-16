@@ -42,6 +42,10 @@ test('a lap is keyed to a session generation that survives a reboot', () => {
   assert.match(SRC, /hf\.lap_gen = lapGen;/);
   const HIST = fs.readFileSync(path.join(root, 'src', 'mqtt_simple', 'history.cpp'), 'utf8');
   assert.match(HIST, /\\"lap_gen\\":%lu/, 'history frames do not carry the generation');
+  // The line buffer has to hold every field at its widest, or a frame is
+  // skipped without a trace.
+  assert.match(HIST, /char line\[384\];/);
+  assert.match(HIST, /stats\.dropped\+\+;\s+\/\/ never silently lose a frame/);
 });
 
 test('the live payload carries the ESP32 die temperature', () => {
