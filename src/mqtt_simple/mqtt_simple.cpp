@@ -85,7 +85,7 @@
 // If no saved network connects within this window, open the setup portal. It is
 // deliberately longer than one scan + association cycle, so a slow DHCP server
 // is not mistaken for a wrong password.
-#define WIFI_PORTAL_AFTER_MS  45000UL
+#define WIFI_PORTAL_AFTER_MS  20000UL
 // Long-press the BOOT button (GPIO0) to open/close the portal at runtime.
 #define WIFI_BOOT_PIN         0
 #define WIFI_BOOT_HOLD_MS     3000UL

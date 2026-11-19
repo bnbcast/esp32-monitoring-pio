@@ -147,8 +147,8 @@ body.map-full .map-hud .hud-addr { display: none; }
     width: 100%;
     /* JS writes --sheet-h while dragging and snapping. The fallback covers the
        first paint before app.js runs. */
-    height: var(--sheet-h, 38dvh);
-    min-height: 180px;
+    height: var(--sheet-h, 28dvh);
+    min-height: 160px;
     flex-shrink: 0;
     padding: 6px 8px 8px;
     border: var(--border-w-thick) solid var(--ink);
@@ -358,7 +358,7 @@ body.map-full .map-hud .hud-addr { display: none; }
 --------------------------------------------------------------------------- */
 @media (max-width: 900px) and (max-height: 520px) {
   .top-bar h1 { display: none; }
-  .side-panel { height: 34dvh; min-height: 150px; }
+  .side-panel { height: 25dvh; min-height: 130px; }
   #map-container { min-height: 120px; }
 }
 

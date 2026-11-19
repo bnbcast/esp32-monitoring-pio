@@ -108,8 +108,8 @@ test('an empty password means an open network', () => {
 
 test('the setup portal can provision both protected and open networks', () => {
   assert.match(PORTAL, /"Orion-Setup-%04X"/);
-  assert.match(PORTAL, /WiFi\.softAP\(g_apSsid\)/,
-    'the setup AP is not open, or needs a password nobody can read');
+  assert.match(PORTAL, /WiFi\.softAP\(g_apSsid, "12345"\)/,
+    'the setup AP should have password 12345');
   for (const route of ['/', '/scan', '/save', '/forget']) {
     assert.match(PORTAL, new RegExp(`g_http\\.on\\("${route.replace('/', '\\/')}"`),
       `${route} is not registered`);
@@ -147,7 +147,7 @@ test('a save reboots after the response has left the socket', () => {
 });
 
 test('the portal opens itself when no saved network connects', () => {
-  assert.match(SRC, /#define WIFI_PORTAL_AFTER_MS\s+45000UL/);
+  assert.match(SRC, /#define WIFI_PORTAL_AFTER_MS\s+20000UL/);
   assert.match(SRC, /#define WIFI_BOOT_PIN\s+0/);
   assert.match(SRC, /#define WIFI_BOOT_HOLD_MS\s+3000UL/);
   assert.match(SRC, /now - wifiDownSince >= WIFI_PORTAL_AFTER_MS/);

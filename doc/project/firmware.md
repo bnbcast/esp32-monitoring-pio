@@ -102,10 +102,10 @@ and the list lives in NVS.
   the old entry instead of duplicating it; the oldest is dropped when full. An
   empty password means an **open** network.
 - **First boot after flashing**: the list is empty, so the setup AP opens
-  immediately. It is open (`Orion-Setup-XXXX`, last four hex digits of the MAC)
+  immediately. It is secured with password `12345` (`Orion-Setup-XXXX`, last four hex digits of the MAC)
   and serves the page at `http://192.168.4.1/`. Captive-portal probes redirect
   to it, so a phone usually offers the sign-in sheet by itself.
-- **Saved list, no association**: if no saved network connects within 45 s, the
+- **Saved list, no association**: if no saved network connects within 20 s, the
   portal opens. This also covers a moved venue or a changed hotspot password.
 - **Page**: scan list (2.4 GHz only; hidden networks can be typed), SSID field,
   password field (leave empty for open), saved-network list with **Forget**.
@@ -219,7 +219,7 @@ When no saved network is in range, the panel gains an actionable line instead
 of leaving the cause implicit:
 
 ```
-  ! NET  setup portal 'Orion-Setup-B9F0' open - join it and open http://192.168.4.1/
+  ! NET  setup portal 'Orion-Setup-B9F0' (pw: 12345) - join it and open http://192.168.4.1/
 ```
 
 ---

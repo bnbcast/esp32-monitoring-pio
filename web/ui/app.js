@@ -2031,7 +2031,7 @@ if (!KEY) {
     if (snap === 'full') return fullSheetHeight();
     const max = maxSheetHeight();
     if (snap === 'tall') return max;
-    const half = Math.max(180, window.innerHeight * 0.38);
+    const half = Math.max(160, window.innerHeight * 0.28);
     return Math.min(max, Math.max(collapsedPx + 40, half));
   }
 

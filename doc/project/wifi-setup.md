@@ -25,8 +25,8 @@ This page is for the person at the track. The firmware-side design is in
 1. **Power the tracker.** With no saved network, it opens its setup hotspot
    within a few seconds.
 2. **Join the setup hotspot from your phone.** Its name is
-   `Orion-Setup-XXXX`, where `XXXX` comes from the board's MAC address. It is
-   an **open** hotspot, so no password is asked.
+   `Orion-Setup-XXXX`, where `XXXX` comes from the board's MAC address. The
+   password is **`12345`**.
 3. **Open the setup page.** Most phones show a "sign in to network" sheet
    automatically. If not, open a browser and go to
    **http://192.168.4.1/**.
@@ -42,7 +42,7 @@ This page is for the person at the track. The firmware-side design is in
    https://bnbcast.github.io/esp32-monitoring-pio/.
 
 If the password is wrong or the network is out of range, the setup hotspot
-comes back after 45 seconds. Join it again and correct the entry.
+comes back after 20 seconds. Join it again and correct the entry.
 
 ---
 
@@ -64,7 +64,7 @@ Removing the network the board is currently using does not drop the link until
 the next reboot or reconnect.
 
 You can also open the portal by waiting: if none of the saved networks connects
-for 45 seconds after boot, the board opens it on its own.
+for 20 seconds after boot, the board opens it on its own.
 
 ---
 
@@ -82,10 +82,10 @@ for 45 seconds after boot, the board opens it on its own.
 
 ## Security notes
 
-- The setup hotspot is **open while it exists**. Anyone in radio range can join
-  it during setup. It only runs during provisioning, is never left on after a
-  working connection (unless opened manually), and its save/forget endpoints
-  reject clients that did not connect through the setup AP.
+- The setup hotspot uses the password **`12345`** while it exists. It only runs
+  during provisioning, is never left on after a working connection (unless
+  opened manually), and its save/forget endpoints reject clients that did not
+  connect through the setup AP.
 - The tracker never exposes the stored password: the page lists SSIDs only, and
   passwords are written to NVS without being read back into HTML.
 - This repository must never contain a real SSID/password. If a credential was

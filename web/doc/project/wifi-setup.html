@@ -66,7 +66,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <li><strong>Power the tracker.</strong> With no saved network, it opens its setup hotspot</li>
 <p>within a few seconds.</p>
 <li><strong>Join the setup hotspot from your phone.</strong> Its name is</li>
-<p><code>Orion-Setup-XXXX</code>, where <code>XXXX</code> comes from the board's MAC address. It is an <strong>open</strong> hotspot, so no password is asked.</p>
+<p><code>Orion-Setup-XXXX</code>, where <code>XXXX</code> comes from the board's MAC address. The password is <strong><code>12345</code></strong>.</p>
 <li><strong>Open the setup page.</strong> Most phones show a &quot;sign in to network&quot; sheet</li>
 <p>automatically. If not, open a browser and go to <strong>http://192.168.4.1/</strong>.</p>
 <li><strong>Add the network:</strong></li>
@@ -83,7 +83,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <li><strong>Check the dashboard.</strong> Live data should start within a few seconds at</li>
 <p>https://bnbcast.github.io/esp32-monitoring-pio/.</p>
 </ol>
-<p>If the password is wrong or the network is out of range, the setup hotspot comes back after 45 seconds. Join it again and correct the entry.</p>
+<p>If the password is wrong or the network is out of range, the setup hotspot comes back after 20 seconds. Join it again and correct the entry.</p>
 <hr>
 <h2 id="adding-or-changing-a-network-later">Adding or changing a network later</h2>
 <p>The tracker keeps up to <strong>4</strong> networks, newest first. Saving a network that is already in the list replaces it, so changing a password is just another save.</p>
@@ -94,7 +94,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 </ul>
 <p>The portal starts in AP+STA mode, so a tracker that is already publishing keeps publishing while you edit. It stays open until you hold BOOT again or reboot.</p>
 <p>The <strong>Saved networks</strong> card shows what is stored. <strong>Forget</strong> removes one entry. Removing the network the board is currently using does not drop the link until the next reboot or reconnect.</p>
-<p>You can also open the portal by waiting: if none of the saved networks connects for 45 seconds after boot, the board opens it on its own.</p>
+<p>You can also open the portal by waiting: if none of the saved networks connects for 20 seconds after boot, the board opens it on its own.</p>
 <hr>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <div class="table-wrap"><table>
@@ -109,8 +109,8 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <hr>
 <h2 id="security-notes">Security notes</h2>
 <ul>
-<li>The setup hotspot is <strong>open while it exists</strong>. Anyone in radio range can join</li>
-<p>it during setup. It only runs during provisioning, is never left on after a working connection (unless opened manually), and its save/forget endpoints reject clients that did not connect through the setup AP.</p>
+<li>The setup hotspot uses the password <strong><code>12345</code></strong> while it exists. It only runs</li>
+<p>during provisioning, is never left on after a working connection (unless opened manually), and its save/forget endpoints reject clients that did not connect through the setup AP.</p>
 <li>The tracker never exposes the stored password: the page lists SSIDs only, and</li>
 <p>passwords are written to NVS without being read back into HTML.</p>
 <li>This repository must never contain a real SSID/password. If a credential was</li>
