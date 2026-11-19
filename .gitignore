@@ -11,6 +11,7 @@ build/
 .wrangler/
 .dev.vars
 src/history_secret.h
+src/wifi_config.h
 worker/pages/.wrangler/
 .claude/
 .pi/

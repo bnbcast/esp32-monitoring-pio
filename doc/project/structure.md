@@ -15,14 +15,19 @@ esp32-monitoring-pio/
 ├── lib/                     # Private libraries
 ├── src/                     # Firmware source
 │   ├── main.cpp             # Entry point, env dispatch
+│   ├── wifi_config.example.h # Bench template (copy to wifi_config.h, gitignored)
 │   └── mqtt_simple/         # Single-WiFi MQTT variant
 │       ├── mqtt_simple.h
 │       ├── mqtt_simple.cpp  # Main firmware logic
+│       ├── wifi_store.cpp   # Wi-Fi credentials in NVS (up to 4)
+│       ├── wifi_store.h
+│       ├── wifi_portal.cpp  # Captive setup portal (AP + HTTP + scan)
+│       ├── wifi_portal.h
 │       ├── history.cpp      # HTTPS batch upload (30s)
 │       ├── history.h
 │       └── history_secret.h # (gitignored) API keys
 ├── test/                    # Unit tests (node --test)
-│   ├── *.test.js            # GPS, MPU3D, charts, sessions, etc.
+│   ├── *.test.js            # GPS, MPU3D, charts, sessions, Wi-Fi, etc.
 │   ├── ui.test.js           # Static HTML/CSS/JS invariants
 │   └── api-docs.test.js     # Interactive API tester invariants
 ├── web/                     # Dashboard (static site → GitHub Pages)
@@ -75,7 +80,9 @@ esp32-monitoring-pio/
 
 | File | Responsibility |
 |------|----------------|
-| `mqtt_simple.cpp` | WiFi, MQTT, GPS (NEO-6M), MPU6050, 1 Hz publish |
+| `mqtt_simple.cpp` | WiFi state machine, MQTT, GPS (NEO-6M), MPU6050, 1 Hz publish |
+| `wifi_store.cpp` | Versioned NVS blob: up to 4 SSID/password pairs, newest first |
+| `wifi_portal.cpp` | Open setup AP, captive DNS, scan/save/forget page, deferred reboot |
 | `history.cpp` | Ring buffer (LittleFS), 30s HTTPS batch to Pages |
 | `history.h` | Config: URL, device ID, enable flag |
 
@@ -146,7 +153,7 @@ ESP32 (1 Hz)
 | Firmware | `pio run -e esp32-mqtt-simple` | `.pio/build/.../firmware.bin` |
 | Upload | `pio run -e esp32-mqtt-simple -t upload` | Flash via USB |
 | Dashboard (local) | `npm run dev` | `http://localhost:5003/?dev` |
-| Tests | `npm test` | 129 unit tests |
+| Tests | `npm test` | 143 unit tests |
 | Browser probes | `node dev/check-*.mjs` | Playwright screenshots |
 | Dashboard (prod) | `git push` → GitHub Actions | `https://bnbcast.github.io/...` |
 | API (prod) | `cd worker/pages && npx wrangler pages deploy` | `https://race-tracker-history.pages.dev` |
@@ -157,8 +164,8 @@ ESP32 (1 Hz)
 
 | Artifact | Version Location |
 |----------|------------------|
-| Dashboard assets | `?v=54` in `index.html` (all 21 refs) |
-| Firmware | `FW_VERSION "1.4.0"` in `mqtt_simple.cpp` |
+| Dashboard assets | `?v=56` in `index.html` (all 21 refs) |
+| Firmware | `FW_VERSION "1.5.0"` in `mqtt_simple.cpp` |
 | MQTT client ID | `orion-<MAC>` at boot |
 | API | No version (backwards compatible) |
 
@@ -172,3 +179,5 @@ ESP32 (1 Hz)
 - Accuracy circle uploaded once per fix (`ui.test.js`)
 - MPU3D math pure functions, testable under node (`mpu3d.test.js`)
 - Dashboard calls `MPU3D.draw()` on tab open + resize (`ui.test.js`)
+- Firmware image carries no Wi-Fi credential; NVS store dedupes and rolls back on a failed write (`wifi.test.js`)
+- Only setup-AP clients can reach `/save` and `/forget`; a save reboots after the response (`wifi.test.js`)

@@ -46,7 +46,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <div class="layout">
 <aside>
 <div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
-<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/live.html">GET /live — current sensor data</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="on" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/live.html">GET /live — current sensor data</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="on" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><a class="" href="../project/wifi-setup.html">Wi-Fi Setup Guide</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
 </aside>
 <main id="content"><h1 id="project-structure">Project Structure</h1>
 <pre><code>
@@ -64,14 +64,19 @@ esp32-monitoring-pio/
 ├── lib/                     # Private libraries
 ├── src/                     # Firmware source
 │   ├── main.cpp             # Entry point, env dispatch
+│   ├── wifi_config.example.h # Bench template (copy to wifi_config.h, gitignored)
 │   └── mqtt_simple/         # Single-WiFi MQTT variant
 │       ├── mqtt_simple.h
 │       ├── mqtt_simple.cpp  # Main firmware logic
+│       ├── wifi_store.cpp   # Wi-Fi credentials in NVS (up to 4)
+│       ├── wifi_store.h
+│       ├── wifi_portal.cpp  # Captive setup portal (AP + HTTP + scan)
+│       ├── wifi_portal.h
 │       ├── history.cpp      # HTTPS batch upload (30s)
 │       ├── history.h
 │       └── history_secret.h # (gitignored) API keys
 ├── test/                    # Unit tests (node --test)
-│   ├── *.test.js            # GPS, MPU3D, charts, sessions, etc.
+│   ├── *.test.js            # GPS, MPU3D, charts, sessions, Wi-Fi, etc.
 │   ├── ui.test.js           # Static HTML/CSS/JS invariants
 │   └── api-docs.test.js     # Interactive API tester invariants
 ├── web/                     # Dashboard (static site → GitHub Pages)
@@ -121,7 +126,9 @@ esp32-monitoring-pio/
 <div class="table-wrap"><table>
 <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
 <tbody>
-<tr><td><code>mqtt_simple.cpp</code></td><td>WiFi, MQTT, GPS (NEO-6M), MPU6050, 1 Hz publish</td></tr>
+<tr><td><code>mqtt_simple.cpp</code></td><td>WiFi state machine, MQTT, GPS (NEO-6M), MPU6050, 1 Hz publish</td></tr>
+<tr><td><code>wifi_store.cpp</code></td><td>Versioned NVS blob: up to 4 SSID/password pairs, newest first</td></tr>
+<tr><td><code>wifi_portal.cpp</code></td><td>Open setup AP, captive DNS, scan/save/forget page, deferred reboot</td></tr>
 <tr><td><code>history.cpp</code></td><td>Ring buffer (LittleFS), 30s HTTPS batch to Pages</td></tr>
 <tr><td><code>history.h</code></td><td>Config: URL, device ID, enable flag</td></tr>
 </tbody></table></div>
@@ -185,7 +192,7 @@ ESP32 (1 Hz)
 <tr><td>Firmware</td><td><code>pio run -e esp32-mqtt-simple</code></td><td><code>.pio/build/.../firmware.bin</code></td></tr>
 <tr><td>Upload</td><td><code>pio run -e esp32-mqtt-simple -t upload</code></td><td>Flash via USB</td></tr>
 <tr><td>Dashboard (local)</td><td><code>npm run dev</code></td><td><code>http://localhost:5003/?dev</code></td></tr>
-<tr><td>Tests</td><td><code>npm test</code></td><td>129 unit tests</td></tr>
+<tr><td>Tests</td><td><code>npm test</code></td><td>143 unit tests</td></tr>
 <tr><td>Browser probes</td><td><code>node dev/check-*.mjs</code></td><td>Playwright screenshots</td></tr>
 <tr><td>Dashboard (prod)</td><td><code>git push</code> → GitHub Actions</td><td><code>https://bnbcast.github.io/...</code></td></tr>
 <tr><td>API (prod)</td><td><code>cd worker/pages &amp;&amp; npx wrangler pages deploy</code></td><td><code>https://race-tracker-history.pages.dev</code></td></tr>
@@ -195,8 +202,8 @@ ESP32 (1 Hz)
 <div class="table-wrap"><table>
 <thead><tr><th>Artifact</th><th>Version Location</th></tr></thead>
 <tbody>
-<tr><td>Dashboard assets</td><td><code>?v=54</code> in <code>index.html</code> (all 21 refs)</td></tr>
-<tr><td>Firmware</td><td><code>FW_VERSION &quot;1.4.0&quot;</code> in <code>mqtt_simple.cpp</code></td></tr>
+<tr><td>Dashboard assets</td><td><code>?v=56</code> in <code>index.html</code> (all 21 refs)</td></tr>
+<tr><td>Firmware</td><td><code>FW_VERSION &quot;1.5.0&quot;</code> in <code>mqtt_simple.cpp</code></td></tr>
 <tr><td>MQTT client ID</td><td><code>orion-&lt;MAC&gt;</code> at boot</td></tr>
 <tr><td>API</td><td>No version (backwards compatible)</td></tr>
 </tbody></table></div>
@@ -209,6 +216,8 @@ ESP32 (1 Hz)
 <li>Accuracy circle uploaded once per fix (<code>ui.test.js</code>)</li>
 <li>MPU3D math pure functions, testable under node (<code>mpu3d.test.js</code>)</li>
 <li>Dashboard calls <code>MPU3D.draw()</code> on tab open + resize (<code>ui.test.js</code>)</li>
+<li>Firmware image carries no Wi-Fi credential; NVS store dedupes and rolls back on a failed write (<code>wifi.test.js</code>)</li>
+<li>Only setup-AP clients can reach <code>/save</code> and <code>/forget</code>; a save reboots after the response (<code>wifi.test.js</code>)</li>
 </ul></main>
 </div>
 </body>

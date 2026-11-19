@@ -11,6 +11,7 @@ This directory contains comprehensive documentation for the Orion Project: a liv
 | **API Reference** | [api/mqtt.md](api/mqtt.md) | Live MQTT topic structure, payload format |
 | **Project Structure** | [project/structure.md](project/structure.md) | Repository layout, module responsibilities |
 | **Project Structure** | [project/firmware.md](project/firmware.md) | ESP32 firmware architecture, build, flash |
+| **Project Structure** | [project/wifi-setup.md](project/wifi-setup.md) | Provisioning the tracker from a phone (setup hotspot) |
 | **Project Structure** | [project/dashboard.md](project/dashboard.md) | Dashboard JS modules, data flow, rendering |
 | **Project Structure** | [project/testing.md](project/testing.md) | Unit tests, browser probes, CI |
 | **Hardware** | [hardware/schematic.md](hardware/schematic.md) | ESP32 + NEO-6M + MPU6050 wiring, pinout |
@@ -34,7 +35,7 @@ This directory contains comprehensive documentation for the Orion Project: a liv
 | **History** | ESP32 → HTTPS batch (30s) → Cloudflare Pages Function → D1 |
 | **Dashboard** | Static site (GitHub Pages), vanilla JS, MapLibre GL |
 | **Firmware** | PlatformIO + Arduino, `esp32-mqtt-simple` env |
-| **Version** | Dashboard `?v=53`, Firmware `orion 1.4.0` |
+| **Version** | Dashboard `?v=56`, Firmware `orion 1.5.0` |
 
 ## Branding
 

@@ -23,6 +23,14 @@ pio run -e esp32-mqtt-simple            # build
 pio run -e esp32-mqtt-simple -t upload  # flash over COM4
 ```
 
+## First boot
+
+The firmware contains no Wi-Fi password. After flashing, the board opens an
+open setup hotspot named `Orion-Setup-XXXX`; join it from a phone and open
+http://192.168.4.1/ to pick a 2.4 GHz network (or leave the password empty for
+an open one). Credentials are stored in NVS, so a later reflash keeps them.
+Full walkthrough: [doc/project/wifi-setup.md](doc/project/wifi-setup.md).
+
 ## Dashboard
 
 ```powershell

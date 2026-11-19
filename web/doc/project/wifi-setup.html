@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wi-Fi Setup Guide - Orion Docs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icons/orion-32.png">
+<style>
+:root{--bg:#0d0f12;--panel:#151a20;--line:#252d37;--ink:#e8edf3;--muted:#9aa7b5;--accent:#ffe600;--code:#0a0c0f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700;letter-spacing:.5px}
+.brand img{width:30px;height:30px}
+.nav-group{margin:16px 0 6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+nav a{display:block;padding:6px 9px;border-radius:6px;color:var(--ink);font-size:14px}
+nav a:hover{background:#1e252d;text-decoration:none}
+nav a.on{background:#2a333d;color:var(--accent)}
+main{flex:1;min-width:0;padding:38px 48px 80px;max-width:1000px}
+h1{font-size:30px;margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+h2{font-size:22px;margin:34px 0 12px}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px;color:var(--muted)}
+p{margin:10px 0}
+code{background:var(--code);padding:2px 6px;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{padding:0;background:none}
+.table-wrap{overflow:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#1b222a}
+tbody tr:nth-child(even){background:#11161b}
+blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:#1a1d13;color:#e6e2b8}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card strong{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:12px}
+@media(max-width:820px){.layout{display:block}aside{width:auto;height:auto;position:static}main{padding:24px 18px 60px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/live.html">GET /live — current sensor data</a><a class="" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><a class="on" href="../project/wifi-setup.html">Wi-Fi Setup Guide</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+</aside>
+<main id="content"><h1 id="wi-fi-setup-guide">Wi-Fi Setup Guide</h1>
+<p>The tracker is not born knowing a Wi-Fi network. After flashing, it opens its own setup hotspot so a phone can hand it the name and password (or tell it the network is open). Credentials are stored in NVS, so they survive later reflashes of the application.</p>
+<p>This page is for the person at the track. The firmware-side design is in <a href="firmware.html#wi-fi-provisioning-nvs-setup-portal">firmware.html#wi-fi-provisioning-nvs-setup-portal</a>.</p>
+<hr>
+<h2 id="what-you-need">What you need</h2>
+<ul>
+<li>A phone or laptop with Wi-Fi.</li>
+<li>A <strong>2.4 GHz</strong> network. The ESP32 cannot see or join 5 GHz-only networks.</li>
+<li>The network password, unless it is an open network.</li>
+<li>The tracker powered over USB (the setup hotspot is only up while the board</li>
+<p>is running).</p>
+</ul>
+<hr>
+<h2 id="first-time-setup">First-time setup</h2>
+<ol>
+<li><strong>Power the tracker.</strong> With no saved network, it opens its setup hotspot</li>
+<p>within a few seconds.</p>
+<li><strong>Join the setup hotspot from your phone.</strong> Its name is</li>
+<p><code>Orion-Setup-XXXX</code>, where <code>XXXX</code> comes from the board's MAC address. It is an <strong>open</strong> hotspot, so no password is asked.</p>
+<li><strong>Open the setup page.</strong> Most phones show a &quot;sign in to network&quot; sheet</li>
+<p>automatically. If not, open a browser and go to <strong>http://192.168.4.1/</strong>.</p>
+<li><strong>Add the network:</strong></li>
+</ol>
+<ul>
+<li>Tap <strong>Scan</strong> to list what the tracker can see (strongest first), or type</li>
+<p>the SSID directly for a hidden network.</p>
+<li>Enter the password. Leave it <strong>empty</strong> for an open network.</li>
+<li>Tap <strong>Save and reboot</strong>.</li>
+</ul>
+<ol>
+<li><strong>Let the board join.</strong> It reboots and connects. Your phone may complain</li>
+<p>that the setup hotspot has no internet; that is expected, so reconnect your phone to its normal Wi-Fi.</p>
+<li><strong>Check the dashboard.</strong> Live data should start within a few seconds at</li>
+<p>https://bnbcast.github.io/esp32-monitoring-pio/.</p>
+</ol>
+<p>If the password is wrong or the network is out of range, the setup hotspot comes back after 45 seconds. Join it again and correct the entry.</p>
+<hr>
+<h2 id="adding-or-changing-a-network-later">Adding or changing a network later</h2>
+<p>The tracker keeps up to <strong>4</strong> networks, newest first. Saving a network that is already in the list replaces it, so changing a password is just another save.</p>
+<p>To open the portal while the tracker is running:</p>
+<ul>
+<li><strong>Hold the BOOT button (GPIO0) for 3 seconds</strong>, or</li>
+<li>press <strong><code>w</code></strong> in the serial console.</li>
+</ul>
+<p>The portal starts in AP+STA mode, so a tracker that is already publishing keeps publishing while you edit. It stays open until you hold BOOT again or reboot.</p>
+<p>The <strong>Saved networks</strong> card shows what is stored. <strong>Forget</strong> removes one entry. Removing the network the board is currently using does not drop the link until the next reboot or reconnect.</p>
+<p>You can also open the portal by waiting: if none of the saved networks connects for 45 seconds after boot, the board opens it on its own.</p>
+<hr>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Symptom</th><th>What to check</th></tr></thead>
+<tbody>
+<tr><td><code>Orion-Setup-XXXX</code> does not appear</td><td>The tracker is already connected to a saved network, or it has been up for less than a few seconds. Hold BOOT for 3 s.</td></tr>
+<tr><td>The network is missing from the scan</td><td>It is 5 GHz-only, or hidden. Type the SSID by hand (case-sensitive).</td></tr>
+<tr><td>&quot;Password too short&quot;</td><td>WPA passphrases are 8–63 characters. Use the empty password field only for a genuinely open network.</td></tr>
+<tr><td>Saved, rebooted, portal came back</td><td>Wrong password, out of range, or the venue uses a captive portal of its own. Rejoin the setup hotspot and retry.</td></tr>
+<tr><td>It joined but the dashboard is offline</td><td>Check the broker/internet path; the serial panel shows the Wi-Fi and MQTT state separately.</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="security-notes">Security notes</h2>
+<ul>
+<li>The setup hotspot is <strong>open while it exists</strong>. Anyone in radio range can join</li>
+<p>it during setup. It only runs during provisioning, is never left on after a working connection (unless opened manually), and its save/forget endpoints reject clients that did not connect through the setup AP.</p>
+<li>The tracker never exposes the stored password: the page lists SSIDs only, and</li>
+<p>passwords are written to NVS without being read back into HTML.</p>
+<li>This repository must never contain a real SSID/password. If a credential was</li>
+<p>ever committed, rotate it at the hotspot; deleting the file does not remove it from git history.</p>
+</ul></main>
+</div>
+</body>
+</html>

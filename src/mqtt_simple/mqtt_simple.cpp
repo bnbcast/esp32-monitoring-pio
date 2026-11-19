@@ -32,9 +32,11 @@
 #define HAVE_TASK_WDT 0
 #endif
 
-// ============ NETWORK (EDIT THESE) ============
-// Shared with src/bench so the measurement build joins the same APs.
-#include "../wifi_config.h"
+// ============ NETWORK (PROVISIONED AT RUNTIME) ============
+// No SSID or password is compiled into the image. The tracker reads its list
+// from NVS and, when nothing connects, opens a phone-friendly setup portal.
+#include "wifi_store.h"
+#include "wifi_portal.h"
 
 #define MQTT_HOST     "broker.hivemq.com"
 #define MQTT_PORT     1883
@@ -56,12 +58,13 @@
 
 // ============ IDENTITY ============
 #define FW_NAME     "orion"
-#define FW_VERSION  "1.4.0"
+#define FW_VERSION  "1.5.0"
 
 // ============ SERIAL CONSOLE ============
 // One framed panel every DASH_INTERVAL_MS plus event lines as they happen.
 // Keys: g raw NMEA echo | v verbose | c colours | p panel | ? help
 //       d LED self-test | y invert LED polarity | a/b lap gates | x reboot
+//       w Wi-Fi setup portal (hold BOOT on GPIO0 for 3 s too)
 #define ANSI_RESET  "\033[0m"
 #define ANSI_BOLD   "\033[1m"
 #define ANSI_DIM    "\033[2m"
@@ -79,6 +82,13 @@
 #define MQTT_WATCHDOG_MS      20000UL // connected but nothing delivered -> reconnect
 #define WIFI_RETRY_MS         10000UL // retry pause when idle
 #define WIFI_CONNECT_TIMEOUT  15000UL // give up one association attempt after this
+// If no saved network connects within this window, open the setup portal. It is
+// deliberately longer than one scan + association cycle, so a slow DHCP server
+// is not mistaken for a wrong password.
+#define WIFI_PORTAL_AFTER_MS  45000UL
+// Long-press the BOOT button (GPIO0) to open/close the portal at runtime.
+#define WIFI_BOOT_PIN         0
+#define WIFI_BOOT_HOLD_MS     3000UL
 // The radio's TX burst is the largest current spike on the board. 19.5 dBm
 // (the default) is more than a pit-lane AP needs and makes a boost-fed rail
 // sag; 15 dBm cuts the peak by roughly a third and is still ~30 m indoors.
@@ -214,9 +224,11 @@ uint32_t txSeq = 0, txOk = 0, txFail = 0, txDrop = 0;
 enum WifiPhase { WF_IDLE, WF_SCANNING, WF_CONNECTING };
 WifiPhase wifiPhase = WF_IDLE;
 unsigned long wifiPhaseSince = 0;
-int8_t lastGoodNet = -1;        // index into WIFI_NETS of the last working AP
+int8_t lastGoodNet = -1;        // index into the NVS credential list of the last working AP
 int8_t directNext  = 0;         // round-robin cursor for hidden/scan-missed APs
 uint8_t wifiFailStreak = 0;     // consecutive association timeouts on lastGoodNet
+unsigned long wifiDownSince = 0; // when the current disconnection window started
+bool wifiPortalOpenedWithLink = false; // portal was opened while already online
 
 // Pending publish ring (oldest at txqHead)
 static char txq[TXQ_SLOTS][TXQ_LEN];
@@ -1393,39 +1405,126 @@ static void gpsShowGates() {
 }
 
 // ============ NETWORK ============
+// Exact SSID match first, then prefix. This is the same rule the old compiled
+// list used, so "ESP32_AP2" still falls back to a saved "ESP32" and a saved
+// "Track" cannot steal "Track-Guest" when the exact entry is also present.
+static int8_t findSavedNetwork(const String& seen) {
+  const size_t count = wifiStoreCount();
+  for (size_t c = 0; c < count; c++) {
+    const char* cand = wifiStoreSsid(c);
+    if (cand[0] && seen == cand) return (int8_t)c;
+  }
+  for (size_t c = 0; c < count; c++) {
+    const char* cand = wifiStoreSsid(c);
+    if (cand[0] && seen.startsWith(cand)) return (int8_t)c;
+  }
+  return -1;
+}
+
 // Pick the best visible candidate: exact SSID match beats prefix match, and the
 // previously working network wins ties so we do not flap between APs.
 int8_t pickBestNetwork(int found) {
   int8_t exact = -1, prefix = -1;
+  const size_t count = wifiStoreCount();
   for (int i = 0; i < found; i++) {
     // One String per visible AP, not one per (AP, candidate) pair: this call
     // used to allocate inside the inner loop and fragment the heap on every
     // rescan, which happens for hours on a pit lane.
     String seen = WiFi.SSID(i);
-    for (size_t c = 0; c < WIFI_NET_COUNT; c++) {
-      if (seen == WIFI_NETS[c].ssid) { if (exact < 0) exact = (int8_t)c; }
-      else if (seen.startsWith(WIFI_NETS[c].ssid)) { if (prefix < 0) prefix = (int8_t)c; }
+    for (size_t c = 0; c < count; c++) {
+      const char* cand = wifiStoreSsid(c);
+      if (!cand[0]) continue;
+      if (seen == cand) { if (exact < 0) exact = (int8_t)c; }
+      else if (seen.startsWith(cand)) { if (prefix < 0) prefix = (int8_t)c; }
     }
     if (exact >= 0) break;
   }
   if (exact >= 0) return exact;
   if (prefix >= 0) return prefix;
-  if (lastGoodNet >= 0) return lastGoodNet;   // last resort: known-good AP
+  if (lastGoodNet >= 0 && (size_t)lastGoodNet < count) return lastGoodNet;
   return -1;
+}
+
+static void wifiStartScan(unsigned long now) {
+  logMsg(L_INFO, "NET", "scanning (async)");
+  WiFi.scanNetworks(true /*async*/, false);
+  wifiPhase = WF_SCANNING;
+  wifiPhaseSince = now;
+}
+
+// The portal formats its own one-line messages; keep them in the same NET log
+// stream instead of printing a second, differently styled console.
+static void wifiPortalLogSink(const char* line) {
+  logMsg(L_INFO, "NET", "%s", line);
+}
+
+// Open or close the setup portal from the console or the BOOT button.
+static void wifiPortalToggle(const char* reason) {
+  if (wifiPortalActive()) {
+    logMsg(L_INFO, "NET", "closing setup portal (%s)", reason);
+    wifiPortalEnd();
+    wifiPortalOpenedWithLink = false;
+    wifiPhase = WF_IDLE;
+    lastWifiTry = 0;
+    wifiDownSince = millis();
+    if (wifiStoreCount() > 0) wifiStartScan(millis());
+    return;
+  }
+
+  logMsg(L_WARN, "NET", "opening setup portal (%s)", reason);
+  wifiPortalOpenedWithLink = (WiFi.status() == WL_CONNECTED);
+  if (wifiPortalBegin()) {
+    logMsg(L_OK, "NET", "join '%s' then open http://%s/",
+           wifiPortalSsid(), WiFi.softAPIP().toString().c_str());
+    wifiPhase = WF_IDLE;
+  } else {
+    logMsg(L_ERR, "NET", "setup portal failed to start");
+  }
+}
+
+// BOOT/GPIO0 is active-low on every classic ESP32 devkit. Require a release
+// after boot before accepting a hold: the flasher holds the same pin low, and a
+// board that boots into flashing mode must not open the portal.
+static void wifiButtonService(unsigned long now) {
+  static bool sawRelease = false;
+  static bool fired = false;
+  static unsigned long downAt = 0;
+
+  const bool down = digitalRead(WIFI_BOOT_PIN) == LOW;
+  if (!down) {
+    sawRelease = true;
+    fired = false;
+    downAt = 0;
+    return;
+  }
+  if (!sawRelease || fired) return;
+  if (downAt == 0) { downAt = now; return; }
+  if (now - downAt >= WIFI_BOOT_HOLD_MS) {
+    fired = true;
+    wifiPortalToggle("BOOT button");
+  }
 }
 
 // Non-blocking Wi-Fi driver. Never calls the blocking scanNetworks(); the async
 // form returns immediately and is polled here, so sensors and MQTT keep running.
 void wifiService(unsigned long now) {
   if (WiFi.status() == WL_CONNECTED) {
+    // A portal opened because the link was down must not stay open once the
+    // link comes back: that would leave an open AP running next to a working
+    // tracker. A portal opened manually while already online is left alone so
+    // the user can change networks without dropping telemetry.
+    if (wifiPortalActive() && !wifiPortalOpenedWithLink) {
+      logMsg(L_OK, "NET", "station link restored - closing setup portal");
+      wifiPortalEnd();
+      wifiPortalOpenedWithLink = false;
+    }
+
+    wifiDownSince = 0;
     if (wifiPhase != WF_IDLE) {
       wifiPhase = WF_IDLE;
       wifiFailStreak = 0;
       // Remember the AP that actually worked so reconnects skip the scan.
-      String cur = WiFi.SSID();
-      for (size_t c = 0; c < WIFI_NET_COUNT; c++) {
-        if (cur == WIFI_NETS[c].ssid || cur.startsWith(WIFI_NETS[c].ssid)) { lastGoodNet = (int8_t)c; break; }
-      }
+      lastGoodNet = findSavedNetwork(WiFi.SSID());
       logMsg(L_OK, "NET", "connected '%s'  ip=%s  rssi=%d dBm  ch=%d  (slot %d)",
              WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(),
              (int)WiFi.RSSI(), (int)WiFi.channel(), (int)lastGoodNet);
@@ -1433,21 +1532,55 @@ void wifiService(unsigned long now) {
     return;
   }
 
+  // The portal owns the radio while it is open and there is no station link.
+  if (wifiPortalActive()) return;
+
+  if (wifiDownSince == 0) wifiDownSince = now;
+
+  const size_t count = wifiStoreCount();
+  if (count == 0) {
+    // Nothing to try. Keep the portal alive; if softAP failed, retry slowly.
+    if (now - wifiDownSince >= WIFI_RETRY_MS) {
+      logMsg(L_WARN, "NET", "no saved networks - opening setup portal");
+      wifiPortalOpenedWithLink = false;
+      if (wifiPortalBegin()) {
+        logMsg(L_OK, "NET", "join '%s' then open http://%s/",
+               wifiPortalSsid(), WiFi.softAPIP().toString().c_str());
+      }
+      wifiDownSince = now;
+    }
+    return;
+  }
+
+  if (now - wifiDownSince >= WIFI_PORTAL_AFTER_MS) {
+    logMsg(L_WARN, "NET", "no saved network after %lus - opening setup portal",
+           (unsigned long)(WIFI_PORTAL_AFTER_MS / 1000UL));
+    wifiPortalOpenedWithLink = false;
+    if (wifiPortalBegin()) {
+      logMsg(L_OK, "NET", "join '%s' then open http://%s/",
+             wifiPortalSsid(), WiFi.softAPIP().toString().c_str());
+      wifiPhase = WF_IDLE;
+    }
+    return;
+  }
+
+  // The NVS list can change while a cached index is held (forget from the
+  // portal), so never dereference a slot that no longer exists.
+  if (lastGoodNet >= (int8_t)count) lastGoodNet = -1;
+
   switch (wifiPhase) {
     case WF_IDLE:
       if (now - lastWifiTry < WIFI_RETRY_MS) return;
       lastWifiTry = now;
       if (lastGoodNet >= 0) {
         // Fast path: re-associate with the AP that worked before, no scan.
-        logMsg(L_INFO, "NET", "retrying '%s'", WIFI_NETS[lastGoodNet].ssid);
-        WiFi.begin(WIFI_NETS[lastGoodNet].ssid, WIFI_NETS[lastGoodNet].pass);
+        const size_t slot = (size_t)lastGoodNet;
+        logMsg(L_INFO, "NET", "retrying '%s'", wifiStoreSsid(slot));
+        WiFi.begin(wifiStoreSsid(slot), wifiStorePass(slot));
         wifiPhase = WF_CONNECTING;
         wifiPhaseSince = now;
       } else {
-        logMsg(L_INFO, "NET", "scanning (async)");
-        WiFi.scanNetworks(true /*async*/, false);
-        wifiPhase = WF_SCANNING;
-        wifiPhaseSince = now;
+        wifiStartScan(now);
       }
       break;
 
@@ -1471,28 +1604,26 @@ void wifiService(unsigned long now) {
                i, WiFi.SSID(i).c_str(), (int)WiFi.RSSI(i), (int)WiFi.channel(i));
       }
       logMsg(L_INFO, "NET", "%d network(s) visible, best candidate=%s",
-             found, best >= 0 ? WIFI_NETS[best].ssid : "none");
+             found, best >= 0 ? wifiStoreSsid((size_t)best) : "none");
       WiFi.scanDelete();
       if (best >= 0) {
-        logMsg(L_INFO, "NET", "connecting to '%s'%s", WIFI_NETS[best].ssid,
-               WIFI_NETS[best].pass[0] ? "" : " (open)");
-        WiFi.begin(WIFI_NETS[best].ssid, WIFI_NETS[best].pass);
+        const size_t slot = (size_t)best;
+        logMsg(L_INFO, "NET", "connecting to '%s'%s", wifiStoreSsid(slot),
+               wifiStorePass(slot)[0] ? "" : " (open)");
+        WiFi.begin(wifiStoreSsid(slot), wifiStorePass(slot));
         wifiPhase = WF_CONNECTING;
         wifiPhaseSince = now;
       } else {
-        // No configured SSID showed up in the scan. Hidden APs never do, and a
+        // No saved SSID showed up in the scan. Hidden APs never do, and a
         // busy radio can miss a weak beacon, so try each candidate directly
         // before giving up. Round-robin keeps the loop non-blocking.
-        if (WIFI_NET_COUNT > 0) {
-          int8_t cand = directNext % (int8_t)WIFI_NET_COUNT;
-          directNext = (int8_t)((cand + 1) % (int8_t)WIFI_NET_COUNT);
-          logMsg(L_INFO, "NET", "not in scan, trying '%s' directly", WIFI_NETS[cand].ssid);
-          WiFi.begin(WIFI_NETS[cand].ssid, WIFI_NETS[cand].pass);
-          wifiPhase = WF_CONNECTING;
-          wifiPhaseSince = now;
-        } else {
-          wifiPhase = WF_IDLE;
-        }
+        int8_t cand = directNext % (int8_t)count;
+        directNext = (int8_t)((cand + 1) % (int8_t)count);
+        const size_t slot = (size_t)cand;
+        logMsg(L_INFO, "NET", "not in scan, trying '%s' directly", wifiStoreSsid(slot));
+        WiFi.begin(wifiStoreSsid(slot), wifiStorePass(slot));
+        wifiPhase = WF_CONNECTING;
+        wifiPhaseSince = now;
       }
       break;
     }
@@ -1511,7 +1642,7 @@ void wifiService(unsigned long now) {
         // pass must rescan instead of hammering the same dead SSID forever.
         if (lastGoodNet >= 0 && ++wifiFailStreak >= 3) {
           logMsg(L_WARN, "NET", "'%s' failed %u times, forcing a rescan",
-                 WIFI_NETS[lastGoodNet].ssid, (unsigned)wifiFailStreak);
+                 wifiStoreSsid((size_t)lastGoodNet), (unsigned)wifiFailStreak);
           lastGoodNet = -1;
           wifiFailStreak = 0;
         }
@@ -1771,11 +1902,19 @@ void networkService() {
 #if VIEWER_MODE == 0
   unsigned long now = millis();
 
+  // The portal must keep serving even while the station is down, because that
+  // is exactly when the user is configuring it. The BOOT button is polled here
+  // too so a held GPIO0 works without a serial console.
+  wifiPortalLoop();
+  wifiButtonService(now);
+
+  if (wifiPortalActive() && WiFi.status() != WL_CONNECTED) return;
+
   wifiService(now);
 
   if (WiFi.status() != WL_CONNECTED) {
-    // Remember which candidate actually works, so the next reconnect can skip
-    // the scan entirely and go straight back to it.
+    // wifiService has already logged why; the reconnect state machine owns
+    // the next attempt. Returning here keeps MQTT off a dead link.
     return;
   }
 
@@ -1931,6 +2070,16 @@ static void printStatus() {
   Serial.printf("%s+------------------------------------------------------------------------------%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
 
+  // Network hints come first: when the board is offline nothing else on the
+  // dashboard can update, so this is the most actionable line.
+  if (wifiPortalActive()) {
+    Serial.printf("  ! NET  setup portal '%s' open - join it and open http://%s/\n",
+                  wifiPortalSsid(), WiFi.softAPIP().toString().c_str());
+  } else if (!wifiOk) {
+    Serial.printf("  ! NET  no Wi-Fi link - press w or hold BOOT/GPIO0 for 3 s (%u saved)\n",
+                  (unsigned)wifiStoreCount());
+  }
+
   // One hint per failure, phrased as the next physical thing to check.
   if (!gpsLive)
     Serial.println("  ! GPS  no bytes at all - check TX->GPIO25, common GND, module VCC");
@@ -2002,6 +2151,10 @@ void printBanner() {
   Serial.printf(" topic %s\n", TOPIC_DATA);
   Serial.printf(" broker %s:%d  keepalive %ds  publish %dms\n",
                 MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_S, PUBLISH_INTERVAL_MS);
+#if VIEWER_MODE == 0
+  Serial.printf(" wifi  %u saved network(s) in NVS   setup: hold BOOT 3 s or press w\n",
+                (unsigned)wifiStoreCount());
+#endif
   Serial.printf(" gps   uart2  RX=%d  TX=%d  %d/%d/115200 8N1 (UBX re-baud to %d when it answers)\n",
                 GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD, GPS_BAUD_FAST, GPS_BAUD_FAST);
   Serial.printf(" pins  i2c SDA=%d SCL=%d @100kHz   leds %d/%d/%d\n",
@@ -2016,6 +2169,8 @@ void printHelp() {
   Serial.printf("%sled   d light each LED in turn | y invert polarity (all-on / dark)%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
   Serial.printf("%slap   a gate A here | b gate B here | l clear paint | k show gates%s\n",
+                A(ANSI_DIM), A(ANSI_RESET));
+  Serial.printf("%swifi  w setup portal (hold BOOT/GPIO0 3 s) | x reboot%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
 }
 
@@ -2046,6 +2201,9 @@ void mqtt_simple_setup() {
   delay(500);
 
   gm.lastMs = millis();
+  // Provisioned credentials live in NVS, never in the image. Read them before
+  // the banner so the first screen says how many networks the board has.
+  wifiStoreLoad();
   printBanner();
 
   // Ask the module to run 5 Hz / automotive / static hold / SBAS. Falls back to
@@ -2056,10 +2214,13 @@ void mqtt_simple_setup() {
   gm.lastMs = millis();
 
 #if VIEWER_MODE == 0
-  // Start Wi-Fi in the background so calibration is not delayed. At boot we do
-  // not know which candidate is around, so go straight to the async scan
-  // instead of burning 15 s on a guess.
+  // Start Wi-Fi in the background so calibration is not delayed. The list is
+  // in NVS; with nothing saved there is no point scanning, so open the portal
+  // immediately and let the phone add the first network.
   snprintf(clientId, sizeof clientId, "orion-%08lX", (unsigned long)ESP.getEfuseMac());
+  wifiPortalSetLogger(wifiPortalLogSink);
+  pinMode(WIFI_BOOT_PIN, INPUT_PULLUP);
+
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -2068,15 +2229,25 @@ void mqtt_simple_setup() {
   WiFi.setSleep(false);
   // Reduce the 3.3 V TX current spike; see WIFI_TX_POWER above.
   WiFi.setTxPower(WIFI_TX_POWER);
-  logMsg(L_INFO, "NET", "scanning for a known network (async)");
-  WiFi.scanNetworks(true /*async*/, false);
-  wifiPhase = WF_SCANNING;
-  wifiPhaseSince = millis();
-  lastWifiTry = millis();
+
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setBufferSize(2048);                            // JSON + wifi block fits with room to spare
   mqtt.setSocketTimeout(MQTT_SOCKET_TIMEOUT_S);
   mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
+
+  wifiDownSince = millis();
+  if (wifiStoreCount() == 0) {
+    logMsg(L_WARN, "NET", "no saved networks - opening setup portal");
+    if (wifiPortalBegin()) {
+      logMsg(L_OK, "NET", "join '%s' then open http://%s/",
+             wifiPortalSsid(), WiFi.softAPIP().toString().c_str());
+    }
+  } else {
+    logMsg(L_INFO, "NET", "%u saved network(s) in NVS, scanning (async)",
+           (unsigned)wifiStoreCount());
+    wifiStartScan(millis());
+    lastWifiTry = millis();
+  }
 #endif
 
   logMsg(L_INFO, "IMU", "probing MPU6050 on SDA=%d SCL=%d", I2C_SDA_PIN, I2C_SCL_PIN);
@@ -2232,6 +2403,9 @@ static void handleKeys() {
         Serial.flush();
         delay(100);
         ESP.restart();
+        break;
+      case 'w': case 'W':
+        wifiPortalToggle("console");
         break;
       case 't': case 'T':
         if (historySelfTest())

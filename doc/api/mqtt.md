@@ -89,12 +89,12 @@ Published once per second, retained. Real shape (one line on the wire):
     "rssi": -52,
     "temp_c": 41.8,
     "wifi": {
-      "ssid": "Gi Joe",
+      "ssid": "Track-Hotspot",
       "bssid": "aa:bb:cc:dd:ee:ff",
       "channel": 6,
       "status": "Connected",
       "ip": "10.0.0.42",
-      "mac": "28:56:2f:49:b9:10"
+      "mac": "02:00:00:00:00:01"
     }
   }
 }
@@ -154,6 +154,8 @@ Published once per second, retained. Real shape (one line on the wire):
 
 > `sys.wifi.status` is `Connected`, `Disconnected`, `No SSID`, `Connect failed`,
 > `Idle` or `Unknown`. When not connected, `ssid` is empty and `ip` is `-`.
+> The SSID is whatever was provisioned from the phone; it is not compiled into
+> the firmware. See [wifi-setup.md](../project/wifi-setup.md).
 
 > `sys.temp_c` is the ESP32's internal **die** sensor, sampled once per publish.
 > On a classic ESP32 it is uncalibrated: read it as "the chip is heating up",
@@ -194,7 +196,7 @@ Plain string, not JSON:
 #define TOPIC_DATA   "esp32-dash/" TOPIC_KEY "/data"
 #define TOPIC_STATUS "esp32-dash/" TOPIC_KEY "/status"
 #define FW_NAME     "orion"
-#define FW_VERSION  "1.4.0"
+#define FW_VERSION  "1.5.0"
 #define PUBLISH_INTERVAL_MS 1000
 ```
 

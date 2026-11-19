@@ -12,7 +12,7 @@ Three layers of testing ensure correctness without a device farm.
 
 ---
 
-## Unit Tests (129 tests)
+## Unit Tests (143 tests)
 
 Run: `npm test`
 
@@ -30,6 +30,7 @@ Run: `npm test`
 | `test/guard.test.js` | Operator lock logic |
 | `test/ui.test.js` | Static HTML/CSS/JS invariants |
 | `test/api-docs.test.js` | API tester: every endpoint card, no key leak, CSP, live summary |
+| `test/wifi.test.js` | Runtime provisioning: no compiled credential, NVS list, captive portal, subnet guard |
 
 Worker tests run separately, because they exercise the Cloudflare handler with
 a fake D1 and a socket-free MQTT codec:

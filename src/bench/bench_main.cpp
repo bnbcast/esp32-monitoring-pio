@@ -23,7 +23,16 @@
 #include <mbedtls/ecdsa.h>
 #include <mbedtls/entropy.h>
 
+// Bench-only credentials. The file is gitignored so no real password enters the
+// public repository: copy src/wifi_config.example.h to src/wifi_config.h and
+// fill in a network this build is allowed to join. A fresh clone still builds
+// and simply reports that Wi-Fi was not configured.
+#if __has_include("../wifi_config.h")
 #include "../wifi_config.h"
+#define BENCH_HAVE_WIFI_CONFIG 1
+#else
+#define BENCH_HAVE_WIFI_CONFIG 0
+#endif
 
 // Arduino-ESP32 3.x has no setBufferSizes(); mbedTLS buffer sizes come from
 // the core Kconfig. What matters for W3 is the cost of a default handshake,
@@ -117,6 +126,7 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(false);
   bool joined = false;
+#if BENCH_HAVE_WIFI_CONFIG
   for (size_t i = 0; i < WIFI_NET_COUNT && !joined; i++) {
     WiFi.begin(WIFI_NETS[i].ssid, WIFI_NETS[i].pass);
     unsigned long t0 = millis();
@@ -128,6 +138,10 @@ void setup() {
       delay(300);
     }
   }
+#else
+  Serial.println("BENCH note: src/wifi_config.h not present; "
+                 "copy src/wifi_config.example.h to run the TLS probe");
+#endif
 
   Serial.printf(
     "BENCH {\"wifi\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"heap_free\":%lu}\n",

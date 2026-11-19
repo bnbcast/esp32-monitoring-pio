@@ -6,7 +6,8 @@ Single-variant firmware (`esp32-mqtt-simple`) for classic ESP32 (`esp32doit-devk
 - Framework: Arduino (PlatformIO)
 - Transport: MQTT over TCP (`broker.hivemq.com:1883`); the browser dashboard uses `wss://broker.hivemq.com:8884/mqtt`
 - Sensors: NEO-6M GPS (UART), MPU6050 (I2C)
-- Storage: LittleFS ring buffer for history
+- Storage: LittleFS ring buffer for history; Wi-Fi credentials in NVS
+- Provisioning: phone-friendly setup portal, no SSID or password in the image
 
 ---
 
@@ -27,17 +28,19 @@ pio device monitor
 
 ```ini
 [env:esp32-mqtt-simple]
-platform = espressif32
+platform = espressif32@8.0.0
 board = esp32doit-devkit-v1
 framework = arduino
 lib_deps =
-    bblanchon/ArduinoJson@^7.0.4
-    knolleary/PubSubClient@^2.8
-    bblanchon/TinyGPSPlus@^1.0.3
-build_flags =
-    -D USE_MQTT_SIMPLE
-    -D CORE_DEBUG_LEVEL=0
+    knolleary/PubSubClient@2.8
+    mikalhart/TinyGPSPlus@1.1.0
+build_flags = -DUSE_MQTT_SIMPLE
 ```
+
+`WebServer` and `DNSServer` come from the Arduino core, so the setup portal
+adds no dependencies. `lib_ignore = Networking` keeps the duplicate Network
+headers that core 3.3.12 ships inside `WiFi/src` from clashing with the
+standalone copy `WebServer` would otherwise pull in.
 
 ---
 
@@ -47,7 +50,8 @@ build_flags =
 loop()
   ├─ gps read → NMEA parse → fix, lat, lng, alt, kmh, cog, hdop, sats
   ├─ MPU read → complementary filter → roll, pitch, yaw
-  ├─ networkService() → wifiService() → MQTT reconnect/publish/queue drain
+  ├─ networkService() → wifiPortalLoop() → wifiButtonService() → wifiService()
+  │                    → MQTT reconnect/publish/queue drain
   ├─ publishData() at PUBLISH_INTERVAL_MS (1 Hz)
   │    ├─ MQTT publish → esp32-dash/<key>/data (retained)
   │    └─ historyEnqueue() when a valid fix + clock exists
@@ -87,19 +91,55 @@ use `millis()` deadlines, so a TLS upload or a scan cannot stall the others.
   `-4` cannot tell a dead DNS from a filtered port 1883, and that difference
   sends you to the wrong layer.
 
+### Wi-Fi Provisioning (NVS + setup portal)
+
+No SSID or password is compiled into the tracker. A real credential in the
+public repository is a permanent leak, so the board is provisioned from a phone
+and the list lives in NVS.
+
+- **Storage**: up to 4 networks in the `wifi` NVS namespace, written as one
+  versioned blob (`wifi_store.cpp`). Newest first; saving the same SSID replaces
+  the old entry instead of duplicating it; the oldest is dropped when full. An
+  empty password means an **open** network.
+- **First boot after flashing**: the list is empty, so the setup AP opens
+  immediately. It is open (`Orion-Setup-XXXX`, last four hex digits of the MAC)
+  and serves the page at `http://192.168.4.1/`. Captive-portal probes redirect
+  to it, so a phone usually offers the sign-in sheet by itself.
+- **Saved list, no association**: if no saved network connects within 45 s, the
+  portal opens. This also covers a moved venue or a changed hotspot password.
+- **Page**: scan list (2.4 GHz only; hidden networks can be typed), SSID field,
+  password field (leave empty for open), saved-network list with **Forget**.
+  Passwords are never rendered back into the page.
+- **Save**: validated in the handler, written to NVS, then the board reboots
+  1.5 s after the response so the saved page can leave the socket. If the join
+  fails, the portal returns on the next boot.
+- **Runtime trigger**: serial `w` or hold **BOOT/GPIO0 for 3 s**. The AP is
+  started in `WIFI_AP_STA`, so a portal opened while the tracker is online does
+  not cut MQTT. A portal opened automatically while offline closes as soon as
+  the station reconnects; one opened manually is left alone.
+- **Safety**: `/save` and `/forget` accept only clients whose connection arrived
+  on the setup-AP address, so a portal left open cannot be edited from the
+  venue LAN.
+- **Bench build only**: `src/wifi_config.h` still exists as a gitignored
+  compile-time list for the one-shot `esp32-bench` environment. Copy
+  `src/wifi_config.example.h` when you need it. A fresh clone builds without it.
+
+Step-by-step instructions for the person at the track are in
+[wifi-setup.md](wifi-setup.md).
+
 ### Wi-Fi Reconnect Behavior
 The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` → `WF_CONNECTING`) driven from `networkService()`:
 
-- Boot starts an **async scan** (never blocks the GPS/IMU loop).
-- Candidates live in `src/wifi_config.h`; exact SSID match wins, then prefix match.
+- Boot reads the NVS list; a non-empty list starts an **async scan** (never blocks the GPS/IMU loop).
+- Candidates come from NVS; exact SSID match wins, then prefix match.
 - After one success the AP is cached (`lastGoodNet`) so reconnects skip the scan.
-- If the scan shows no configured SSID, each candidate is tried **directly, round-robin**. This covers hidden APs and scan misses.
+- If the scan shows no saved SSID, each candidate is tried **directly, round-robin**. This covers hidden APs and scan misses.
 - A cached AP that times out **3 times** is dropped and a rescan is forced, so a hotspot that moved or was renamed cannot pin the device forever.
 - Association timeout uses `WiFi.disconnect(false)` so the radio stays up (the old `true` powered the station down and made retries look like flapping).
 - Modem sleep is disabled (`WiFi.setSleep(false)`) for low-latency telemetry.
 - Every scan logs each visible SSID with RSSI/channel, which distinguishes "wrong SSID" from "dead radio".
 
-> If the log shows `best candidate=none`, the configured SSID is simply not in range. Add the correct **2.4 GHz** SSID/password to `src/wifi_config.h` and reflash; 5 GHz-only APs are invisible to the ESP32.
+> If the log shows `best candidate=none`, the saved SSID is simply not in range. Open the portal (`w` or hold BOOT) and add the correct **2.4 GHz** network; 5 GHz-only APs are invisible to the ESP32.
 
 
 ### History Ring Buffer (LittleFS)
@@ -120,9 +160,13 @@ The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` �
 |--------|---------|-------------|
 | `TOPIC_KEY` | `"race-tracker"` | MQTT topic suffix |
 | `FW_NAME` | `"orion"` | Firmware name in banner |
-| `FW_VERSION` | `"1.4.0"` | Firmware version |
+| `FW_VERSION` | `"1.5.0"` | Firmware version |
 | `PUBLISH_INTERVAL_MS` | `1000` | Publish cadence (ms) |
 | `WIFI_TX_POWER` | `WIFI_POWER_15dBm` | Radio TX power; lower peak current for battery/boost supplies |
+| `WIFI_STORE_MAX` | `4` | Saved networks in NVS (`wifi_store.h`) |
+| `WIFI_PORTAL_AFTER_MS` | `45000` | Open the setup portal after this long without a saved link |
+| `WIFI_BOOT_PIN` | `0` | GPIO0 / BOOT button |
+| `WIFI_BOOT_HOLD_MS` | `3000` | Hold time that opens or closes the setup portal |
 | `HISTORY_URL` | `""` | Pages Function URL (from `history_secret.h`) |
 | `HISTORY_KEY` | `""` | Ingest key (from `history_secret.h`) |
 | `HISTORY_DEVICE` | `"esp32-01"` | Device ID in D1 |
@@ -138,6 +182,10 @@ The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` �
 #define HISTORY_URL "https://race-tracker-history.pages.dev/ingest"
 #define HISTORY_KEY "your-ingest-key-here"
 ```
+
+Wi-Fi is not a compile-time secret. `src/wifi_config.h` is gitignored and used
+only by the `esp32-bench` environment; the tracker provisions itself through
+the portal described above.
 
 ---
 
@@ -156,14 +204,22 @@ The board counts laps; the dashboard only mirrors the result.
 ## Serial Output (115200 baud)
 
 ```
- orion 1.4.0
- reset power-on   mac 28:56:2F:49:B9:10   boot #274   brownouts 0
- SYS ready - orion 1.4.0
- NET connected 'ESP32'  ip=10.163.133.191  rssi=-37 dBm  ch=1  (slot 1)
+ orion 1.5.0
+ reset power-on   mac AA:BB:CC:DD:EE:FF   boot #274   brownouts 0
+ SYS ready - orion 1.5.0
+ wifi  1 saved network(s) in NVS   setup: hold BOOT 3 s or press w
+ NET connected 'Track-Hotspot'  ip=192.168.1.50  rssi=-37 dBm  ch=1  (slot 0)
  MQTT session up, status=online (retained)
  IMU MPU6050 at 0x68  gyro bias 0.21/0.61/0.20 dps
  GPS waiting for fix...
  HIST ON  queued 0  stored 0  sent 0  fail 0
+```
+
+When no saved network is in range, the panel gains an actionable line instead
+of leaving the cause implicit:
+
+```
+  ! NET  setup portal 'Orion-Setup-B9F0' open - join it and open http://192.168.4.1/
 ```
 
 ---
@@ -200,8 +256,8 @@ seconds so a genuinely dead sensor cannot flood the serial log.
 
 | Region | Size |
 |--------|------|
-| Flash (code + rodata) | ~1.3 MB / 3.1 MB (41%) |
-| RAM (static + heap) | ~53 KB / 320 KB (16%) |
+| Flash (code + rodata) | ~1.38 MB / 3.1 MB (44%) |
+| RAM (static + heap) | ~54 KB / 320 KB (17%) |
 | LittleFS (history) | 200 KB |
 | WiFi + MQTT buffers | ~40 KB |
 

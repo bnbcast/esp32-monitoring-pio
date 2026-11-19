@@ -46,7 +46,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <div class="layout">
 <aside>
 <div class="brand"><img src="../icons/orion-32.png" alt=""> ORION DOCS</div>
-<nav><a class="" href="index.html">Docs home</a><div class="nav-group">Tools</div><a href="../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="on" href="README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="api/endpoints.html">API Endpoints Reference</a><a class="" href="api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="api/live.html">GET /live — current sensor data</a><a class="" href="api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="project/dashboard.html">Dashboard Architecture</a><a class="" href="project/firmware.html">Firmware Architecture</a><a class="" href="project/structure.html">Project Structure</a><a class="" href="project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+<nav><a class="" href="index.html">Docs home</a><div class="nav-group">Tools</div><a href="../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="on" href="README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="api/endpoints.html">API Endpoints Reference</a><a class="" href="api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="api/live.html">GET /live — current sensor data</a><a class="" href="api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="project/dashboard.html">Dashboard Architecture</a><a class="" href="project/firmware.html">Firmware Architecture</a><a class="" href="project/structure.html">Project Structure</a><a class="" href="project/testing.html">Testing Documentation</a><a class="" href="project/wifi-setup.html">Wi-Fi Setup Guide</a><div class="nav-group">Hardware</div><a class="" href="hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
 </aside>
 <main id="content"><h1 id="orion-project-documentation-index">Orion Project — Documentation Index</h1>
 <p>This directory contains comprehensive documentation for the Orion Project: a live GPS/telemetry dashboard for one race vehicle running on ESP32.</p>
@@ -59,6 +59,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <tr><td><strong>API Reference</strong></td><td><a href="api/mqtt.html">api/mqtt.md</a></td><td>Live MQTT topic structure, payload format</td></tr>
 <tr><td><strong>Project Structure</strong></td><td><a href="project/structure.html">project/structure.md</a></td><td>Repository layout, module responsibilities</td></tr>
 <tr><td><strong>Project Structure</strong></td><td><a href="project/firmware.html">project/firmware.md</a></td><td>ESP32 firmware architecture, build, flash</td></tr>
+<tr><td><strong>Project Structure</strong></td><td><a href="project/wifi-setup.html">project/wifi-setup.md</a></td><td>Provisioning the tracker from a phone (setup hotspot)</td></tr>
 <tr><td><strong>Project Structure</strong></td><td><a href="project/dashboard.html">project/dashboard.md</a></td><td>Dashboard JS modules, data flow, rendering</td></tr>
 <tr><td><strong>Project Structure</strong></td><td><a href="project/testing.html">project/testing.md</a></td><td>Unit tests, browser probes, CI</td></tr>
 <tr><td><strong>Hardware</strong></td><td><a href="hardware/schematic.html">hardware/schematic.md</a></td><td>ESP32 + NEO-6M + MPU6050 wiring, pinout</td></tr>
@@ -82,7 +83,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <tr><td><strong>History</strong></td><td>ESP32 → HTTPS batch (30s) → Cloudflare Pages Function → D1</td></tr>
 <tr><td><strong>Dashboard</strong></td><td>Static site (GitHub Pages), vanilla JS, MapLibre GL</td></tr>
 <tr><td><strong>Firmware</strong></td><td>PlatformIO + Arduino, <code>esp32-mqtt-simple</code> env</td></tr>
-<tr><td><strong>Version</strong></td><td>Dashboard <code>?v=53</code>, Firmware <code>orion 1.4.0</code></td></tr>
+<tr><td><strong>Version</strong></td><td>Dashboard <code>?v=56</code>, Firmware <code>orion 1.5.0</code></td></tr>
 </tbody></table></div>
 <h2 id="branding">Branding</h2>
 <p>All surfaces use <strong>Orion Project</strong> branding:</p>

@@ -46,7 +46,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <div class="layout">
 <aside>
 <div class="brand"><img src="../../icons/orion-32.png" alt=""> ORION DOCS</div>
-<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/live.html">GET /live — current sensor data</a><a class="on" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
+<nav><a class="" href="../index.html">Docs home</a><div class="nav-group">Tools</div><a href="../../api/docs/">API Tester</a><div class="nav-group">Overview</div><a class="" href="../README.html">Orion Project — Documentation Index</a><div class="nav-group">API</div><a class="" href="../api/endpoints.html">API Endpoints Reference</a><a class="" href="../api/history.html">History API (Cloudflare Pages Function)</a><a class="" href="../api/live.html">GET /live — current sensor data</a><a class="on" href="../api/mqtt.html">MQTT Topic Structure &amp; Payload Format</a><div class="nav-group">Project</div><a class="" href="../project/dashboard.html">Dashboard Architecture</a><a class="" href="../project/firmware.html">Firmware Architecture</a><a class="" href="../project/structure.html">Project Structure</a><a class="" href="../project/testing.html">Testing Documentation</a><a class="" href="../project/wifi-setup.html">Wi-Fi Setup Guide</a><div class="nav-group">Hardware</div><a class="" href="../hardware/schematic.html">Hardware Schematic &amp; Wiring</a><a class="" href="../hardware/sensors.html">Sensor Specifications &amp; Configuration</a></nav>
 </aside>
 <main id="content"><h1 id="mqtt-topic-structure-payload-format">MQTT Topic Structure &amp; Payload Format</h1>
 <p>Live telemetry: <strong>ESP32 → HiveMQ → browser dashboard</strong>.</p>
@@ -132,12 +132,12 @@ esp32-dash/&lt;TOPIC_KEY&gt;/status  online/offline  (retained, QoS 0, LWT)
     &quot;rssi&quot;: -52,
     &quot;temp_c&quot;: 41.8,
     &quot;wifi&quot;: {
-      &quot;ssid&quot;: &quot;Gi Joe&quot;,
+      &quot;ssid&quot;: &quot;Track-Hotspot&quot;,
       &quot;bssid&quot;: &quot;aa:bb:cc:dd:ee:ff&quot;,
       &quot;channel&quot;: 6,
       &quot;status&quot;: &quot;Connected&quot;,
       &quot;ip&quot;: &quot;10.0.0.42&quot;,
-      &quot;mac&quot;: &quot;28:56:2f:49:b9:10&quot;
+      &quot;mac&quot;: &quot;02:00:00:00:00:01&quot;
     }
   }
 }
@@ -198,6 +198,8 @@ esp32-dash/&lt;TOPIC_KEY&gt;/status  online/offline  (retained, QoS 0, LWT)
 </tbody></table></div>
 <blockquote><code>sys.wifi.status</code> is <code>Connected</code>, <code>Disconnected</code>, <code>No SSID</code>, <code>Connect failed</code>,</blockquote>
 <blockquote><code>Idle</code> or <code>Unknown</code>. When not connected, <code>ssid</code> is empty and <code>ip</code> is <code>-</code>.</blockquote>
+<blockquote>The SSID is whatever was provisioned from the phone; it is not compiled into</blockquote>
+<blockquote>the firmware. See <a href="../project/wifi-setup.html">wifi-setup.md</a>.</blockquote>
 <blockquote><code>sys.temp_c</code> is the ESP32's internal <strong>die</strong> sensor, sampled once per publish.</blockquote>
 <blockquote>On a classic ESP32 it is uncalibrated: read it as &quot;the chip is heating up&quot;,</blockquote>
 <blockquote>not as ambient or engine temperature. The top-level <code>temp</code> field is the</blockquote>
@@ -231,7 +233,7 @@ esp32-dash/&lt;TOPIC_KEY&gt;/status  online/offline  (retained, QoS 0, LWT)
 #define TOPIC_DATA   &quot;esp32-dash/&quot; TOPIC_KEY &quot;/data&quot;
 #define TOPIC_STATUS &quot;esp32-dash/&quot; TOPIC_KEY &quot;/status&quot;
 #define FW_NAME     &quot;orion&quot;
-#define FW_VERSION  &quot;1.4.0&quot;
+#define FW_VERSION  &quot;1.5.0&quot;
 #define PUBLISH_INTERVAL_MS 1000
 </code></pre>
 <hr>
