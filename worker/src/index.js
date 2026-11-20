@@ -34,7 +34,7 @@ const STALE_BACK_S = 600;            // a frame this far behind the anchor is la
 const RETENTION_S = 365 * 24 * 3600;
 const RETENTION_EVERY_S = 24 * 3600;  // Pages has no cron; ingest drives this
 const TELEPORT_FACTOR = 1.5;
-const TELEPORT_SLACK_M = 20;
+const TELEPORT_SLACK_M = 15;
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -362,7 +362,13 @@ function checkFrame(f, prev, nowS) {
   if (prev && isNum(prev.lat) && isNum(prev.lon)) {
     let dt = f.ts - prev.ts;
     if (!isNum(dt) || dt < 0.5) dt = 0.5;        // buffered frames can be close
-    const allow = (MAX_KMH / 3.6) * dt * TELEPORT_FACTOR + TELEPORT_SLACK_M;
+    // Gate on the speed the receiver reports, not on the 150 km/h ceiling.
+    // A parked module happily wanders 30-50 m on multipath; allowing the
+    // ceiling stored those jumps and the history replay drew them as spikes.
+    // Real movement still passes: 60 km/h covers 16.7 m/s, and the factor is
+    // 2.5x. The ceiling stays as a clamp for frames that report no speed.
+    const kmh = isNum(g.kmh) ? g.kmh : MAX_KMH;
+    const allow = Math.max(kmh, 5) / 3.6 * dt * TELEPORT_FACTOR + TELEPORT_SLACK_M;
     if (haversineM(prev.lat, prev.lon, g.lat, g.lng) > allow) return 'teleport';
   }
 

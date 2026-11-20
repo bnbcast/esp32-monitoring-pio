@@ -287,6 +287,33 @@ test('teleport and clock are rejected', async () => {
   assert.deepEqual(reasons, ['clock', 'teleport']);
 });
 
+test('a parked multipath jump is not stored', async () => {
+  const e = env();
+  const t = now();
+  const at = (seq, ts, kmh, lat) => frame({
+    seq, ts, boot: 1,
+    gps: { fix: true, lat, lng: 107.6, kmh, hdop: 3.2, sats: 7 }
+  });
+  await post(e, [at(1, t, 0, -6.9)]);
+  // 50 m in 10 s at a reported 0 km/h is a wander, not travel.
+  const body = await (await post(e, [at(2, t + 10, 0, -6.90045)])).json();
+  assert.deepEqual(body.rejected, [{ seq: 2, reason: 'teleport' }]);
+});
+
+test('real travel at the reported speed still passes the gate', async () => {
+  const e = env();
+  const t = now();
+  const at = (seq, ts, kmh, lat) => frame({
+    seq, ts, boot: 1,
+    gps: { fix: true, lat, lng: 107.6, kmh, hdop: 0.8, sats: 12 }
+  });
+  await post(e, [at(1, t, 60, -6.9)]);
+  // 155 m in 10 s is 56 km/h: inside 60 km/h plus the 2.5x factor.
+  const body = await (await post(e, [at(2, t + 10, 60, -6.9014)])).json();
+  assert.deepEqual(body.rejected, []);
+  assert.equal(body.stored, 1);
+});
+
 test('bad hdop and speed are rejected', async () => {
   const e = env();
   const body = await (await post(e, [
@@ -308,8 +335,8 @@ test('history returns only the requested window, oldest first', async () => {
   const t = now();
   await post(e, [
     frame({ seq: 1, ts: t - 100 }),
-    frame({ seq: 2, ts: t - 50, gps: { fix: true, lat: -6.91, lng: 107.61, kmh: 11 } }),
-    frame({ seq: 3, ts: t - 10, gps: { fix: true, lat: -6.92, lng: 107.62, kmh: 13 } })
+    frame({ seq: 2, ts: t - 50, gps: { fix: true, lat: -6.901, lng: 107.6, kmh: 11 } }),
+    frame({ seq: 3, ts: t - 10, gps: { fix: true, lat: -6.9022, lng: 107.6, kmh: 13 } })
   ]);
   const r = await worker.fetch(new Request(`https://x/history?from=${t - 60}&to=${t}`), e);
   const body = await r.json();
