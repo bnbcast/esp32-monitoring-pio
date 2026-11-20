@@ -30,6 +30,7 @@ const MAX_HDOP = 8;
 const CLOCK_FUTURE_S = 3600;         // same generosity as web/ui/guard.js
 const CLOCK_PAST_S = 7 * 24 * 3600;
 const PARKED_STORE_S = 10;
+const STALE_BACK_S = 600;            // a frame this far behind the anchor is late
 const RETENTION_S = 365 * 24 * 3600;
 const RETENTION_EVERY_S = 24 * 3600;  // Pages has no cron; ingest drives this
 const TELEPORT_FACTOR = 1.5;
@@ -82,7 +83,7 @@ async function ingest(request, env) {
   const nowS = Math.floor(Date.now() / 1000);
 
   const anchor = await env.DB.prepare(
-    'SELECT boot, seq, ts, lat, lon FROM fixes WHERE device = ? ORDER BY boot DESC, seq DESC LIMIT 1'
+    'SELECT boot, seq, ts, lat, lon FROM fixes WHERE device = ? ORDER BY ts DESC LIMIT 1'
   ).bind(device).first();
 
   let prev = anchor ? { boot: anchor.boot, seq: anchor.seq, ts: anchor.ts, lat: anchor.lat, lon: anchor.lon } : null;
@@ -335,7 +336,13 @@ function checkFrame(f, prev, nowS) {
 
   const boot = bootOf(f);
   if (prev) {
-    if (boot < prev.boot) return 'stale-boot';
+    // Order by GPS time, never by the boot counter. `boot` is kept in NVS, so
+    // erasing the flash (or provisioning from scratch) resets it to 1; a row
+    // with a high boot number would then reject every real frame as
+    // "stale-boot" and silently lock history out. A late frame from a previous
+    // boot is harmless: INSERT OR IGNORE keys on (device, boot, seq), and the
+    // read API orders by ts.
+    if (f.ts < prev.ts - STALE_BACK_S) return 'stale-ts';
     if (boot === prev.boot) {
       if (f.seq === prev.seq) return 'duplicate';
       if (f.seq < prev.seq) return 'stale-seq';

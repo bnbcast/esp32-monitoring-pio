@@ -44,7 +44,7 @@ function fakeD1() {
           if (!sql.includes('SELECT boot, seq, ts, lat, lon FROM fixes')) throw new Error('first: ' + sql);
           const device = args[0];
           const mine = rows.filter(r => r.device === device)
-            .sort((a, b) => (b.boot - a.boot) || (b.seq - a.seq));
+            .sort((a, b) => b.ts - a.ts);
           return mine[0] || null;
         },
         async run() {
@@ -259,6 +259,22 @@ test('stale seq after the anchor is rejected', async () => {
   await post(e, [frame({ seq: 20 })]);
   const body = await (await post(e, [frame({ seq: 10, ts: now() + 1 })])).json();
   assert.deepEqual(body.rejected, [{ seq: 10, reason: 'stale-seq' }]);
+});
+
+test('a reset boot counter does not lock history out', async () => {
+  // The board keeps `boot` in NVS. Erasing the flash sets it back to 1 while
+  // the newest stored row still carries the old, higher value. That must not
+  // turn every real frame into "stale-boot" forever.
+  const e = env();
+  const t = now();
+  const first = await (await post(e, [frame({ seq: 900, boot: 400, ts: t })])).json();
+  assert.equal(first.stored, 1);
+
+  const afterErase = await (await post(e, [
+    frame({ seq: 1, boot: 1, ts: t + 1 })
+  ])).json();
+  assert.deepEqual(afterErase.rejected, []);
+  assert.equal(afterErase.stored, 1);
 });
 
 test('teleport and clock are rejected', async () => {

@@ -203,6 +203,14 @@ test('a missed MPU frame is recovering, not a wiring fault', () => {
   assert.match(APP, /check MPU6050 wiring/);
 });
 
+test('the auto-armed finish line is not drawn on the map', () => {
+  // It persists in NVS once armed and the dashboard had no way to remove it,
+  // so a red dashed line sat across the map forever. Lap timing still works:
+  // only the overlay is gone.
+  assert.ok(!MAPJS.includes('id: "gate-line"'), 'the red finish line is back');
+  assert.ok(!MAPJS.includes('id: "gate-pts"'), 'the finish line endpoints are back');
+});
+
 test('the trail source enables lineMetrics, or the trail layer is dropped', () => {
   // MapLibre validates line-gradient against the source: a GeoJSON source
   // without lineMetrics makes addLayer reject the whole trail layer. The map

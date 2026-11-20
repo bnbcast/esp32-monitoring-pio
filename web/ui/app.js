@@ -717,9 +717,6 @@ function renderData(d) {
   set('lapBest', lapS(lap.best_ms));
   set('lapGate', lap.on ? (lap.auto ? 'AUTO armed' : 'armed')
                         : 'auto: arms on motion');
-  if (typeof MAP !== 'undefined' && MAP.setGate) {
-    MAP.setGate(lap.on && Array.isArray(lap.la) && Array.isArray(lap.lb) ? lap : null);
-  }
 
 
   // Map HUD - position
