@@ -223,3 +223,110 @@ test('the trail source enables lineMetrics, or the trail layer is dropped', () =
   assert.match(source, /lineMetrics:\s*true/,
     'the trail source must set lineMetrics: true for its line-gradient');
 });
+
+// ---- position filter -------------------------------------------------------
+// map.js is an IIFE that only touches the DOM inside create(), so the pure
+// filter can be loaded in a sandbox and measured without a browser.
+function loadMapApi() {
+  const vm = require('node:vm');
+  const sandbox = {
+    console,
+    location: { hostname: 'example.org', href: 'https://example.org/', baseURI: 'https://example.org/' },
+    document: {
+      baseURI: 'https://example.org/',
+      createElement: () => ({ style: {}, classList: { toggle() {} } })
+    },
+    requestAnimationFrame: () => 0,
+    cancelAnimationFrame: () => {},
+    navigator: { userAgent: '' },
+    setTimeout, clearTimeout, setInterval, clearInterval
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(MAPJS + '\n;globalThis.__MAP = MAP;', sandbox);
+  return sandbox.__MAP;
+}
+
+const DEG = Math.PI / 180;
+const EARTH = 6371000;
+const offset = (lat, lng, east, north) => [
+  lat + north / EARTH / DEG,
+  lng + east / (EARTH * Math.cos(lat * DEG)) / DEG
+];
+function metres(a, b) {
+  const dLat = (b[0] - a[0]) * DEG, dLng = (b[1] - a[1]) * DEG;
+  const q = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a[0] * DEG) * Math.cos(b[0] * DEG) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH * Math.atan2(Math.sqrt(q), Math.sqrt(1 - q));
+}
+
+test('the position filter kills GPS jitter without trailing a real move', () => {
+  const MAP = loadMapApi();
+  // Deterministic noise so the test never flakes.
+  let seed = 42;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const gauss = () => {
+    let u = 0, v = 0;
+    while (u === 0) u = rnd();
+    while (v === 0) v = rnd();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+  const lat0 = -6.909, lng0 = 107.503;
+  const heading = 0.7, dx = Math.sin(heading), dy = Math.cos(heading);
+
+  const track = (speedMs, kmh, noiseM, n) => {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const [tlat, tlng] = offset(lat0, lng0, dx * speedMs * i, dy * speedMs * i);
+      const [rlat, rlng] = offset(tlat, tlng, gauss() * noiseM, gauss() * noiseM);
+      pts.push([1000 + i, rlat, rlng, kmh(i), 0, 2.8]);
+    }
+    const out = MAP.smoothPath(pts);
+    let rawErr = 0, outErr = 0, rawJit = 0, outJit = 0, lag = 0, n2 = 0;
+    for (let i = 0; i < n; i++) {
+      const [tlat, tlng] = offset(lat0, lng0, dx * speedMs * i, dy * speedMs * i);
+      rawErr += metres([pts[i][1], pts[i][2]], [tlat, tlng]);
+      outErr += metres([out[i][1], out[i][0]], [tlat, tlng]);
+      if (i) {
+        rawJit += metres([pts[i - 1][1], pts[i - 1][2]], [pts[i][1], pts[i][2]]) ** 2;
+        outJit += metres([out[i - 1][1], out[i - 1][0]], [out[i][1], out[i][0]]) ** 2;
+      }
+      if (i > 5) {
+        const east = (out[i][0] - tlng) * Math.cos(tlat * DEG) * EARTH * DEG;
+        const north = (out[i][1] - tlat) * EARTH * DEG;
+        lag += -(east * dx + north * dy);   // positive: estimate trails the truth
+        n2++;
+      }
+    }
+    return {
+      rawErr: rawErr / n, outErr: outErr / n,
+      rawJit: Math.sqrt(rawJit / (n - 1)),
+      outJit: Math.sqrt(outJit / (n - 1)),
+      lag: lag / n2
+    };
+  };
+
+  const parked = track(0, () => 1 + rnd() * 3, 5, 70);
+  assert.ok(parked.outJit < parked.rawJit * 0.5,
+    `parked jitter is ${parked.outJit.toFixed(1)} vs raw ${parked.rawJit.toFixed(1)}`);
+  assert.ok(parked.outErr < parked.rawErr * 0.6,
+    `parked error is ${parked.outErr.toFixed(1)} vs raw ${parked.rawErr.toFixed(1)}`);
+
+  const walk = track(1.4, () => 4 + rnd() * 2, 5, 70);
+  assert.ok(walk.outJit < walk.rawJit * 0.5,
+    `walking still zigzags: ${walk.outJit.toFixed(1)} vs raw ${walk.rawJit.toFixed(1)}`);
+  assert.ok(walk.lag > -2 && walk.lag < 7,
+    `walking marker trails by ${walk.lag.toFixed(1)} m`);
+});
+
+test('the marker and stored history use the filtered position', () => {
+  const body = fnBody(MAPJS, 'viewPos');
+  assert.doesNotMatch(body, /anchor/,
+    'the marker still snaps to the old trail anchor');
+  assert.match(body, /smooth/);
+  assert.match(fnBody(MAPJS, 'setHistory'), /smoothStep\(/,
+    'HIST is drawn from raw fixes and will zigzag');
+  assert.match(APP, /MAP\.smoothPath/,
+    'replay coordinates are not filtered');
+});

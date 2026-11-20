@@ -147,9 +147,17 @@ const MAP = (function () {
     magHeading: null, danger: 0
   };
 
-  // Last accepted trail point. The marker snaps to this while stationary, so a
-  // +-3 m GPS wobble cannot make it drift or spin on the spot.
+  // Last accepted trail point. The trail step and the "moving" test use this;
+  // the marker no longer snaps to it (that made it hop 15-18 m at walking pace,
+  // where the board still counts as parked).
   let anchor = { lng: null, lat: null };
+  // Smoothed position the marker, accuracy circle and camera follow. Every fix
+  // that passes the physics gate nudges this towards the raw reading with a
+  // speed-adaptive gain, so GPS noise is averaged out without visibly lagging
+  // a real move. The trail is built from the same filtered points, which is
+  // what removes the zigzag from a hand-held receiver.
+  let smooth = { lng: null, lat: null };
+  let smoothTs = 0;
   let lastMoveTs = 0;
   let stopped = true;
   let parkedNow = false;        // position cloud says "not moving" (trustworthy)
@@ -180,22 +188,26 @@ const MAP = (function () {
   // a stationary module happily reports 2-4 km/h of "speed noise".
   let recent = [];
 
-  function pushRecent(lat, lng, now) {
-    recent.push({ lat, lng, ts: now });
+  function pushRecent(lat, lng, sLat, sLng, now) {
+    recent.push({ lat, lng, sLat, sLng, ts: now });
     while (recent.length && now - recent[0].ts > 30000) recent.shift();
     if (recent.length > 120) recent.shift();
   }
 
-  // Displacement over the last ~25 s. A parked receiver wanders inside ~10 m;
-  // a person walking covers 30 m+ in that time, which is what separates them.
-  function recentDisplacementM(lat, lng) {
+  // Displacement of the FILTERED track over the last ~15 s. Measured on the
+  // smoothed positions, not the raw ones: a parked receiver's multipath would
+  // otherwise satisfy "sustained move" on its own. A person walking covers
+  // 15 m+ in that time; a stationary cloud stays well inside it.
+  function recentDisplacementM() {
     const now = Date.now();
     let ref = null;
     for (const p of recent) {
-      if (now - p.ts >= 20000) ref = p; else break;
+      if (now - p.ts >= 15000) ref = p; else break;
     }
-    if (!ref) return 0;
-    return distM(ref.lat, ref.lng, lat, lng);
+    if (!ref || ref.sLat == null) return 0;
+    const last = recent[recent.length - 1];
+    if (!last || last.sLat == null) return 0;
+    return distM(ref.sLat, ref.sLng, last.sLat, last.sLng);
   }
 
   function recentSpreadM() {
@@ -686,42 +698,55 @@ const MAP = (function () {
 
     const now = Date.now();
     if (fix && lng != null && lat != null) {
-      if (anchor.lat == null) {
+      if (smooth.lat == null) {
+        // First fix: seed the filter, the trail and the physics gate together.
+        smooth = { lng, lat };
+        smoothTs = now;
         anchor = { lng, lat };
+        lastRaw = { lat, lng, ts: now };
         lastMoveTs = now;
+        pushRecent(lat, lng, lat, lng, now);
         pushTrail(lng, lat, speed);
       } else {
-        const d = distM(anchor.lat, anchor.lng, lat, lng);
-        // Position error scales with HDOP; ~5 m per HDOP unit is the usual rule
-        // of thumb for a consumer receiver, so the deadband follows the sky.
-        const acc = clamp((hdop && hdop > 0 ? hdop : 3) * 5, 5, 40);
-
-        // Physics gate, applied to EVERY sample before it can influence
+        // Physics gate, applied to EVERY raw sample before it can influence
         // anything: the jump since the previous fix must be physically possible
         // for the reported speed. A parked receiver's multipath jump of 20-60 m
         // implies hundreds of km/h and is dropped here, so it can neither move
         // the marker nor widen the "parked" window nor add trail distance.
-        const dtS = Math.max(0.2, (now - (lastRaw.ts || now - 500)) / 1000);
-        const stepDist = (lastRaw.lat != null) ? distM(lastRaw.lat, lastRaw.lng, lat, lng) : d;
-        lastRaw = { lat, lng, ts: now };
-
         // How far could the vehicle have moved since the previous fix? The
         // reported speed is the only trustworthy scale here (the position is
-        // what we are trying to filter), so allow 2.5x its distance plus 4 m of
-        // slack, and never more than a hard 200 km/h equivalent.
+        // what we are trying to filter), so allow 2.5x its distance plus the
+        // current fix accuracy. A consumer receiver honestly reports HDOP 2.8
+        // as roughly +-14 m, and a 4 m slack rejected half of the good fixes at
+        // walking pace - which is what made the marker stutter. Multipath jumps
+        // of 30 m+ still fail, and the parked logic below vetoes the rest.
+        const dtS = Math.max(0.2, (now - (lastRaw.ts || now - 500)) / 1000);
+        const stepDist = (lastRaw.lat != null) ? distM(lastRaw.lat, lastRaw.lng, lat, lng) : 0;
+        const accM = clamp((hdop && hdop > 0 ? hdop : 3) * 5, 5, 40);
         const vMs = (numOr0(speed)) / 3.6;
-        const allowM = Math.min(vMs * dtS * 2.5 + 4, 55 * dtS + 12);
+        const allowM = Math.min(vMs * dtS * 2.5 + accM + 4, 55 * dtS + 12);
+        lastRaw = { lat, lng, ts: now };
         lastSampleOk = stepDist <= allowM;
         if (lastSampleOk) {
-          pushRecent(lat, lng, now);
-          // Two independent hints say "parked": the module reports less than
-          // 6 km/h (it lies by 2-4 while standing still, but never reports 0
-          // while driving) or the position cloud is tight. Multipath drift of
-          // ~10 m creeps past any small deadband, so the parked step is 15 m+.
-          // A tight cloud (inside the fix accuracy) vetoes any "moving" claim,
-          // so a 7 km/h noise spike on a parked receiver changes nothing.
-          const tight = recentSpreadM() < Math.max(6, acc);
-          const walking = recentDisplacementM(lat, lng) > 20;   // sustained, not wander
+          // Filter the accepted sample. The marker, accuracy circle and camera
+          // follow this, so a noisy fix does not translate into a visible hop.
+          smooth = smoothStep(smooth, lng, lat, speed, hdop,
+            Math.max(0.2, (now - smoothTs) / 1000));
+          smoothTs = now;
+
+          // Parked detection stays on the RAW cloud: the filtered cloud would
+          // shrink even when the receiver is walking, hiding real motion.
+          pushRecent(lat, lng, smooth.lat, smooth.lng, now);
+
+          const sLat = smooth.lat, sLng = smooth.lng;
+          const d = distM(anchor.lat, anchor.lng, sLat, sLng);
+
+          // Two independent hints say "parked": a tight cloud (inside the fix
+          // accuracy) vetoes any "moving" claim, so a 7 km/h noise spike on a
+          // parked receiver changes nothing; otherwise the reported speed or a
+          // sustained 15 m displacement over 15 s means walking/running.
+          const tight = recentSpreadM() < Math.max(6, accM);
+          const walking = recentDisplacementM() > 15;   // sustained, not wander
           const moving = !tight && (numOr0(speed) >= 6.0 || walking);
 
           // Hysteresis: a single noisy sample must not flip the state. Two
@@ -741,12 +766,12 @@ const MAP = (function () {
             if (pending.lat != null && d >= pendingD - 0.5) {
               stillCount++;
             } else {
-              pending = { lat, lng };
+              pending = { lat: sLat, lng: sLng };
               pendingD = d;
               stillCount = 1;
             }
             if (stillCount >= (moving ? 2 : 3)) {
-              acceptPoint(lng, lat, speed, d, now);
+              acceptPoint(sLng, sLat, speed, d, now);
               stillCount = 0;
               pending = { lat: null, lng: null };
               pendingD = 0;
@@ -796,16 +821,78 @@ const MAP = (function () {
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
+  // Move `metres` along the great-circle-ish line from (lat,lng) to the target.
+  // At the scale of a GPS fix a flat approximation is invisible.
+  function moveTowards(lat, lng, targetLat, targetLng, metres) {
+    const d = distM(lat, lng, targetLat, targetLng);
+    if (!(d > 0)) return { lat: targetLat, lng: targetLng };
+    const f = clamp(metres / d, 0, 1);
+    return { lat: lat + (targetLat - lat) * f, lng: lng + (targetLng - lng) * f };
+  }
+
+  // One step of the position filter. `est` is the current estimate, `speed` the
+  // speed the receiver reports (km/h) and `dtS` the seconds since the previous
+  // step. The gain rises with speed, which is the one signal that separates
+  // "the track is really moving" from "the position is jittering in place":
+  //   parked  -> gain ~0.10, so a +-8 m cloud moves the marker ~1 m
+  //   walking -> gain ~0.25, so the marker keeps up but the zigzag is gone
+  //   driving -> gain ~0.85, so a fast bend is not rounded off
+  // A long gap (parked storage cadence, short outage) snaps to the new fix,
+  // because the track may genuinely be somewhere else after it.
+  function smoothStep(est, lng, lat, speed, hdop, dtS) {
+    const vMs = numOr0(speed) / 3.6;
+    let a = clamp(0.10 + vMs * 0.12, 0.10, 0.85);
+    // A poor fix gets averaged harder: there is more noise to remove and the
+    // real motion is less certain.
+    const noise = (typeof hdop === "number" && hdop > 0) ? hdop : 3;
+    a *= clamp(3 / noise, 0.6, 1);
+    if (dtS > 8) a = 1;
+    return {
+      lat: est.lat + (lat - est.lat) * a,
+      lng: est.lng + (lng - est.lng) * a
+    };
+  }
+
+  // Apply the same filter to a stored session. Points are [ts, lat, lng, kmh,
+  // cog, hdop] as /history returns them. The result is aligned 1:1 with the
+  // input so the replay slider index still matches a coordinate.
+  function smoothPath(points) {
+    const out = [];
+    if (!Array.isArray(points)) return out;
+    let est = null, prevTs = 0;
+    for (const p of points) {
+      const ts = Array.isArray(p) ? Number(p[0]) : NaN;
+      const lat = Array.isArray(p) ? Number(p[1]) : NaN;
+      const lng = Array.isArray(p) ? Number(p[2]) : NaN;
+      if (isFinite(ts) && isFinite(lat) && isFinite(lng)) {
+        const kmh = Number(p[3]);
+        const hdop = Number(p[5]);
+        const dtS = est == null ? 1 : clamp((ts - prevTs) || 1, 0.2, 60);
+        est = est == null
+          ? { lat, lng }
+          : smoothStep(est, lng, lat, isFinite(kmh) ? kmh : 0,
+                       isFinite(hdop) ? hdop : 3, dtS);
+        prevTs = ts;
+        out.push([est.lng, est.lat]);
+      } else {
+        out.push(est ? [est.lng, est.lat] : null);
+      }
+    }
+    return out;
+  }
+
   // Keep the vehicle in view without re-centring on every single reading: only
   // pan when it leaves the middle band of the viewport. With the camera lock on
   // (the target button), the middle is kept explicitly every fix.
   function followIfNeeded() {
     if (!map || !mapReady) return;
     if (parkedNow) return;              // never pan a parked vehicle
-    if (vehicle.lat == null) return;
+    const pos = viewPos();
+    if (pos.lat == null) return;
+    const lng = pos.lng, lat = pos.lat;
     const w = map.getContainer().clientWidth;
     const h = map.getContainer().clientHeight;
-    const p = map.project([vehicle.lng, vehicle.lat]);
+    const p = map.project([lng, lat]);
     if (followLock) {
       // Locked still uses a band rather than re-centring on every fix. An
       // easeTo that restarts every second never lets the camera settle, and
@@ -813,13 +900,13 @@ const MAP = (function () {
       // a locked map could not be panned to unlock it. A tight band means the
       // camera is idle almost all the time and a finger always wins.
       if (p.x < w * 0.3 || p.x > w * 0.7 || p.y < h * 0.3 || p.y > h * 0.7) {
-        map.easeTo({ center: [vehicle.lng, vehicle.lat], duration: 600 });
+        map.easeTo({ center: [lng, lat], duration: 600 });
       }
       return;
     }
     if (myLocMode !== "recenter" && myLocMode !== "follow") return;
     if (p.x < w * 0.2 || p.x > w * 0.8 || p.y < h * 0.2 || p.y > h * 0.8) {
-      map.easeTo({ center: [vehicle.lng, vehicle.lat], duration: 400 });
+      map.easeTo({ center: [lng, lat], duration: 400 });
     }
   }
 
@@ -827,11 +914,12 @@ const MAP = (function () {
   // zoom and pitch change. A hand-positioned div (the old approach) stayed
   // glued to the last pixel position and slid away from the map as soon as the
   // user moved it, which is what made the position look wrong.
-  // Where the vehicle is drawn: the anchor while parked or while the newest
-  // fix is a rejected outlier, the live fix otherwise.
+  // Where the vehicle is drawn: the filtered position. It is never snapped to
+  // an old trail anchor, so the marker cannot hop when a new point is accepted,
+  // and it only moves when a fix passes the physics gate.
   function viewPos() {
-    const useAnchor = anchor.lat != null && (stopped || !lastSampleOk);
-    return useAnchor ? anchor : { lng: vehicle.lng, lat: vehicle.lat };
+    if (smooth.lat != null) return smooth;
+    return { lng: vehicle.lng, lat: vehicle.lat };
   }
 
   function updateMarker() {
@@ -1005,6 +1093,8 @@ const MAP = (function () {
     trailCoords = [];
     trailDistM = 0;
     anchor = { lng: null, lat: null };
+    smooth = { lng: null, lat: null };
+    smoothTs = 0;
     recent = [];
     stillCount = 0;
     pending = { lat: null, lng: null };
@@ -1207,6 +1297,7 @@ const MAP = (function () {
     let prev = null;
     let prevPoor = false;
     let prevCoord = null;
+    let est = null;              // filtered position, reused for the drawn line
 
     const flush = () => {
       if (run.length > 1) feats.push({
@@ -1232,6 +1323,7 @@ const MAP = (function () {
       const ts = Number(p[0]), lat = Number(p[1]), lng = Number(p[2]);
       if (!isFinite(ts) || !isFinite(lat) || !isFinite(lng)) continue;
       if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+      const kmh = Number(p[3]);
       const hdop = Number(p[5]);
       const isPoor = isFinite(hdop) && hdop > 3;
 
@@ -1243,19 +1335,30 @@ const MAP = (function () {
         prev = null;
         prevPoor = false;
         prevCoord = null;
+        est = null;
       }
-      run.push([lng, lat]);
+      // Draw the filtered track, not the raw fixes: the stored session has the
+      // same 5-15 m noise as the live one, and replaying it unfiltered is what
+      // made HIST look like a sawtooth.
+      const dtS = prev ? clamp((ts - prev[0]) || 1, 0.2, 60) : 1;
+      est = est == null
+        ? { lat, lng }
+        : smoothStep(est, lng, lat, isFinite(kmh) ? kmh : 0,
+                     isFinite(hdop) ? hdop : 3, dtS);
+      const coord = [est.lng, est.lat];
+
+      run.push(coord);
       if (prev) {
         if (prevPoor || isPoor) {
           if (!poorRun.length) poorRun.push(prevCoord);
-          poorRun.push([lng, lat]);
+          poorRun.push(coord);
         } else {
           flushPoor();
         }
       }
       prev = [ts, lat, lng];
       prevPoor = isPoor;
-      prevCoord = [lng, lat];
+      prevCoord = coord;
     }
     flush();
     flushPoor();
@@ -1360,6 +1463,7 @@ const MAP = (function () {
     clearHistory,
     setPlayback,
     clearPlayback,
+    smoothPath,                 // shared filter for replay coordinates
     fitPoints,
     getTrailDistance: () => trailDistM,
     getTrailPoints: () => trailCoords.length,

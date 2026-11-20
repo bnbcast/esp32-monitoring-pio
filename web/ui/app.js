@@ -1572,7 +1572,11 @@ if (!KEY) {
   function setPlaybackData(pts, canPlay) {
     pbStop();
     pbPoints = Array.isArray(pts) ? pts : [];
-    pbCoords = pbPoints.map(p => [Number(p[2]), Number(p[1])]);
+    // Replay the same filtered track the history overlay draws: raw fixes make
+    // the dot and line wander 5-15 m, which reads as a GPS fault.
+    pbCoords = (typeof MAP !== 'undefined' && MAP.smoothPath)
+      ? MAP.smoothPath(pbPoints)
+      : pbPoints.map(p => [Number(p[2]), Number(p[1])]);
     pbCanPlay = !!canPlay && pbPoints.length > 1;
     pbIndex = 0;
     pbPlayTs = pbPoints.length ? Number(pbPoints[0][0]) : 0;
@@ -1616,7 +1620,9 @@ if (!KEY) {
         ' · ' + (noLean ? '--' : lean.toFixed(1) + ' deg');
     }
     if (typeof MAP !== 'undefined' && MAP.setPlayback) {
-      MAP.setPlayback(Number(p[1]), Number(p[2]), pbCoords.slice(0, pbIndex + 1));
+      const c = pbCoords[pbIndex] ||
+        [Number(p[2]), Number(p[1])];
+      MAP.setPlayback(c[1], c[0], pbCoords.slice(0, pbIndex + 1));
     }
     drawHistChart();
   }
