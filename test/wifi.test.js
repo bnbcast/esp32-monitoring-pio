@@ -108,8 +108,8 @@ test('an empty password means an open network', () => {
 
 test('the setup portal can provision both protected and open networks', () => {
   assert.match(PORTAL, /"Orion-Setup-%04X"/);
-  assert.match(PORTAL, /WiFi\.softAP\(g_apSsid, "12345"\)/,
-    'the setup AP should have password 12345');
+  assert.match(PORTAL, /WiFi\.softAP\(g_apSsid, "12345678"\)/,
+    'the setup AP should have password 12345678');
   for (const route of ['/', '/scan', '/save', '/forget']) {
     assert.match(PORTAL, new RegExp(`g_http\\.on\\("${route.replace('/', '\\/')}"`),
       `${route} is not registered`);

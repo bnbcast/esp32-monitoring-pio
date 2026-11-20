@@ -104,3 +104,28 @@ test('a lap needs no keystrokes: the board arms its own finish line', () => {
   assert.strictEqual(flags.length, 2,
     `expected the auto flag in the full and slim payloads, found ${flags.length}`);
 });
+
+test('an IMU fault names the failing layer, not just "FAIL"', () => {
+  // err/req are the only way to tell a missing sensor from a wedged bus:
+  // 2 = address NACK, 3 = data NACK, 5 = timeout (a line held low).
+  assert.match(SRC, /mpuLastErr = \(uint8_t\)Wire\.endTransmission\(false\)/);
+  assert.match(SRC, /mpuLastReq = \(uint8_t\)Wire\.requestFrom\(\(int\)MPU_ADDR, 14, 1\)/);
+  assert.match(SRC, /read failed at 0x%02X: err=%u req=%u who=%d/);
+  // WHO_AM_I separates "something ACKed" from "an MPU6050 answered".
+  assert.match(SRC, /static int mpuWhoAmI\(\)/);
+  assert.match(SRC, /Wire\.write\(0x75\)/);
+  // An all-zero burst is a different fault: the address ACKed but the register
+  // file is empty, which is a sensor reset, not a broken wire.
+  assert.match(SRC, /mpuZeroReads\+\+/);
+  assert.match(SRC, /fails=%lu zeros=%lu/);
+  // The console can dump it on demand.
+  assert.match(SRC, /case 'i':\s+mpuStatus\(\);/);
+  assert.match(SRC, /case 'I':\s+i2cScan\("console"\);/);
+  // Boot separates "before the radio" from "after the radio", so a supply
+  // problem cannot be confused with an absent module.
+  assert.match(SRC, /pre-radio probe: %s at 0x%02X \(who=%d\)/);
+  assert.match(SRC, /IMU worked before Wi-Fi and vanished after it/);
+  // A bus that fails to recover three times drops to 50 kHz instead of
+  // hammering the same marginal timing forever.
+  assert.match(SRC, /I2C clock dropped to 50 kHz/);
+});

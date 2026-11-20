@@ -26,7 +26,7 @@ This page is for the person at the track. The firmware-side design is in
    within a few seconds.
 2. **Join the setup hotspot from your phone.** Its name is
    `Orion-Setup-XXXX`, where `XXXX` comes from the board's MAC address. The
-   password is **`12345`**.
+   password is **`12345678`**.
 3. **Open the setup page.** Most phones show a "sign in to network" sheet
    automatically. If not, open a browser and go to
    **http://192.168.4.1/**.
@@ -82,7 +82,7 @@ for 20 seconds after boot, the board opens it on its own.
 
 ## Security notes
 
-- The setup hotspot uses the password **`12345`** while it exists. It only runs
+- The setup hotspot uses the password **`12345678`** while it exists. It only runs
   during provisioning, is never left on after a working connection (unless
   opened manually), and its save/forget endpoints reject clients that did not
   connect through the setup AP.

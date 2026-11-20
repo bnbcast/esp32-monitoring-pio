@@ -108,11 +108,12 @@ loop()
 </ul>
 <h3 id="mpu6050">MPU6050</h3>
 <ul>
-<li>I2C (GPIO 21/22), 400 kHz</li>
+<li>I2C (GPIO 21/22), 100 kHz, drops to 50 kHz after three failed bus recoveries</li>
 <li>Accel ±2g, Gyro ±250°/s</li>
 <li>Complementary filter (0.98 gyro / 0.02 accel) for roll/pitch</li>
 <li>Yaw = integrated gyro Z (drifts, no magnetometer)</li>
 <li>Self-test on boot; fails → MPU FAIL pill</li>
+<li>Every failure records <code>err</code>/<code>req</code>/<code>WHO_AM_I</code>; <code>i</code> prints the full status (see below)</li>
 </ul>
 <h3 id="mqtt-client">MQTT Client</h3>
 <ul>
@@ -177,7 +178,7 @@ loop()
 <tbody>
 <tr><td><code>TOPIC_KEY</code></td><td><code>&quot;race-tracker&quot;</code></td><td>MQTT topic suffix</td></tr>
 <tr><td><code>FW_NAME</code></td><td><code>&quot;orion&quot;</code></td><td>Firmware name in banner</td></tr>
-<tr><td><code>FW_VERSION</code></td><td><code>&quot;1.5.0&quot;</code></td><td>Firmware version</td></tr>
+<tr><td><code>FW_VERSION</code></td><td><code>&quot;1.5.1&quot;</code></td><td>Firmware version</td></tr>
 <tr><td><code>PUBLISH_INTERVAL_MS</code></td><td><code>1000</code></td><td>Publish cadence (ms)</td></tr>
 <tr><td><code>WIFI_TX_POWER</code></td><td><code>WIFI_POWER_15dBm</code></td><td>Radio TX power; lower peak current for battery/boost supplies</td></tr>
 <tr><td><code>WIFI_STORE_MAX</code></td><td><code>4</code></td><td>Saved networks in NVS (<code>wifi_store.h</code>)</td></tr>
@@ -213,12 +214,14 @@ loop()
 <hr>
 <h2 id="serial-output-115200-baud">Serial Output (115200 baud)</h2>
 <pre><code>
- orion 1.5.0
+ orion 1.5.1
  reset power-on   mac AA:BB:CC:DD:EE:FF   boot #274   brownouts 0
- SYS ready - orion 1.5.0
+ SYS ready - orion 1.5.1
  wifi  1 saved network(s) in NVS   setup: hold BOOT 3 s or press w
  NET connected 'Track-Hotspot'  ip=192.168.1.50  rssi=-37 dBm  ch=1  (slot 0)
  MQTT session up, status=online (retained)
+ IMU I2C scan (boot): 0x68
+ IMU pre-radio probe: found at 0x68 (who=104)
  IMU MPU6050 at 0x68  gyro bias 0.21/0.61/0.20 dps
  GPS waiting for fix...
  HIST ON  queued 0  stored 0  sent 0  fail 0
@@ -227,6 +230,41 @@ loop()
 <pre><code>
   ! NET  setup portal 'Orion-Setup-B9F0' (pw: 12345678) - join it and open http://192.168.4.1/
 </code></pre>
+<hr>
+<h2 id="imu-i-c-diagnostics">IMU / I²C Diagnostics</h2>
+<p>&quot;MPU FAIL&quot; on its own cannot tell a missing sensor from a wedged bus. The firmware therefore records what the Wire layer actually returned and prints it in the event line:</p>
+<pre><code>
+ IMU read failed at 0x68: err=2 req=0 who=-1
+ IMU MPU6050 stopped responding (I2C 0x68) err=5 req=0 fails=17 zeros=0
+ IMU I2C bus still dead: sda=0 scl=1 addr=0x68 err=5 req=0
+ IMU I2C clock dropped to 50 kHz after 3 recoveries
+</code></pre>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>err</code></td><td><code>Wire.endTransmission()</code> result: <strong>2</strong> address NACK (nothing at that address), <strong>3</strong> data NACK, <strong>4</strong> arbitration/other, <strong>5</strong> timeout (a line is held low)</td></tr>
+<tr><td><code>req</code></td><td>bytes returned by <code>Wire.requestFrom()</code>; <code>0</code> = the slave never answered</td></tr>
+<tr><td><code>who</code></td><td><code>WHO_AM_I</code> read (<code>0x68</code> on a healthy MPU6050, <code>-1</code> = no reply)</td></tr>
+<tr><td><code>zeros</code></td><td>bursts that returned 14 zero bytes — the address ACKed but the register file is empty (sensor reset, not wiring)</td></tr>
+<tr><td><code>sda</code>/<code>scl</code></td><td>line levels after a bus clear: <code>1/1</code> = free, a stuck <code>0</code> = no pull-up, broken wire or a slave holding the bus</td></tr>
+</tbody></table></div>
+<h3 id="reading-the-result">Reading the result</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Log</th><th>Cause</th></tr></thead>
+<tbody>
+<tr><td><code>err=2 req=0 who=-1</code></td><td>nothing ACKs at 0x68/0x69 — sensor unpowered, wrong address (AD0) or SDA/SCL open</td></tr>
+<tr><td><code>err=5</code> or <code>sda=0</code></td><td>the bus is stuck / not released — weak or missing pull-ups, long jumpers, or the module held in reset</td></tr>
+<tr><td><code>err=0 req=14 who=0x68</code> but <code>zeros</code> climbing</td><td>the chip answers but keeps resetting — supply dip, not wiring</td></tr>
+<tr><td><code>IMU worked before Wi-Fi and vanished after it</code></td><td>the radio is loading the rail — power, not firmware</td></tr>
+<tr><td><code>IMU answered only after Wi-Fi started</code></td><td>marginal power-up — check the 3V3 rail and pull-ups</td></tr>
+</tbody></table></div>
+<p>At boot the firmware clears the bus, scans it, and probes the IMU <strong>before Wi-Fi starts</strong>, then probes again after the radio is up. Those two results are printed so &quot;absent at power-up&quot; and &quot;killed by the radio&quot; are distinguishable.</p>
+<p>From the serial console:</p>
+<ul>
+<li><strong><code>i</code></strong> — IMU status: address, clock, valid/fault, counters, last burst</li>
+<p><code>err</code>/<code>req</code>/<code>who</code>, idle line levels, seconds since the last good read.</p>
+<li><strong><code>I</code></strong> — the same plus a full I²C address scan.</li>
+</ul>
 <hr>
 <h2 id="status-pills-from-firmware-dashboard">Status Pills (from firmware → dashboard)</h2>
 <div class="table-wrap"><table>

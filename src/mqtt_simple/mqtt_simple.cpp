@@ -58,13 +58,14 @@
 
 // ============ IDENTITY ============
 #define FW_NAME     "orion"
-#define FW_VERSION  "1.5.0"
+#define FW_VERSION  "1.5.1"
 
 // ============ SERIAL CONSOLE ============
 // One framed panel every DASH_INTERVAL_MS plus event lines as they happen.
 // Keys: g raw NMEA echo | v verbose | c colours | p panel | ? help
 //       d LED self-test | y invert LED polarity | a/b lap gates | x reboot
 //       w Wi-Fi setup portal (hold BOOT on GPIO0 for 3 s too)
+//       i IMU/I2C status | I status + bus scan
 #define ANSI_RESET  "\033[0m"
 #define ANSI_BOLD   "\033[1m"
 #define ANSI_DIM    "\033[2m"
@@ -238,6 +239,26 @@ uint8_t MPU_ADDR = 0x68;
 bool mpuValid = false;
 unsigned long lastRetry = 0;
 uint8_t mpuFailStreak = 0;
+
+// ---- IMU / I2C diagnostics -------------------------------------------------
+// "MPU FAIL" alone cannot tell a missing sensor from a bus that lost its
+// pull-ups, so every burst records what the Wire layer actually said:
+//   err = Wire.endTransmission(): 2 = address NACK, 3 = data NACK,
+//         4 = other/arbitration lost, 5 = timeout (SDA or SCL held low)
+//   req = bytes returned by Wire.requestFrom()  (0 = the slave never answered)
+//   who = WHO_AM_I after the failure (0x68 on a healthy MPU6050, -1 = no reply)
+// 'i' prints the whole picture on demand; 'I' adds a bus scan.
+uint8_t  mpuLastErr    = 0;
+uint8_t  mpuLastReq    = 0;
+uint32_t mpuReadsOk    = 0;
+uint32_t mpuReadFails  = 0;
+uint32_t mpuZeroReads  = 0;   // 14 bytes arrived, all zero: chip acked but lost its config
+uint8_t  mpuRecoveries = 0;
+uint32_t mpuClockHz    = 100000;
+unsigned long mpuLastOkMs      = 0;
+unsigned long mpuLastFailLogMs = 0;
+int mpuBusSdaIdle = -1;       // line levels after a bus clear: 1/1 = free
+int mpuBusSclIdle = -1;
 
 // A single NACK right after a Wi-Fi TX burst is not a dead sensor, but it used
 // to flip mpuValid, strobe all three LEDs through ledsFault() and make the
@@ -746,8 +767,10 @@ static bool mpuReadOnce(float &ax, float &ay, float &az, float &temp,
                         float &gx, float &gy, float &gz) {
   Wire.beginTransmission(MPU_ADDR);
   Wire.write(0x3B);
-  if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom((int)MPU_ADDR, 14, 1) != 14) return false;
+  mpuLastErr = (uint8_t)Wire.endTransmission(false);
+  if (mpuLastErr != 0) { mpuLastReq = 0; return false; }
+  mpuLastReq = (uint8_t)Wire.requestFrom((int)MPU_ADDR, 14, 1);
+  if (mpuLastReq != 14) return false;
 
   int16_t rax = (Wire.read() << 8) | Wire.read();
   int16_t ray = (Wire.read() << 8) | Wire.read();
@@ -757,7 +780,13 @@ static bool mpuReadOnce(float &ax, float &ay, float &az, float &temp,
   int16_t rgy = (Wire.read() << 8) | Wire.read();
   int16_t rgz = (Wire.read() << 8) | Wire.read();
 
-  if (rax == 0 && ray == 0 && raz == 0 && rgx == 0 && rgy == 0 && rgz == 0) return false;
+  // All-zero means the chip ACKed its address but returned an empty register
+  // file (its power-on default): the bus works, the sensor woke up asleep.
+  // Counting it separately is what separates "wire" from "chip reset".
+  if (rax == 0 && ray == 0 && raz == 0 && rgx == 0 && rgy == 0 && rgz == 0) {
+    mpuZeroReads++;
+    return false;
+  }
 
   ax = rax / 16384.0f;
   ay = ray / 16384.0f;
@@ -781,7 +810,7 @@ bool mpuRead(float &ax, float &ay, float &az, float &temp,
 
 // A supply glitch can leave the MPU or the bus holding SDA low. Re-init the
 // peripheral and clock the bus free so it recovers without a reboot.
-static void i2cRecover() {
+static void i2cBusClear() {
   Wire.end();
   pinMode(I2C_SDA_PIN, INPUT_PULLUP);
   pinMode(I2C_SCL_PIN, OUTPUT);
@@ -793,25 +822,115 @@ static void i2cRecover() {
   digitalWrite(I2C_SDA_PIN, LOW);    delayMicroseconds(5);
   digitalWrite(I2C_SCL_PIN, HIGH);   delayMicroseconds(5);
   digitalWrite(I2C_SDA_PIN, HIGH);   delayMicroseconds(5);
+  // Release both lines and sample them. 1/1 means every slave let go; a stuck
+  // 0 tells us the pull-up, the wire or the sensor is holding the bus down,
+  // which no amount of re-initialising can fix.
+  pinMode(I2C_SDA_PIN, INPUT_PULLUP);
+  pinMode(I2C_SCL_PIN, INPUT_PULLUP);
+  delayMicroseconds(10);
+  mpuBusSdaIdle = digitalRead(I2C_SDA_PIN);
+  mpuBusSclIdle = digitalRead(I2C_SCL_PIN);
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(100000);
-  mpuFind();
-  mpuInit();
-  logMsg(L_WARN, "IMU", "I2C bus recovered");
+  Wire.setClock(mpuClockHz);
+}
+
+// WHO_AM_I (0x75) separates "the address ACKed" from "an MPU6050 is there".
+static int mpuWhoAmI() {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x75);
+  if (Wire.endTransmission(false) != 0) return -1;
+  if (Wire.requestFrom((int)MPU_ADDR, 1, 1) != 1) return -1;
+  return Wire.read();
+}
+
+// Which addresses answer right now. A full sweep is cheap when the bus is
+// healthy and only ever runs at boot, on a fault transition or from 'I', never
+// in the publish path. The 20 ms timeout bounds a sweep of a stuck bus.
+static void i2cScan(const char* why) {
+  Wire.setTimeOut(20);
+  char list[96];
+  int n = 0;
+  for (uint8_t a = 1; a < 127; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      n += snprintf(list + n, sizeof list - (size_t)n, " 0x%02X", a);
+      if (n >= (int)sizeof list - 8) break;
+    }
+  }
+  if (n == 0) snprintf(list, sizeof list, " none");
+  logMsg(n ? L_OK : L_WARN, "IMU", "I2C scan (%s):%s", why, list);
+  Wire.setTimeOut(50);
+}
+
+static void mpuStatus() {
+  const int who = mpuWhoAmI();
+  const unsigned whoU = who < 0 ? 0u : (unsigned)who;
+  logMsg(L_INFO, "IMU",
+         "status addr=0x%02X clock=%lukHz valid=%s fault=%s ok=%lu fail=%lu zeros=%lu streak=%u recov=%u",
+         MPU_ADDR, (unsigned long)(mpuClockHz / 1000UL),
+         mpuValid ? "YES" : "NO", mpuFaulted ? "YES" : "NO",
+         (unsigned long)mpuReadsOk, (unsigned long)mpuReadFails,
+         (unsigned long)mpuZeroReads, (unsigned)mpuFailStreak,
+         (unsigned)mpuRecoveries);
+  logMsg(L_INFO, "IMU",
+         "last burst err=%u req=%u | who=0x%02X %s | lines sda=%d scl=%d | last good %lus ago",
+         (unsigned)mpuLastErr, (unsigned)mpuLastReq, whoU,
+         who == 0x68 ? "MPU6050" : (who < 0 ? "no reply" : "unexpected id"),
+         mpuBusSdaIdle, mpuBusSclIdle,
+         (unsigned long)(mpuLastOkMs ? (millis() - mpuLastOkMs) / 1000UL : 0));
+}
+
+static void i2cRecover() {
+  mpuRecoveries++;
+  // A bus that keeps failing after several clears is usually marginal at
+  // 100 kHz (long jumpers, weak pull-ups). 50 kHz is inside every MPU6050
+  // spec and costs ~3 ms per burst, so it is a real fallback, not a guess.
+  if (mpuRecoveries >= 3 && mpuClockHz > 50000) {
+    mpuClockHz = 50000;
+    logMsg(L_WARN, "IMU", "I2C clock dropped to 50 kHz after %u recoveries",
+           (unsigned)mpuRecoveries);
+  }
+  i2cBusClear();
+  const bool found = mpuFind();
+  if (found) mpuInit();
+  if (found) {
+    logMsg(L_WARN, "IMU", "I2C bus recovered: sda=%d scl=%d who=%d clock=%lukHz",
+           mpuBusSdaIdle, mpuBusSclIdle, mpuWhoAmI(),
+           (unsigned long)(mpuClockHz / 1000UL));
+  } else {
+    logMsg(L_ERR, "IMU", "I2C bus still dead: sda=%d scl=%d addr=0x%02X err=%u req=%u",
+           mpuBusSdaIdle, mpuBusSclIdle, MPU_ADDR,
+           (unsigned)mpuLastErr, (unsigned)mpuLastReq);
+  }
 }
 
 void updateMotion() {
   float ax, ay, az, t, gx, gy, gz;
   if (!mpuRead(ax, ay, az, t, gx, gy, gz)) {
+    mpuReadFails++;
     if (!mpuFaulted) {
       mpuFaulted = true;
       mpuFaultSince = millis();
+      // First failure of an episode: record what the bus actually reported.
+      // One extra register read is worth it - it is the difference between a
+      // sensor that is gone and a bus that is stuck.
+      if (millis() - mpuLastFailLogMs >= 1000) {
+        mpuLastFailLogMs = millis();
+        logMsg(L_WARN, "IMU", "read failed at 0x%02X: err=%u req=%u who=%d",
+               MPU_ADDR, (unsigned)mpuLastErr, (unsigned)mpuLastReq, mpuWhoAmI());
+      }
+    } else if (verbose && millis() - mpuLastFailLogMs >= 1000) {
+      mpuLastFailLogMs = millis();
+      logMsg(L_WARN, "IMU", "read still failing: err=%u req=%u streak=%u",
+             (unsigned)mpuLastErr, (unsigned)mpuLastReq, (unsigned)mpuFailStreak);
     }
     // Keep publishing the last good attitude inside the grace window. A real
     // dead sensor still becomes FAIL, just two seconds later.
     if (mpuValid && millis() - mpuFaultSince >= MPU_FAULT_GRACE_MS) {
       mpuValid = false;
-      logMsg(L_ERR, "IMU", "MPU6050 stopped responding (I2C 0x%02X)", MPU_ADDR);
+      logMsg(L_ERR, "IMU", "MPU6050 stopped responding (I2C 0x%02X) err=%u req=%u fails=%lu zeros=%lu",
+             MPU_ADDR, (unsigned)mpuLastErr, (unsigned)mpuLastReq,
+             (unsigned long)mpuReadFails, (unsigned long)mpuZeroReads);
     }
     // A rail dip can wedge the bus. Retry the sensor a few times, then re-init
     // the peripheral and clock SDA free instead of requiring a power cycle.
@@ -835,10 +954,13 @@ void updateMotion() {
   }
   mpuFailStreak = 0;
   mpuFaulted = false;
+  mpuReadsOk++;
+  mpuLastOkMs = millis();
   if (!mpuValid) {
     mpuValid = true;
     lastMicros = micros();
-    logMsg(L_OK, "IMU", "MPU6050 back online at 0x%02X", MPU_ADDR);
+    logMsg(L_OK, "IMU", "MPU6050 back online at 0x%02X after %u recoveries",
+           MPU_ADDR, (unsigned)mpuRecoveries);
   }
 
   unsigned long now = micros();
@@ -2172,6 +2294,8 @@ void printHelp() {
                 A(ANSI_DIM), A(ANSI_RESET));
   Serial.printf("%swifi  w setup portal (hold BOOT/GPIO0 3 s) | x reboot%s\n",
                 A(ANSI_DIM), A(ANSI_RESET));
+  Serial.printf("%simu   i MPU/I2C status (err/req/who) | I + bus scan%s\n",
+                A(ANSI_DIM), A(ANSI_RESET));
 }
 
 
@@ -2205,6 +2329,16 @@ void mqtt_simple_setup() {
   // the banner so the first screen says how many networks the board has.
   wifiStoreLoad();
   printBanner();
+
+  // Pre-radio IMU probe. It runs before the GPS is configured and before Wi-Fi
+  // starts, so a later failure is unambiguous:
+  //   found here, gone after the radio -> the radio is loading the rail/bus
+  //   gone here too                    -> the sensor is absent at power-up
+  i2cBusClear();
+  i2cScan("boot");
+  const bool imuEarly = mpuFind() && mpuInit();
+  logMsg(imuEarly ? L_OK : L_WARN, "IMU", "pre-radio probe: %s at 0x%02X (who=%d)",
+         imuEarly ? "found" : "no reply", MPU_ADDR, imuEarly ? mpuWhoAmI() : -1);
 
   // Ask the module to run 5 Hz / automotive / static hold / SBAS. Falls back to
   // the power-on defaults when nothing answers on the TX pin.
@@ -2261,6 +2395,13 @@ void mqtt_simple_setup() {
     ledsFault();
     delay(100);
   }
+  // Two outcomes matter and they have different causes. Say which one happened
+  // instead of leaving "absent after 5 s" to mean both.
+  if (imuPresent && !imuEarly)
+    logMsg(L_WARN, "IMU", "IMU answered only after Wi-Fi started - suspect the 3V3 rail or pull-ups");
+  if (!imuPresent && imuEarly)
+    logMsg(L_ERR, "IMU", "IMU worked before Wi-Fi and vanished after it - radio current is the trigger");
+  if (!imuPresent) i2cScan("no IMU after 5 s");
 
   float ax = 0, ay = 0, az = 0, t = 0, gx = 0, gy = 0, gz = 0;
   if (imuPresent) {
@@ -2406,6 +2547,13 @@ static void handleKeys() {
         break;
       case 'w': case 'W':
         wifiPortalToggle("console");
+        break;
+      case 'i':
+        mpuStatus();
+        break;
+      case 'I':
+        i2cScan("console");
+        mpuStatus();
         break;
       case 't': case 'T':
         if (historySelfTest())

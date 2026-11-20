@@ -414,7 +414,7 @@ bool wifiPortalBegin() {
   // behaves like a plain AP.
   WiFi.mode(WIFI_AP_STA);
   delay(10);
-  if (!WiFi.softAP(g_apSsid, "12345")) {
+  if (!WiFi.softAP(g_apSsid, "12345678")) {
     portalLog("softAP failed");
     WiFi.mode(WIFI_STA);
     return false;

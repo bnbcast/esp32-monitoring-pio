@@ -73,11 +73,12 @@ use `millis()` deadlines, so a TLS upload or a scan cannot stall the others.
 - Cold start: 30–60s outdoors; warm start: ~5s
 
 ### MPU6050
-- I2C (GPIO 21/22), 400 kHz
+- I2C (GPIO 21/22), 100 kHz, drops to 50 kHz after three failed bus recoveries
 - Accel ±2g, Gyro ±250°/s
 - Complementary filter (0.98 gyro / 0.02 accel) for roll/pitch
 - Yaw = integrated gyro Z (drifts, no magnetometer)
 - Self-test on boot; fails → MPU FAIL pill
+- Every failure records `err`/`req`/`WHO_AM_I`; `i` prints the full status (see below)
 
 ### MQTT Client
 - PubSubClient over `WiFiClientSecure`
@@ -102,7 +103,7 @@ and the list lives in NVS.
   the old entry instead of duplicating it; the oldest is dropped when full. An
   empty password means an **open** network.
 - **First boot after flashing**: the list is empty, so the setup AP opens
-  immediately. It is secured with password `12345` (`Orion-Setup-XXXX`, last four hex digits of the MAC)
+  immediately. It is secured with password `12345678` (`Orion-Setup-XXXX`, last four hex digits of the MAC)
   and serves the page at `http://192.168.4.1/`. Captive-portal probes redirect
   to it, so a phone usually offers the sign-in sheet by itself.
 - **Saved list, no association**: if no saved network connects within 20 s, the
@@ -160,7 +161,7 @@ The network stack is a non-blocking state machine (`WF_IDLE` → `WF_SCANNING` �
 |--------|---------|-------------|
 | `TOPIC_KEY` | `"race-tracker"` | MQTT topic suffix |
 | `FW_NAME` | `"orion"` | Firmware name in banner |
-| `FW_VERSION` | `"1.5.0"` | Firmware version |
+| `FW_VERSION` | `"1.5.1"` | Firmware version |
 | `PUBLISH_INTERVAL_MS` | `1000` | Publish cadence (ms) |
 | `WIFI_TX_POWER` | `WIFI_POWER_15dBm` | Radio TX power; lower peak current for battery/boost supplies |
 | `WIFI_STORE_MAX` | `4` | Saved networks in NVS (`wifi_store.h`) |
@@ -204,12 +205,14 @@ The board counts laps; the dashboard only mirrors the result.
 ## Serial Output (115200 baud)
 
 ```
- orion 1.5.0
+ orion 1.5.1
  reset power-on   mac AA:BB:CC:DD:EE:FF   boot #274   brownouts 0
- SYS ready - orion 1.5.0
+ SYS ready - orion 1.5.1
  wifi  1 saved network(s) in NVS   setup: hold BOOT 3 s or press w
  NET connected 'Track-Hotspot'  ip=192.168.1.50  rssi=-37 dBm  ch=1  (slot 0)
  MQTT session up, status=online (retained)
+ IMU I2C scan (boot): 0x68
+ IMU pre-radio probe: found at 0x68 (who=104)
  IMU MPU6050 at 0x68  gyro bias 0.21/0.61/0.20 dps
  GPS waiting for fix...
  HIST ON  queued 0  stored 0  sent 0  fail 0
@@ -219,8 +222,51 @@ When no saved network is in range, the panel gains an actionable line instead
 of leaving the cause implicit:
 
 ```
-  ! NET  setup portal 'Orion-Setup-B9F0' (pw: 12345) - join it and open http://192.168.4.1/
+  ! NET  setup portal 'Orion-Setup-B9F0' (pw: 12345678) - join it and open http://192.168.4.1/
 ```
+
+---
+
+## IMU / I²C Diagnostics
+
+"MPU FAIL" on its own cannot tell a missing sensor from a wedged bus. The
+firmware therefore records what the Wire layer actually returned and prints it
+in the event line:
+
+```
+ IMU read failed at 0x68: err=2 req=0 who=-1
+ IMU MPU6050 stopped responding (I2C 0x68) err=5 req=0 fails=17 zeros=0
+ IMU I2C bus still dead: sda=0 scl=1 addr=0x68 err=5 req=0
+ IMU I2C clock dropped to 50 kHz after 3 recoveries
+```
+
+| Field | Meaning |
+|-------|---------|
+| `err` | `Wire.endTransmission()` result: **2** address NACK (nothing at that address), **3** data NACK, **4** arbitration/other, **5** timeout (a line is held low) |
+| `req` | bytes returned by `Wire.requestFrom()`; `0` = the slave never answered |
+| `who` | `WHO_AM_I` read (`0x68` on a healthy MPU6050, `-1` = no reply) |
+| `zeros` | bursts that returned 14 zero bytes — the address ACKed but the register file is empty (sensor reset, not wiring) |
+| `sda`/`scl` | line levels after a bus clear: `1/1` = free, a stuck `0` = no pull-up, broken wire or a slave holding the bus |
+
+### Reading the result
+
+| Log | Cause |
+|-----|-------|
+| `err=2 req=0 who=-1` | nothing ACKs at 0x68/0x69 — sensor unpowered, wrong address (AD0) or SDA/SCL open |
+| `err=5` or `sda=0` | the bus is stuck / not released — weak or missing pull-ups, long jumpers, or the module held in reset |
+| `err=0 req=14 who=0x68` but `zeros` climbing | the chip answers but keeps resetting — supply dip, not wiring |
+| `IMU worked before Wi-Fi and vanished after it` | the radio is loading the rail — power, not firmware |
+| `IMU answered only after Wi-Fi started` | marginal power-up — check the 3V3 rail and pull-ups |
+
+At boot the firmware clears the bus, scans it, and probes the IMU **before Wi-Fi
+starts**, then probes again after the radio is up. Those two results are printed
+so "absent at power-up" and "killed by the radio" are distinguishable.
+
+From the serial console:
+
+- **`i`** — IMU status: address, clock, valid/fault, counters, last burst
+  `err`/`req`/`who`, idle line levels, seconds since the last good read.
+- **`I`** — the same plus a full I²C address scan.
 
 ---
 
