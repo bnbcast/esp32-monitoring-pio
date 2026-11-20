@@ -131,7 +131,7 @@ loop()
 <li><strong>Storage</strong>: up to 4 networks in the <code>wifi</code> NVS namespace, written as one</li>
 <p>versioned blob (<code>wifi_store.cpp</code>). Newest first; saving the same SSID replaces the old entry instead of duplicating it; the oldest is dropped when full. An empty password means an <strong>open</strong> network.</p>
 <li><strong>First boot after flashing</strong>: the list is empty, so the setup AP opens</li>
-<p>immediately. It is secured with password <code>12345</code> (<code>Orion-Setup-XXXX</code>, last four hex digits of the MAC) and serves the page at <code>http://192.168.4.1/</code>. Captive-portal probes redirect to it, so a phone usually offers the sign-in sheet by itself.</p>
+<p>immediately. It is secured with password <code>12345678</code> (<code>Orion-Setup-XXXX</code>, last four hex digits of the MAC) and serves the page at <code>http://192.168.4.1/</code>. Captive-portal probes redirect to it, so a phone usually offers the sign-in sheet by itself.</p>
 <li><strong>Saved list, no association</strong>: if no saved network connects within 20 s, the</li>
 <p>portal opens. This also covers a moved venue or a changed hotspot password.</p>
 <li><strong>Page</strong>: scan list (2.4 GHz only; hidden networks can be typed), SSID field,</li>
@@ -225,7 +225,7 @@ loop()
 </code></pre>
 <p>When no saved network is in range, the panel gains an actionable line instead of leaving the cause implicit:</p>
 <pre><code>
-  ! NET  setup portal 'Orion-Setup-B9F0' (pw: 12345) - join it and open http://192.168.4.1/
+  ! NET  setup portal 'Orion-Setup-B9F0' (pw: 12345678) - join it and open http://192.168.4.1/
 </code></pre>
 <hr>
 <h2 id="status-pills-from-firmware-dashboard">Status Pills (from firmware → dashboard)</h2>

@@ -66,7 +66,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <li><strong>Power the tracker.</strong> With no saved network, it opens its setup hotspot</li>
 <p>within a few seconds.</p>
 <li><strong>Join the setup hotspot from your phone.</strong> Its name is</li>
-<p><code>Orion-Setup-XXXX</code>, where <code>XXXX</code> comes from the board's MAC address. The password is <strong><code>12345</code></strong>.</p>
+<p><code>Orion-Setup-XXXX</code>, where <code>XXXX</code> comes from the board's MAC address. The password is <strong><code>12345678</code></strong>.</p>
 <li><strong>Open the setup page.</strong> Most phones show a &quot;sign in to network&quot; sheet</li>
 <p>automatically. If not, open a browser and go to <strong>http://192.168.4.1/</strong>.</p>
 <li><strong>Add the network:</strong></li>
@@ -109,7 +109,7 @@ hr{border:0;border-top:1px solid var(--line);margin:26px 0}
 <hr>
 <h2 id="security-notes">Security notes</h2>
 <ul>
-<li>The setup hotspot uses the password <strong><code>12345</code></strong> while it exists. It only runs</li>
+<li>The setup hotspot uses the password <strong><code>12345678</code></strong> while it exists. It only runs</li>
 <p>during provisioning, is never left on after a working connection (unless opened manually), and its save/forget endpoints reject clients that did not connect through the setup AP.</p>
 <li>The tracker never exposes the stored password: the page lists SSIDs only, and</li>
 <p>passwords are written to NVS without being read back into HTML.</p>
