@@ -14,8 +14,8 @@ import worker from '../src/index.js';
 const KEY = 'test-key-0123456789abcdef0123456789abcdef';
 
 function fakeD1() {
-  const rows = [];
-  const laps = [];
+  let rows = [];
+  let laps = [];
   const meta = new Map();
   let lastId = 0;
 
@@ -53,6 +53,18 @@ function fakeD1() {
             const before = rows.length;
             for (let i = rows.length - 1; i >= 0; i--) if (rows[i].ts < cutoff) rows.splice(i, 1);
             return { meta: { changes: before - rows.length } };
+          }
+          if (sql.includes('DELETE FROM fixes WHERE device =')) {
+            const [device] = args;
+            const before = rows.length;
+            rows = rows.filter(r => r.device !== device);
+            return { meta: { changes: before - rows.length } };
+          }
+          if (sql.includes('DELETE FROM laps WHERE device =')) {
+            const [device] = args;
+            const before = laps.length;
+            laps = laps.filter(l => l.device !== device);
+            return { meta: { changes: before - laps.length } };
           }
           if (sql.includes('UPDATE meta SET value = ?')) {
             // Claim the daily slot: update only when older than dueBefore.
@@ -113,6 +125,18 @@ function fakeD1() {
             if (laps.some(l => l.device === device && l.gen === gen && l.n === n)) return { meta: { changes: 0 } };
             laps.push({ device, gen, n, ts, dur_ms: dur, best_ms: best, received });
             return { meta: { changes: 1 } };
+          }
+          if (sql.includes('DELETE FROM laps WHERE device =')) {
+            const [device] = args;
+            const before = laps.length;
+            laps = laps.filter(l => l.device !== device);
+            return { meta: { changes: before - laps.length } };
+          }
+          if (sql.includes('DELETE FROM fixes WHERE device =')) {
+            const [device] = args;
+            const before = rows.length;
+            rows = rows.filter(r => r.device !== device);
+            return { meta: { changes: before - rows.length } };
           }
           // device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, roll, pitch, received
           const [device, boot, seq, ts, up, lat, lon, alt, kmh, cog, hdop, sats, dist_m, roll, pitch, received] = args;
@@ -425,4 +449,34 @@ test('unknown route is 404 and OPTIONS is CORS-only', async () => {
   const opt = await worker.fetch(new Request('https://x/ingest', { method: 'OPTIONS' }), env());
   assert.equal(opt.status, 204);
   assert.equal(opt.headers.get('access-control-allow-origin'), '*');
+});
+
+test('DELETE /history requires the ingest key', async () => {
+  const e = env();
+  const r = await worker.fetch(new Request('https://x/history', { method: 'DELETE' }), e);
+  assert.equal(r.status, 401);
+});
+
+test('DELETE /history clears all fixes and laps for a device', async () => {
+  const e = env();
+  const t = now();
+  // Seed some data
+  await post(e, [frame({ seq: 1, ts: t })]);
+  await post(e, [frame({ seq: 2, ts: t + 10, lap_n: 1, lap_last_ms: 50000, lap_gen: 1 })]);
+  let r = await worker.fetch(new Request('https://x/history?device=esp32-01'), e);
+  assert.equal((await r.json()).count, 1);
+  r = await worker.fetch(new Request('https://x/laps?device=esp32-01'), e).catch(() => ({ json: async () => ({ results: [] }) }));
+  // Direct delete
+  const del = await worker.fetch(
+    new Request('https://x/history?device=esp32-01', {
+      method: 'DELETE',
+      headers: { 'x-ingest-key': KEY }
+    }), e);
+  const body = await del.json();
+  assert.equal(del.status, 200);
+  assert.ok(body.ok);
+  assert.ok(body.deleted.fixes >= 1);
+  // Verify gone
+  r = await worker.fetch(new Request('https://x/history?device=esp32-01'), e);
+  assert.equal((await r.json()).count, 0);
 });

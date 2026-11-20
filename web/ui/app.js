@@ -1753,6 +1753,28 @@ if (!KEY) {
   if ($('btnExportCsv')) {
     $('btnExportCsv').addEventListener('click', () => exportHistory('csv'));
   }
+  if ($('btnClearHistory')) {
+    $('btnClearHistory').addEventListener('click', async () => {
+      if (!confirm('Delete ALL stored history for this device from the server? This cannot be undone.')) return;
+      const key = prompt('Enter the INGEST_KEY (from src/history_secret.h):');
+      if (!key) return;
+      try {
+        const res = await fetch(`${HISTORY_API}/history?device=esp32-01`, {
+          method: 'DELETE',
+          headers: { 'x-ingest-key': key }
+        });
+        const body = await res.json();
+        if (body.ok) {
+          if ($('histStatus')) $('histStatus').textContent = `cleared ${body.deleted?.fixes || 0} fixes, ${body.deleted?.laps || 0} laps`;
+          loadHistory(activeHistMins); // refresh
+        } else {
+          if ($('histStatus')) $('histStatus').textContent = 'clear failed: ' + (body.error || res.status);
+        }
+      } catch (e) {
+        if ($('histStatus')) $('histStatus').textContent = 'clear failed: ' + e.message;
+      }
+    });
+  }
 
   // Tap a row to draw just that stint; tap it again to go back to the full
   // window. The map is only touched here, so a bad row can never blank the live

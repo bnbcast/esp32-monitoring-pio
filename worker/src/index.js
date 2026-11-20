@@ -49,6 +49,7 @@ export default {
     if (url.pathname === '/live' && request.method === 'GET') return live(url);
     if (url.pathname === '/health') return json({ ok: true, service: 'race-tracker-history' });
     if (url.pathname === '/history' && request.method === 'GET') return history(url, env);
+    if (url.pathname === '/history' && request.method === 'DELETE') return deleteHistory(request, env);
     if (url.pathname === '/ingest' && request.method === 'POST') return ingest(request, env);
     return json({ ok: false, error: 'not-found' }, 404);
   },
@@ -190,6 +191,19 @@ async function ingest(request, env) {
 }
 
 // Deletes rows past the retention window and returns how many went.
+// Delete all history for a device. Requires X-Ingest-Key.
+async function deleteHistory(request, env) {
+  if (!env.INGEST_KEY) return json({ ok: false, error: 'ingest-key-not-set' }, 503);
+  if (!safeEqual(request.headers.get('x-ingest-key') || '', env.INGEST_KEY)) {
+    return json({ ok: false, error: 'unauthorized' }, 401);
+  }
+  const url = new URL(request.url);
+  const device = (url.searchParams.get('device') || DEVICE).slice(0, 32);
+  const fixes = await env.DB.prepare('DELETE FROM fixes WHERE device = ?').bind(device).run();
+  const laps = await env.DB.prepare('DELETE FROM laps WHERE device = ?').bind(device).run();
+  return json({ ok: true, deleted: { fixes: fixes.meta?.changes || 0, laps: laps.meta?.changes || 0 } });
+}
+
 async function purge(env, nowS) {
   const cutoff = nowS - RETENTION_S;
   const res = await env.DB.prepare('DELETE FROM fixes WHERE ts < ?').bind(cutoff).run();
