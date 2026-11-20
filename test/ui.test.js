@@ -202,3 +202,16 @@ test('a missed MPU frame is recovering, not a wiring fault', () => {
   // A sensor that never answered still gets the hard message.
   assert.match(APP, /check MPU6050 wiring/);
 });
+
+test('the trail source enables lineMetrics, or the trail layer is dropped', () => {
+  // MapLibre validates line-gradient against the source: a GeoJSON source
+  // without lineMetrics makes addLayer reject the whole trail layer. The map
+  // then shows a moving marker and no line, with no visible failure. This was
+  // the bug after the single-LineString performance change.
+  assert.match(MAPJS, /"line-gradient"/, 'the trail layer no longer uses a gradient');
+  const at = MAPJS.indexOf('map.addSource("trail"');
+  assert.ok(at >= 0, 'the trail source is missing');
+  const source = MAPJS.slice(at, at + 300);
+  assert.match(source, /lineMetrics:\s*true/,
+    'the trail source must set lineMetrics: true for its line-gradient');
+});

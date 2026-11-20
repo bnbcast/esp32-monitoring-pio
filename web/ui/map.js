@@ -517,14 +517,19 @@ const MAP = (function () {
     });
 
     // ---- Trail source (geojson) ----
+    // lineMetrics is not optional: MapLibre validates the trail layer's
+    // line-gradient against the source, and a GeoJSON source without it makes
+    // addLayer drop the whole layer. The map then draws no trail at all while
+    // the marker still moves. Keep the two together.
     map.addSource("trail", {
       type: "geojson",
+      lineMetrics: true,
       data: { type: "FeatureCollection", features: [] }
     });
 
-    // ---- Trail layer (speed-colored, solid) ----
-    // Uses line-gradient for a single continuous LineString — far fewer features
-    // than one per segment, and GPU-native coloring along the line.
+    // ---- Trail layer (gradient, solid) ----
+    // One continuous LineString — far fewer features than one per segment, and
+    // GPU-native coloring along the line (green at the start, red at the head).
     map.addLayer({
       id: "trail",
       type: "line",
@@ -1009,7 +1014,7 @@ const MAP = (function () {
       src.setData({ type: "FeatureCollection", features: [] });
       return;
     }
-    // Single LineString — line-gradient handles speed coloring via line-progress.
+    // Single LineString — line-gradient colors it via line-progress.
     const coords = [];
     for (let i = 0; i < trailCoords.length; i++) {
       coords.push([trailCoords[i].lng, trailCoords[i].lat]);
