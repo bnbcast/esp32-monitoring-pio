@@ -757,7 +757,7 @@ const MAP = (function () {
           if (movingConfirm >= 2) parkedNow = false;
           else if (parkedConfirm >= 2) parkedNow = true;
 
-          const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, acc * 2.5);
+          const step = moving ? TRAIL_STEP_MOVING : Math.max(TRAIL_STEP_STOPPED, accM * 2.5);
 
           // A move must be confirmed by consecutive readings that keep going the
           // same way: one sample is noise, two (moving) or three (parked) are a
