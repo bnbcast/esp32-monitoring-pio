@@ -574,20 +574,25 @@ static void gpsMonParse() {
       snprintf(note, sizeof note, "fix=%s", gm.fixMode == 3 ? "3D" : gm.fixMode == 2 ? "2D" : "none");
     }
   } else if (!strcmp(kind, "TXT")) {
-    // u-blox antenna supervisor: "$GPTXT,01,01,02,ANTSTATUS=OPEN". Sent once
-    // shortly after power-up, so it only lands when the link is already at the
-    // right baud; gpsAntennaStatus() below asks again on demand.
+    // Antenna supervisor text. Two vendor spellings exist and both are in the
+    // wild: u-blox "$GPTXT,01,01,02,ANTSTATUS=OPEN" (once, at power-up) and the
+    // multi-GNSS clones "$GPTXT,01,01,01,ANTENNA OPEN" (every fix). The clone
+    // form is the one on this board, which is why the field used to read NONE
+    // while the module was broadcasting OPEN five times a second.
     gm.cOther++;
     char txt[40];
     if (nmeaField(gm.line, 4, txt, sizeof txt)) {
       const char* a = strstr(txt, "ANTSTATUS=");
+      if (a) a += 10;
+      else if ((a = strstr(txt, "ANTENNA ")) != nullptr) a += 8;
       if (a) {
-        a += 10;
         int s = !strncmp(a, "OK", 2)    ? 2
               : !strncmp(a, "SHORT", 5) ? 3
               : !strncmp(a, "OPEN", 4)  ? 4
               : !strncmp(a, "INIT", 4)  ? 0 : -1;
-        if (s >= 0 && gm.antState <= 0) gm.antState = s;   // the UBX probe wins
+        // Always take it: the clone repeats this line with every fix, so the
+        // dashboard notices when the antenna is plugged back in, no reboot.
+        if (s >= 0) gm.antState = s;
         snprintf(note, sizeof note, "antenna %s", a);
       }
     }
@@ -2434,15 +2439,15 @@ void mqtt_simple_setup() {
   // the power-on defaults when nothing answers on the TX pin.
   gm.antState = -1;                   // unknown until the module answers
   gpsUbxConfigure();
-  // CFG-CFG writes the module's flash and can hold its UART for about a second,
-  // so a single MON-HW poll right after it is easy to miss. Wait for NMEA to
-  // prove the port is back, then ask again: one lost request used to leave the
-  // antenna state as "no reply" for the whole session.
-  for (int i = 0; i < 20 && gm.sentences < 10; i++) gpsPump(100);
-  for (int attempt = 0; attempt < 3; attempt++) {
-    const int ant = gpsAntennaStatus();
-    if (ant >= 0) { gm.antState = ant; break; }
-    if (attempt < 2) gpsPump(250);
+  // The NMEA tap usually answers first (the clone repeats ANTENNA OPEN/OK with
+  // every fix). Only fall back to MON-HW when no TXT line has said anything.
+  if (gm.antState < 0) {
+    for (int i = 0; i < 20 && gm.sentences < 10; i++) gpsPump(100);
+    for (int attempt = 0; attempt < 3; attempt++) {
+      const int ant = gpsAntennaStatus();
+      if (ant >= 0) { gm.antState = ant; break; }
+      if (attempt < 2) gpsPump(250);
+    }
   }
   logMsg(gm.antState == 2 ? L_OK : L_WARN, "GPS", "antenna: %s", antText(gm.antState));
   gpsLoadGates();
