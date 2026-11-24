@@ -711,6 +711,8 @@ function renderData(d) {
   set('gAlt', gps.fix && num(gps.alt) ? fmt(gps.alt) + ' m' : (gps.fix ? '--' : 'NO FIX'));
   set('gMode', gps.mode === 3 ? '3D' : gps.mode === 2 ? '2D' : '--');
   set('gAnt', typeof gps.ant === 'string' && gps.ant !== '?' ? gps.ant : '--');
+  set('gView', num(gps.view) && gps.view >= 0 ? gps.view : '--');
+  set('gSnr', num(gps.snr) ? gps.snr : '--');
   set('gTtff', num(gps.ttff_s) && gps.ttff_s > 0 ? gps.ttff_s : '--');
   set('gRej', num(gps.rej) ? gps.rej : '--');
 
