@@ -1326,13 +1326,17 @@ static bool ubxPing() {
 }
 
 // Human name for the antenna supervisor state reported by UBX-MON-HW/$GPTXT.
+// Every state has its own word: "NONE" (no reply) must not look like "UNKNOWN"
+// (the module answered DONTKNOW), because the first is a wiring/protocol problem
+// and the second means this receiver has no antenna supervisor at all.
 static const char* antText(int s) {
   switch (s) {
-    case 0:  return "init";
+    case 0:  return "INIT";
+    case 1:  return "UNKNOWN";
     case 2:  return "OK";
     case 3:  return "SHORT";
     case 4:  return "OPEN";
-    default: return "?";
+    default: return "NONE";
   }
 }
 
@@ -2220,7 +2224,7 @@ static void printStatus() {
                 (unsigned long)txSeq, (unsigned long)txOk, (unsigned long)txFail,
                 (unsigned long)txDrop, (unsigned)txqCount);
 
-  Serial.printf("%s|%s GPS   %s%-7s%s used %-2d  view %-3s  snr %-3s  q %d  hdop %-5s  ant %-5s  nmea %s\n",
+  Serial.printf("%s|%s GPS   %s%-7s%s used %-2d  view %-3s  snr %-3s  q %d  hdop %-5s  ant %-8s  nmea %s\n",
                 A(ANSI_DIM), A(ANSI_RESET),
                 A(gpsCol), gpsWord, A(ANSI_RESET),
                 used, viewTxt, snrTxt, gm.fixQ, hdop, antText(gm.antState), age);
@@ -2299,8 +2303,10 @@ static void printStatus() {
   if (gm.antState == 3 || gm.antState == 4)
     Serial.printf("  ! GPS  antenna status %s - reseat the active antenna lead (its power comes from the module)\n",
                   antText(gm.antState));
+  else if (gm.antState == 1)
+    Serial.println("  ! GPS  antenna state not supervised by this module - check the lead by hand");
   else if (gm.antState < 0)
-    Serial.println("  ! GPS  no antenna status (UBX-MON-HW unanswered) - module may not be u-blox");
+    Serial.println("  ! GPS  no answer to UBX-MON-HW - module may not be u-blox, or its RX line is open");
 
   if (!fix && gm.fixMode == 2)
     Serial.println("  ! GPS  2D fix only (no altitude) - position stays unpublished until 3D");
@@ -2428,14 +2434,17 @@ void mqtt_simple_setup() {
   // the power-on defaults when nothing answers on the TX pin.
   gm.antState = -1;                   // unknown until the module answers
   gpsUbxConfigure();
-  // Ask the antenna supervisor directly. This is what makes "0 satellites in
-  // view" actionable from the dashboard: OPEN/SHORT is a connector problem,
-  // a missing answer is an unwired TX pin, and OK sends you to the sky view.
-  {
+  // CFG-CFG writes the module's flash and can hold its UART for about a second,
+  // so a single MON-HW poll right after it is easy to miss. Wait for NMEA to
+  // prove the port is back, then ask again: one lost request used to leave the
+  // antenna state as "no reply" for the whole session.
+  for (int i = 0; i < 20 && gm.sentences < 10; i++) gpsPump(100);
+  for (int attempt = 0; attempt < 3; attempt++) {
     const int ant = gpsAntennaStatus();
-    if (ant >= 0) gm.antState = ant;
-    logMsg(ant == 2 ? L_OK : L_WARN, "GPS", "antenna: %s", antText(gm.antState));
+    if (ant >= 0) { gm.antState = ant; break; }
+    if (attempt < 2) gpsPump(250);
   }
+  logMsg(gm.antState == 2 ? L_OK : L_WARN, "GPS", "antenna: %s", antText(gm.antState));
   gpsLoadGates();
   odoLoad();
   gm.lastMs = millis();
