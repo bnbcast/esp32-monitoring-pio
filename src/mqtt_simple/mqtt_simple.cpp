@@ -463,6 +463,7 @@ struct GpsMon {
   int      snrCycle;  // peak SNR inside the cycle that is still arriving
   int      fixQ;      // GGA field 6: 0 none, 1 GPS, 2 DGPS
   int      fixMode;   // GSA field 2: 1 no fix, 2 = 2D, 3 = 3D
+  int      antState;  // antenna supervisor: -1 unknown, 0 init, 2 OK, 3 SHORT, 4 OPEN
   uint32_t lastMs;    // last complete sentence
   char     lastType[6];
   bool     silent;    // silence warning already printed
@@ -571,6 +572,24 @@ static void gpsMonParse() {
     if (nmeaField(gm.line, 2, f, sizeof f) && f[0]) {
       gm.fixMode = atoi(f);
       snprintf(note, sizeof note, "fix=%s", gm.fixMode == 3 ? "3D" : gm.fixMode == 2 ? "2D" : "none");
+    }
+  } else if (!strcmp(kind, "TXT")) {
+    // u-blox antenna supervisor: "$GPTXT,01,01,02,ANTSTATUS=OPEN". Sent once
+    // shortly after power-up, so it only lands when the link is already at the
+    // right baud; gpsAntennaStatus() below asks again on demand.
+    gm.cOther++;
+    char txt[40];
+    if (nmeaField(gm.line, 4, txt, sizeof txt)) {
+      const char* a = strstr(txt, "ANTSTATUS=");
+      if (a) {
+        a += 10;
+        int s = !strncmp(a, "OK", 2)    ? 2
+              : !strncmp(a, "SHORT", 5) ? 3
+              : !strncmp(a, "OPEN", 4)  ? 4
+              : !strncmp(a, "INIT", 4)  ? 0 : -1;
+        if (s >= 0 && gm.antState <= 0) gm.antState = s;   // the UBX probe wins
+        snprintf(note, sizeof note, "antenna %s", a);
+      }
     }
   } else {
     gm.cOther++;
@@ -1306,6 +1325,59 @@ static bool ubxPing() {
   return false;
 }
 
+// Human name for the antenna supervisor state reported by UBX-MON-HW/$GPTXT.
+static const char* antText(int s) {
+  switch (s) {
+    case 0:  return "init";
+    case 2:  return "OK";
+    case 3:  return "SHORT";
+    case 4:  return "OPEN";
+    default: return "?";
+  }
+}
+
+// Ask the module for UBX-MON-HW, whose aStatus byte tells "the antenna is
+// connected" apart from "it hears nothing because it is indoors". Without this
+// a receiver that streams clean NMEA and sees zero satellites looks the same in
+// both cases, which is exactly the ambiguity that costs a trip to the bench.
+// Returns -1 when the module does not answer (wire missing or not u-blox).
+static int gpsAntennaStatus() {
+  ubxSend(0x0A, 0x09, nullptr, 0);                 // UBX-MON-HW poll
+  uint8_t  st = 0, cls = 0, id = 0, ckA = 0, ckB = 0;
+  uint16_t len = 0, got = 0;
+  uint8_t  pay[64];
+  const uint32_t t0 = millis();
+  while (millis() - t0 < 700) {
+    while (gpsSerial.available()) {
+      const uint8_t b = (uint8_t)gpsSerial.read();
+      if (st == 0) { if (b == 0xB5) st = 1; }
+      else if (st == 1) { st = (b == 0x62) ? 2 : 0; }
+      else if (st == 2) { cls = b; ckA = b; ckB = b; st = 3; }
+      else if (st == 3) { id = b; ckA = (uint8_t)(ckA + b); ckB = (uint8_t)(ckB + ckA); st = 4; }
+      else if (st == 4) { len = b; ckA = (uint8_t)(ckA + b); ckB = (uint8_t)(ckB + ckA); st = 5; }
+      else if (st == 5) {
+        len = (uint16_t)(len | ((uint16_t)b << 8));
+        ckA = (uint8_t)(ckA + b); ckB = (uint8_t)(ckB + ckA);
+        got = 0;
+        st = 6;
+      } else if (st == 6) {
+        if (got < sizeof pay) pay[got] = b;
+        got++;
+        ckA = (uint8_t)(ckA + b); ckB = (uint8_t)(ckB + ckA);
+        if (got >= len) st = 7;
+      } else if (st == 7) {
+        if (b != ckA) { st = 0; continue; }          // bad checksum: resync
+        st = 8;
+      } else {
+        st = 0;
+        if (b == ckB && cls == 0x0A && id == 0x09 && len > 20) return pay[20];
+      }
+    }
+    delay(1);
+  }
+  return -1;
+}
+
 static bool gpsUbxConfigure() {
 #if GPS_UBX_ENABLE
   if (GPS_TX_PIN < 0) return false;
@@ -1953,6 +2025,7 @@ void publishData() {
     "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
     "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
     "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d,"
+    "\"ant\":\"%s\","
     "\"utc_h\":%d,\"utc_m\":%d,\"utc_s\":%d,\"utc_y\":%d,\"utc_mo\":%d,\"utc_d\":%d},"
     "\"lap\":{\"on\":%s,\"auto\":%s,\"n\":%lu,\"gen\":%lu,\"last_ms\":%lu,\"best_ms\":%lu,"
     "\"la\":[%.*f,%.*f],\"lb\":[%.*f,%.*f]},"
@@ -1970,6 +2043,7 @@ void publishData() {
     cog, hdop, gpsDistTotalM,
     (unsigned long)(gpsTtffMs / 1000UL), (unsigned long)gpsRejected,
     holdValid ? "true" : "false", (int)gm.fixMode,
+    antText(gm.antState),
     utc_h, utc_m, utc_s, utc_y, utc_mo, utc_d,
     gateValid ? "true" : "false", gateAuto ? "true" : "false",
     (unsigned long)lapCount, (unsigned long)lapGen,
@@ -1994,7 +2068,7 @@ void publishData() {
       "\"lvl\":%d,\"warn\":%d,\"danger\":%d,\"maxTilt\":%.1f,"
       "\"gps\":{\"chars\":%lu,\"view\":%d,\"snr\":%d,\"q\":%d,\"bad\":%lu,"
       "\"sats\":%d,\"fix\":%s,\"lat\":%s,\"lng\":%s,\"alt\":%s,\"kmh\":%s,"
-      "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d},"
+      "\"cog\":%s,\"hdop\":%s,\"dist_m\":%.2f,\"ttff_s\":%lu,\"rej\":%lu,\"still\":%s,\"mode\":%d,\"ant\":\"%s\"},"
       "\"lap\":{\"on\":%s,\"auto\":%s,\"n\":%lu,\"gen\":%lu,\"last_ms\":%lu,\"best_ms\":%lu},"
       "\"sys\":{\"heap\":%u,\"heap_min\":%u,\"boot\":%lu,\"brown\":%lu,\"rssi\":%d,"
       "\"temp_c\":%.1f}}",
@@ -2006,6 +2080,7 @@ void publishData() {
       fix ? "true" : "false", lat, lng, alt, spd, cog, hdop, gpsDistTotalM,
       (unsigned long)(gpsTtffMs / 1000UL), (unsigned long)gpsRejected,
       holdValid ? "true" : "false", (int)gm.fixMode,
+      antText(gm.antState),
       gateValid ? "true" : "false", gateAuto ? "true" : "false",
       (unsigned long)lapCount, (unsigned long)lapGen,
       (unsigned long)lapLastMs, (unsigned long)lapBestMs,
@@ -2145,10 +2220,10 @@ static void printStatus() {
                 (unsigned long)txSeq, (unsigned long)txOk, (unsigned long)txFail,
                 (unsigned long)txDrop, (unsigned)txqCount);
 
-  Serial.printf("%s|%s GPS   %s%-7s%s used %-2d  view %-3s  snr %-3s  q %d  hdop %-5s  nmea %s ago\n",
+  Serial.printf("%s|%s GPS   %s%-7s%s used %-2d  view %-3s  snr %-3s  q %d  hdop %-5s  ant %-5s  nmea %s\n",
                 A(ANSI_DIM), A(ANSI_RESET),
                 A(gpsCol), gpsWord, A(ANSI_RESET),
-                used, viewTxt, snrTxt, gm.fixQ, hdop, age);
+                used, viewTxt, snrTxt, gm.fixQ, hdop, antText(gm.antState), age);
 
   Serial.printf("%s|%s NMEA  %lu sent  %lu bad  gga %lu  rmc %lu  gsa %lu  gsv %lu  other %lu\n",
                 A(ANSI_DIM), A(ANSI_RESET),
@@ -2217,6 +2292,15 @@ static void printStatus() {
   else if (!fix && gm.view > 0)
     Serial.printf("  ! GPS  %d in view, %d used, q=%d - still locking (needs %d+)\n",
                   gm.view, used, gm.fixQ, GPS_MIN_SATS);
+
+  // The antenna supervisor answers the question the view count cannot: an OPEN
+  // or SHORT status means the patch is not connected, so no amount of sky view
+  // will help and the fix is at the connector, not on the roof.
+  if (gm.antState == 3 || gm.antState == 4)
+    Serial.printf("  ! GPS  antenna status %s - reseat the active antenna lead (its power comes from the module)\n",
+                  antText(gm.antState));
+  else if (gm.antState < 0)
+    Serial.println("  ! GPS  no antenna status (UBX-MON-HW unanswered) - module may not be u-blox");
 
   if (!fix && gm.fixMode == 2)
     Serial.println("  ! GPS  2D fix only (no altitude) - position stays unpublished until 3D");
@@ -2342,7 +2426,16 @@ void mqtt_simple_setup() {
 
   // Ask the module to run 5 Hz / automotive / static hold / SBAS. Falls back to
   // the power-on defaults when nothing answers on the TX pin.
+  gm.antState = -1;                   // unknown until the module answers
   gpsUbxConfigure();
+  // Ask the antenna supervisor directly. This is what makes "0 satellites in
+  // view" actionable from the dashboard: OPEN/SHORT is a connector problem,
+  // a missing answer is an unwired TX pin, and OK sends you to the sky view.
+  {
+    const int ant = gpsAntennaStatus();
+    if (ant >= 0) gm.antState = ant;
+    logMsg(ant == 2 ? L_OK : L_WARN, "GPS", "antenna: %s", antText(gm.antState));
+  }
   gpsLoadGates();
   odoLoad();
   gm.lastMs = millis();
