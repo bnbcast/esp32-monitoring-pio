@@ -603,8 +603,13 @@ function renderData(d) {
   // Pills
   setPill($('pMpu'), ok ? "MPU OK" : (mpuRecovering ? "MPU RECOVERING" : "MPU FAIL"),
     ok ? "ok" : (mpuRecovering ? "wait" : "bad"));
-  setPill($('pGps'), gps.fix ? "GPS FIX" : (gps.chars < 10 ? "GPS NO DATA" : "GPS WAIT"),
-    gps.fix ? "ok" : (gps.chars < 10 ? "bad" : "wait"));
+  const antTxt = typeof gps.ant === 'string' ? gps.ant : '';
+  const antBad = antTxt === 'OPEN' || antTxt === 'SHORT';
+  setPill($('pGps'),
+    gps.fix ? "GPS FIX"
+      : (gps.chars < 10 ? "GPS NO DATA"
+        : antBad ? `GPS ANT ${antTxt}` : "GPS WAIT"),
+    gps.fix ? "ok" : (gps.chars < 10 || antBad ? "bad" : "wait"));
 
   // Telemetry readouts (LIVE tab + map HUD)
   // Without a GPS fix the payload carries nulls for lat/lng/alt/speed. Printing
@@ -705,6 +710,7 @@ function renderData(d) {
   set('gLng', gps.fix ? fmt(gps.lng, 6) : 'NO FIX');
   set('gAlt', gps.fix && num(gps.alt) ? fmt(gps.alt) + ' m' : (gps.fix ? '--' : 'NO FIX'));
   set('gMode', gps.mode === 3 ? '3D' : gps.mode === 2 ? '2D' : '--');
+  set('gAnt', typeof gps.ant === 'string' && gps.ant !== '?' ? gps.ant : '--');
   set('gTtff', num(gps.ttff_s) && gps.ttff_s > 0 ? gps.ttff_s : '--');
   set('gRej', num(gps.rej) ? gps.rej : '--');
 
